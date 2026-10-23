@@ -1,5 +1,6 @@
 #import <AudioToolbox/AudioToolbox.h>
 #import <UIKit/UIKit.h>
+#import <CoreAudioKit/CoreAudioKit.h>
 #import "XoneMidiAudioUnit.h"
 
 @interface XoneAUViewController : AUViewController <AUAudioUnitFactory>
