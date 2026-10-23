@@ -9,7 +9,7 @@ permissions:
 jobs:
   build-ios:
     name: Construire l'IPA sur macOS
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 25
     steps:
       - name: Recuperer les fichiers du projet
