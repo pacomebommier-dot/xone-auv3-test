@@ -1,0 +1,53 @@
+name: XoneEngineTest
+options:
+  deploymentTarget:
+    iOS: '16.0'
+  groupSortPosition: top
+settings:
+  base:
+    IPHONEOS_DEPLOYMENT_TARGET: '16.0'
+    TARGETED_DEVICE_FAMILY: '2'
+    CODE_SIGN_STYLE: Automatic
+    CLANG_ENABLE_MODULES: YES
+    ENABLE_BITCODE: NO
+    SDKROOT: iphoneos
+targets:
+  XoneEngineTest:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+        excludes:
+          - Info.plist
+    info:
+      path: App/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.xonelab.XoneEngineTest
+        INFOPLIST_FILE: App/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
+    dependencies:
+      - target: XoneMidiAU
+        embed: true
+  XoneMidiAU:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Extension
+        excludes:
+          - Info.plist
+      - path: Shared
+    info:
+      path: Extension/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.xonelab.XoneEngineTest.XoneMidiAU
+        INFOPLIST_FILE: Extension/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+    dependencies:
+      - sdk: AudioToolbox.framework
+      - sdk: AVFoundation.framework
+      - sdk: UIKit.framework
