@@ -19,8 +19,6 @@ targets:
       - path: App
         excludes:
           - Info.plist
-    info:
-      path: App/Info.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.xonelab.XoneEngineTest
@@ -38,8 +36,6 @@ targets:
         excludes:
           - Info.plist
       - path: Shared
-    info:
-      path: Extension/Info.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.xonelab.XoneEngineTest.XoneMidiAU
