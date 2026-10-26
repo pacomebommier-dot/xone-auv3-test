@@ -1,0 +1,42 @@
+#include "../Core/CoreCoordinator.hpp"
+#include <iostream>
+#include <stdexcept>
+using namespace xone::l01;
+static int cases=0;
+static void req(bool b,const char*why){if(!b)throw std::runtime_error(why);}
+static void run(const char*name,void(*f)()){f();++cases;std::cout<<"PASS "<<name<<"\n";}
+static void down(CoreCoordinator& c,int n,int t){req(c.onMidi({14,144,n,127},t),"down");}
+static void up(CoreCoordinator& c,int n,int t){req(c.onMidi({14,128,n,0},t),"up");}
+static CoreCoordinator ready(bool enabled=true){CoreCoordinator c;req(c.initializeSourceDefaultNav(),"nav");c.enableDiagnosticQualifiedNav(enabled);return c;}
+static void setmode(CoreCoordinator& c,int mode){auto n=c.nativeNav().active();n.at(292)=mode;n.contextMode=mode==1?0:mode;n.presetFlag=mode==1?1:0;req(NavS3::regenerate(n)&&c.stageNativeNav(n)&&c.commitNativeNav(),"setmode");}
+int main(){try{
+run("S3-TRANSACTION-LONG-BOT2-APPLIES-RESTORES",[](){auto c=ready();auto initial=c.nativeNav().active();auto prev=c.nativeNav().undoSnapshot();down(c,13,0);req(c.onTimer(200),"timer");req(c.longNavPending()&&c.longNavPhysicalOwner()==1,"owner");req(c.nativeNav().active().at(292)==1,"did not activate");up(c,13,230);req(!c.longNavPending()&&c.nativeNav().active()==initial&&c.nativeNav().undoSnapshot()==prev,"did not restore");});
+run("S3-TRANSACTION-LONG-COMBO-MODE3",[](){auto c=ready();auto before=c.nativeNav().active();down(c,13,0);down(c,14,20);req(c.onTimer(220),"timer");req(c.nativeNav().active().at(292)==3&&c.longNavPending()&&c.longNavPhysicalOwner()==2,"combo long");up(c,14,270);req(!c.longNavPending()&&c.nativeNav().active()==before,"combo undo");up(c,13,280);});
+run("S3-TRANSACTION-LONG-SAME-MODE-READS-PREVIOUS-HISTORY",[](){auto c=ready();setmode(c,1);auto original=c.nativeNav().active();auto undo=c.nativeNav().undoSnapshot();req(undo.at(292)==0,"setup history");down(c,13,0);req(c.onTimer(200),"timer");req(c.nativeNav().active().at(292)==0,"history mode");up(c,13,270);req(c.nativeNav().active()==original&&c.nativeNav().undoSnapshot()==undo,"undo previous");});
+run("S3-TRANSACTION-LONG-PAGE-RESTORED",[](){auto c=ready();down(c,15,0);req(c.onTimer(200),"long");req(c.nativeNav().active().at(291)==1,"page long");up(c,15,240);req(c.nativeNav().active().at(291)==0,"page restore");});
+run("S3-TRANSACTION-LONG-DISABLED-BY-DEFAULT",[](){auto c=ready(false);down(c,13,0);req(c.onTimer(200),"tick");req(!c.longNavPending()&&c.nativeNav().active().at(292)==0,"accidental enabled");up(c,13,220);});
+run("S3-TRANSACTION-LONG-NO-MIDI-EVER",[](){auto c=ready();c.enableTestMidiProjection(true);down(c,13,0);req(c.onTimer(200),"tick");up(c,13,260);req(c.output().emitted()==0,"phantom midi");});
+run("S3-TRANSACTION-LONG-STOP-CANCELS-PENDING-NO-UP",[](){auto c=ready();down(c,13,0);req(c.onTimer(200),"long");req(c.longNavPending(),"initial");req(c.onHostStop(),"stop");req(!c.longNavPending(),"pending leak");up(c,13,260);req(c.nativeNav().active().at(292)==1,"STOP should not create undo");});
+run("S3-TRANSACTION-LONG-BLOCKS-NEW-SHORT",[](){auto c=ready();down(c,13,0);req(c.onTimer(200),"long");down(c,15,220);up(c,15,235);req(c.nativeNav().active().at(291)==0&&c.nativeNav().active().at(292)==1,"short stole long");up(c,13,245);req(c.nativeNav().active().at(292)==0,"long release");});
+run("S3-TRANSACTION-LONG-BLOCKS-EXTERNAL-NAV-STAGE",[](){auto c=ready();down(c,13,0);req(c.onTimer(200),"long");auto n=c.nativeNav().active();req(!c.stageNativeNav(n),"stage stole long");up(c,13,250);req(!c.longNavPending()&&c.nativeNav().active().at(292)==0,"stage wrecked release");});
+run("S3-TRANSACTION-TOUCH-A9-BLOCKS-SHORT",[](){auto c=ready();req(c.observeTouchOwnerForDiagnostic(7),"touch");down(c,13,0);up(c,13,35);req(c.nativeNav().active().at(292)==0,"touch short");});
+run("S3-TRANSACTION-TOUCH-A9-BLOCKS-LONG",[](){auto c=ready();req(c.observeTouchOwnerForDiagnostic(7),"touch");down(c,13,0);req(c.onTimer(200),"tick");req(!c.longNavPending()&&c.nativeNav().active().at(292)==0,"touch long");up(c,13,250);});
+run("S3-TRANSACTION-TOUCH-A9-CLEARED-SHORT-RECOVERS",[](){auto c=ready();c.observeTouchOwnerForDiagnostic(4);down(c,13,0);up(c,13,35);c.observeTouchOwnerForDiagnostic(-1);down(c,13,60);up(c,13,90);req(c.nativeNav().active().at(292)==1,"recovery");});
+run("S3-TRANSACTION-TOUCH-INVALID-OWNER-NO-CHANGE",[](){auto c=ready();req(!c.observeTouchOwnerForDiagnostic(36),"owner36");req(!c.observeTouchOwnerForDiagnostic(-2),"owner-2");down(c,13,0);up(c,13,50);req(c.nativeNav().active().at(292)==1,"changed owner");});
+run("S3-TRANSACTION-SHORT-GUARDED-MODE1",[](){auto c=ready();down(c,13,0);up(c,13,40);req(c.nativeNav().active().at(292)==1&&!c.longNavPending(),"normal short");});
+run("S3-TRANSACTION-RELEASE-REQUIRES-SAME-OWNER",[](){NavS3 n;req(n.initializeDefault(),"nav");S3LongTransaction tx;req(tx.begin(n,1,3),"begin");req(!tx.release(n,2)&&tx.pending()&&n.active().at(292)==3,"wrong release");req(tx.release(n,1)&&n.active().at(292)==0,"owner release");});
+run("S3-TRANSACTION-RESTORE-REJECTS-CORRUPT-HISTORY",[](){NavS3 n;req(n.initializeDefault(),"nav");auto original=n.active(),history=n.undoSnapshot();req(n.applyLongBeginMode(3),"begin");history.at(320)=9000;auto before=n.active();req(!n.restoreLong(original,history)&&n.active()==before,"partial restore");});
+run("S3-TRANSACTION-NO-REENTRANT-BEGIN",[](){NavS3 n;req(n.initializeDefault(),"nav");S3LongTransaction tx;req(tx.begin(n,1,3),"begin");req(!tx.begin(n,2,7)&&n.active().at(292)==3&&tx.owner()==1,"reentrant");});
+run("S3-BROWSER-OWNER23-BLOCKS-BOT2",[](){auto c=ready();req(c.observeBrowserGuardForDiagnostic(true,1,100),"guard");down(c,13,20);req(c.s3().physicalOwner(1)==23,"owner23");up(c,13,40);req(c.nativeNav().active().at(292)==0,"browser stolen");});
+run("S3-BROWSER-OWNER23-EXPIRES-AT-DEADLINE",[](){auto c=ready();c.observeBrowserGuardForDiagnostic(true,2,100);down(c,13,100);req(c.s3().physicalOwner(1)==1,"owner must expire");up(c,13,130);req(c.nativeNav().active().at(292)==1,"expired short");});
+run("S3-BROWSER-OWNER23-REJECTS-BAD-FIELDS",[](){auto c=ready();req(!c.observeBrowserGuardForDiagnostic(true,3,100),"a5 out range");req(!c.observeBrowserGuardForDiagnostic(true,1,-1),"a6 invalid");down(c,13,20);up(c,13,30);req(c.nativeNav().active().at(292)==1,"invalid guard mutated");});
+run("S3-BROWSER-BOT4-HELD-SPOT-IN-MACHINE-NO-CYCLE",[](){auto c=ready();setmode(c,7);down(c,48,0);down(c,15,20);req(c.s3().physicalOwner(3)==22,"spot priority");up(c,15,40);req(c.nativeNav().active().at(315)==0,"phantom mode cycle");up(c,48,50);});
+run("S3-BROWSER-BOT4-HELD-SPOT-IN-BROWSER-OWNER22",[](){auto c=ready();setmode(c,3);down(c,48,0);down(c,15,20);req(c.s3().physicalOwner(3)==22,"spot browse owner");up(c,15,50);req(c.nativeNav().active().at(292)==3,"browse 22 inert");});
+run("S3-MACHINE-BOT4-CYCLES-LOW-HIGH-BACK",[](){auto c=ready();setmode(c,7);auto n=c.nativeNav().active();n.at(314)=10;req(NavS3::regenerate(n)&&c.stageNativeNav(n)&&c.commitNativeNav(),"set patch");down(c,15,0);up(c,15,50);req(c.nativeNav().active().at(315)==1&&c.nativeNav().active().at(314)==17,"machine high");down(c,15,80);up(c,15,120);req(c.nativeNav().active().at(315)==0&&c.nativeNav().active().at(314)==10,"machine restored");});
+run("S3-MACHINE-CYCLE-BLOCKED-WHEN-LONG-PENDING",[](){auto c=ready();setmode(c,7);down(c,13,0);req(c.onTimer(200),"long");req(c.longNavPending(),"pending");down(c,15,220);up(c,15,250);req(c.nativeNav().active().at(315)==0,"cycle stole pending");up(c,13,260);});
+run("S3-DJ2-ROT-TO-MODE2-OUTSIDE-2-4",[](){auto c=ready();down(c,14,0);req(c.onMidi({14,176,21,77},40),"DJ2");req(c.nativeNav().active().at(292)==2,"DJ2 @zj");up(c,14,70);req(c.output().emitted()==0,"phantom output");});
+run("S3-DJ2-ROT-IN-MODE2-DOES-NOT-RETARGET",[](){auto c=ready();setmode(c,2);down(c,14,0);req(c.onMidi({14,176,21,77},40),"DJ2");req(c.nativeNav().active().at(292)==2,"DJ2 mode2 changed");});
+run("S3-DJ2-ROT-BLOCKED-BY-TOUCH",[](){auto c=ready();req(c.observeTouchOwnerForDiagnostic(9),"touch");down(c,14,0);req(c.onMidi({14,176,21,77},40),"DJ2");req(c.nativeNav().active().at(292)==0,"DJ2 stole touch");});
+run("S3-GUARDS-STILL-NOT-PRODUCTION",[](){auto c=ready(false);setmode(c,7);down(c,15,0);up(c,15,30);req(c.nativeNav().active().at(315)==0,"production cycle");down(c,14,40);req(c.onMidi({14,176,21,69},60),"DJ");req(c.nativeNav().active().at(292)==7,"production DJ2");});
+std::cout<<"PASS "<<cases<<" L01/07 long-gesture/BROWSER/DJ2 guard scenarios\n";return 0;
+}catch(const std::exception&e){std::cerr<<"FAIL "<<e.what()<<"\n";return 1;}}

@@ -1,0 +1,7 @@
+evidence/local/*.exe
+evidence/local/*.pdb
+evidence/local/*.obj
+evidence/ci/
+evidence/sanitizers/
+output/
+*.xcodeproj/

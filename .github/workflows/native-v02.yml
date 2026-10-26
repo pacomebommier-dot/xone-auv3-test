@@ -1,0 +1,75 @@
+name: L02 native V0.2 build and tests
+on:
+  push:
+    branches: [feature/native-l02-v02]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  portable:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [g++, clang++]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive integrity and documentary counts
+        run: python3 tools/verify_source.py
+      - name: Portable suites
+        env:
+          CXX: ${{ matrix.compiler }}
+        run: bash Tests/run_native.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-${{ matrix.compiler }}-${{ github.sha }}
+          path: evidence/ci/*.log
+  ios:
+    needs: portable
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native suites with Apple Clang
+        run: bash Tests/run_native.sh
+      - name: Sanitizers
+        env:
+          SANITIZE: '1'
+          TEST_OUTPUT: evidence/sanitizers
+        run: bash Tests/run_native.sh
+      - name: Xcode and project generation
+        run: |
+          xcodebuild -version
+          brew install xcodegen
+          xcodegen generate
+      - name: Build unsigned V0.2
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          xcodebuild -project XoneEngineTest.xcodeproj -scheme XoneEngineTest -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/XoneV02" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build 2>&1 | tee output/xcodebuild.log
+          APP="$RUNNER_TEMP/XoneV02/Build/Products/Release-iphoneos/XoneEngineTest.app"
+          EXT="$APP/PlugIns/XoneMidiAU.appex"
+          test -f "$EXT/XoneMidiAU"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist" | grep -qx org.xonelab.XoneEngineNativeV02
+          /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionAttributes:AudioComponents:0:subtype' "$EXT/Info.plist" | grep -qx Xn02
+          /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionAttributes:AudioComponents:0:type' "$EXT/Info.plist" | grep -qx aumi
+          mkdir -p output/Payload
+          ditto "$APP" output/Payload/XoneEngineTest.app
+          (cd output && /usr/bin/zip -q -r -y XoneEngineNative_V0_2_UNSIGNED.ipa Payload)
+          echo "$GITHUB_SHA" > output/COMMIT.txt
+          shasum -a 256 output/XoneEngineNative_V0_2_UNSIGNED.ipa > output/IPA_SHA256.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: XoneEngineNative-V0.2-${{ github.sha }}
+          path: |
+            output/*.ipa
+            output/*.txt
+            output/*.log
+            evidence/ci/*.log
+            evidence/sanitizers/*.log
+          if-no-files-found: error
+          retention-days: 30

@@ -6,7 +6,7 @@
     (void)application; (void)launchOptions;
     self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     UIViewController *screen = [UIViewController new];
-    screen.view.backgroundColor = [UIColor colorWithRed:0.055 green:0.075 blue:0.105 alpha:1];
+    screen.view.backgroundColor = [UIColor colorWithRed:0.055 green:0.075 blue:0.205 alpha:1];
 
     UILabel *label = [UILabel new];
     label.translatesAutoresizingMaskIntoConstraints = NO;
@@ -14,7 +14,7 @@
     label.textAlignment = NSTextAlignmentCenter;
     label.textColor = UIColor.whiteColor;
     label.font = [UIFont systemFontOfSize:22 weight:UIFontWeightSemibold];
-    label.text = @"XONE ENGINE · V0.1\n\nApplication installée.\n\nOuvrez AUM, créez une tranche MIDI et recherchez\nXONE ENGINE TEST parmi les AUv3 MIDI Processors.\n\nCC 4 → CC 74, CC 8 → CC 71 (canal 1).";
+    label.text = @"XONE ENGINE · V0.2\n\nApplication installée.\n\nOuvrez AUM, créez une tranche MIDI et recherchez\nXONE ENGINE V0.2 parmi les AUv3 MIDI Processors.\n\nCC 4 → CC 74, CC 8 → CC 71 (canal 1).";
     [screen.view addSubview:label];
     [NSLayoutConstraint activateConstraints:@[
         [label.leadingAnchor constraintEqualToAnchor:screen.view.safeAreaLayoutGuide.leadingAnchor constant:24],
