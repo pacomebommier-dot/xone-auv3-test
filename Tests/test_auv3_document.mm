@@ -3,18 +3,17 @@
 #import "../Extension/XoneMidiAudioUnit.h"
 #include "../Shared/XoneSession.hpp"
 #include <cassert>
-#include <array>
 #include <iostream>
 int main() {
  @autoreleasepool {
     const AudioComponentDescription description={0x61756D69,0x586E3032,0x586E4C62,0,0};
-    [AUAudioUnit registerSubclass:[XoneMidiAudioUnit class] asComponentDescription:description name:@"XONE automated host" version:1];
+    [AUAudioUnit registerSubclass:[XoneMidiAudioUnit class] asComponentDescription:description name:@"XONE: Automated Host" version:1];
     NSError *error=nil;
     XoneMidiAudioUnit *unit=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
     assert(unit && !error);
     // Deliberately fetch the block BEFORE allocation and before configuring 48 kHz.
     auto render=unit.internalRenderBlock;
-    AVAudioFormat *format=[[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatFloat32 sampleRate:48000 channels:2 interleaved:YES];
+    AVAudioFormat *format=[[AVAudioFormat alloc] initStandardFormatWithSampleRate:48000 channels:2];
     assert([unit.inputBusses[0] setFormat:format error:&error]);
     assert([unit.outputBusses[0] setFormat:format error:&error]);
     unit.maximumFramesToRender=8192;
@@ -29,9 +28,8 @@ int main() {
     assert(sent==0);
     assert([unit allocateRenderResourcesAndReturnError:&error] && !error);
     assert(sent==0);
-    std::array<float,16384> scratch{};
-    AudioBufferList output{};output.mNumberBuffers=1;
-    output.mBuffers[0].mNumberChannels=2;output.mBuffers[0].mData=scratch.data();
+    AVAudioPCMBuffer *audio=[[AVAudioPCMBuffer alloc] initWithPCMFormat:format frameCapacity:8192];
+    assert(audio && audio.floatChannelData);
     AUEventSampleTime cursor=0;
     auto pump=[&](AVAudioFrameCount frames,int command=-1,int number=0,int value=0) {
         AudioTimeStamp timestamp{};timestamp.mFlags=kAudioTimeStampSampleTimeValid;timestamp.mSampleTime=static_cast<Float64>(cursor);
@@ -39,9 +37,10 @@ int main() {
         event.MIDI.cable=0;event.MIDI.length=static_cast<uint16_t>(command==0xFC?1:3);
         event.MIDI.data[0]=static_cast<uint8_t>(command);event.MIDI.data[1]=static_cast<uint8_t>(number);event.MIDI.data[2]=static_cast<uint8_t>(value);
         AudioUnitRenderActionFlags flags=0;
-        scratch.fill(1);output.mBuffers[0].mDataByteSize=frames*2*sizeof(float);
-        assert(render(&flags,&timestamp,frames,0,&output,command<0?nullptr:&event,nil)==noErr);
-        for(std::size_t i=0;i<2*frames;++i)assert(scratch[i]==0);
+        audio.frameLength=frames;
+        for(unsigned ch=0;ch<2;++ch)for(unsigned i=0;i<frames;++i)audio.floatChannelData[ch][i]=1;
+        assert(render(&flags,&timestamp,frames,0,audio.mutableAudioBufferList,command<0?nullptr:&event,nil)==noErr);
+        for(unsigned ch=0;ch<2;++ch)for(unsigned i=0;i<frames;++i)assert(audio.floatChannelData[ch][i]==0);
         cursor+=frames;
     };
     pump(48,0xBE,16,64);assert(sent==1&&lastStatus==0xBA&&lastNumber==48&&lastValue==64);
@@ -80,7 +79,7 @@ int main() {
     assert([reopened allocateRenderResourcesAndReturnError:&error]);
     auto reopenedRender=reopened.internalRenderBlock;
     AudioTimeStamp timestamp{};timestamp.mFlags=kAudioTimeStampSampleTimeValid;AudioUnitRenderActionFlags flags=0;
-    assert(reopenedRender(&flags,&timestamp,48,0,&output,nullptr,nil)==noErr && sent==2);
+    assert(reopenedRender(&flags,&timestamp,48,0,audio.mutableAudioBufferList,nullptr,nil)==noErr && sent==2);
     NSData *reloaded=reopened.fullStateForDocument[@"XONE_LAST_LIVE_V1"];
     assert(xone::host::decodeSession(static_cast<const uint8_t *>(reloaded.bytes),reloaded.length,decoded)&&decoded.desired[1328]==100);
     [reopened deallocateRenderResources];

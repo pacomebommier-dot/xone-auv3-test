@@ -1,0 +1,380 @@
+{
+  "schemaVersion": 1,
+  "profileId": "roland.sh-01a.source.v1",
+  "deviceModel": "Roland SH-01A",
+  "status": "SOURCE_VERIFIED_NOT_BOUND",
+  "source": {
+    "url": "https://static.roland.com/assets/media/pdf/SH-01A_MIDI_Imple_Chart_eng01_W.pdf",
+    "title": "SH-01A MIDI Implementation Chart",
+    "version": "1.00",
+    "date": "2017-08-08"
+  },
+  "machineOutputConnected": false,
+  "outputPort": null,
+  "channel1Based": null,
+  "baseReference": null,
+  "programReferences": [],
+  "bindings": [],
+  "resetDefaults": {},
+  "programChange": {
+    "recognizedRawRange": [
+      0,
+      63
+    ],
+    "enabled": false
+  },
+  "systemExclusive": {
+    "transmitted": false,
+    "recognized": false,
+    "requests": []
+  },
+  "notes": {
+    "engineGeneratesMusicalNotes": false
+  },
+  "parameters": [
+    {
+      "cc": 1,
+      "name": "MODULATION",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 3,
+      "name": "LFO RATE",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 5,
+      "name": "PORTAMENTO TIME",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 11,
+      "name": "EXPRESSION PEDAL",
+      "recognized": true,
+      "transmitted": false,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 12,
+      "name": "LFO WAVE FORM",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 13,
+      "name": "VCO MOD DEPTH",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 14,
+      "name": "VCO RANGE",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 15,
+      "name": "VCO PULSE WIDTH",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 16,
+      "name": "VCO PWM SOURCE",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 17,
+      "name": "VCO MOD SENS",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 18,
+      "name": "VCO BEND DEPTH",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 19,
+      "name": "VCO PWM LEVEL",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 20,
+      "name": "VCO SAW LEVEL",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 21,
+      "name": "VCO SUB LEVEL",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 22,
+      "name": "VCO SUB TYPE",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 23,
+      "name": "VCO NOISE LEVEL",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 24,
+      "name": "VCF ENV DEPTH",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 25,
+      "name": "VCF MOD DEPTH",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 26,
+      "name": "VCF KEY FOLLOW",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 27,
+      "name": "VCF BEND DEPTH",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 28,
+      "name": "VCA ENV SW",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 29,
+      "name": "VCA ENV MODE",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 30,
+      "name": "ENV SUSTAIN",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 31,
+      "name": "PORTAMENT MODE",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 64,
+      "name": "HOLD",
+      "recognized": true,
+      "transmitted": false,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 65,
+      "name": "PORTAMENTO",
+      "recognized": true,
+      "transmitted": false,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 71,
+      "name": "VCF RESONANCE",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 72,
+      "name": "ENV RELEASE",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 73,
+      "name": "ENV ATTACK",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 74,
+      "name": "VCF CUTOFF",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 75,
+      "name": "ENV DECAY",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 76,
+      "name": "TUNE",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 77,
+      "name": "TRANSPOSE SW",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 78,
+      "name": "NOISE MODE",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 79,
+      "name": "LFO MODE",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 80,
+      "name": "ASSIGN MODE",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 81,
+      "name": "CHORD VOICE 2 SW",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 82,
+      "name": "CHORD VOICE 3 SW",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 83,
+      "name": "CHORD VOICE 4 SW",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 85,
+      "name": "CHORD VOICE 2 KEY SHIFT",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 86,
+      "name": "CHORD VOICE 3 KEY SHIFT",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    },
+    {
+      "cc": 87,
+      "name": "CHORD VOICE 4 KEY SHIFT",
+      "recognized": true,
+      "transmitted": true,
+      "valueEncoding": null,
+      "defaultValue": null
+    }
+  ],
+  "unassignedNumbers": [
+    84
+  ],
+  "remarks": [
+    "CC84 is inside a broad chart range but has no named control in the control-change list; no XONE binding is inferred.",
+    "Raw MIDI recognition/transmission is not authenticated feedback or a verified complete patch image.",
+    "Discrete value encodings, BASE/PC association, source identities and destination ownership remain to be configured/verified."
+  ]
+}

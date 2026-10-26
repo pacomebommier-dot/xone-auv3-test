@@ -19,6 +19,7 @@ jobs:
         run: |
           python3 tools/verify_source.py
           python3 tools/verify_simulator.py
+          python3 tools/verify_profiles.py
       - name: Portable suites
         env:
           CXX: ${{ matrix.compiler }}

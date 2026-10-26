@@ -53,10 +53,11 @@
     [super deallocateRenderResources];
 }
 
-// Host/document methods stay off the render thread. The superclass retains its keys.
-- (NSDictionary<NSString *,id> *)fullStateForDocument {
+// Host state methods stay off render. Apple's default fullStateForDocument
+// forwards to fullState, so both host save APIs share this single implementation.
+- (NSDictionary<NSString *,id> *)fullState {
     @synchronized (self) {
-        NSMutableDictionary *state = [[super fullStateForDocument] mutableCopy];
+        NSMutableDictionary *state = [[super fullState] mutableCopy];
         if (!state) state = [NSMutableDictionary dictionary];
         [state removeObjectForKey:@"XONE_LAST_LIVE_V1"];
         xone::host::SessionBytes bytes{};
@@ -66,7 +67,7 @@
         return state;
     }
 }
-- (void)setFullStateForDocument:(NSDictionary<NSString *,id> *)state {
+- (void)setFullState:(NSDictionary<NSString *,id> *)state {
     @synchronized (self) {
         id payload = state[@"XONE_LAST_LIVE_V1"];
         if (payload) {
@@ -76,7 +77,7 @@
             if (!xone::host::decodeSession((const uint8_t *)data.bytes, data.length, image)) return;
             if (!_engine.requestSessionRestore(image)) return;
         }
-        [super setFullStateForDocument:state];
+        [super setFullState:state];
     }
 }
 
