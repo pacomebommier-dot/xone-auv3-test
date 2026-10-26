@@ -41,6 +41,13 @@ jobs:
           SANITIZE: '1'
           TEST_OUTPUT: evidence/sanitizers
         run: bash Tests/run_native.sh
+      - name: Real AU subclass document and render harness (macOS)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/ci
+          clang++ -std=c++17 -fobjc-arc -UNDEBUG -Wall -Wextra -Werror Tests/test_auv3_document.mm Extension/XoneMidiAudioUnit.mm -framework Foundation -framework AudioToolbox -framework AVFoundation -o evidence/ci/test_auv3_document 2>&1 | tee evidence/ci/test_auv3_document.compile.log
+          evidence/ci/test_auv3_document 2>&1 | tee evidence/ci/test_auv3_document.run.log
       - name: Xcode and project generation
         run: |
           xcodebuild -version

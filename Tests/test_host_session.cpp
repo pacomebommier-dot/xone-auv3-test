@@ -13,7 +13,7 @@ int main() {
     assert(encodeSession(s,bytes));
     SessionImage round{};assert(decodeSession(bytes.data(),bytes.size(),round));
     assert(round.desired==s.desired && round.config==1 && round.revision==1);
-    bytes[16]^=1;assert(!decodeSession(bytes.data(),bytes.size(),round)); // even in-range corruption
+    bytes[16+2*1328]^=1;assert(!decodeSession(bytes.data(),bytes.size(),round)); // even in-range corruption
     assert(!decodeSession(bytes.data(),bytes.size()-1,round));
     s.config=0;assert(!encodeSession(s,bytes));
     s=image();s.desired[1]=-1;assert(!encodeSession(s,bytes));
