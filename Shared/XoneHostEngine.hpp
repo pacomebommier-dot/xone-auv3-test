@@ -1,13 +1,14 @@
 #pragma once
-// Native V3 host: K2 surface/gestures/NAV connected; LIVE/music/S8 remain pending.
+// Native V3 host: K2 surface/gestures/NAV connected; known-session continuous LIVE/S4 connected; S8 specialization remains pending.
 #include "../Core/CoreCoordinator.hpp"
+#include "XoneContinuousInput.hpp"
 #include <atomic>
 #include <array>
 #include <cstdint>
 #include <cstddef>
 namespace xone::host {
 enum class Stage : uint8_t { RxIn, Decision, TxOut, RxFeedback, Stop, Overflow, Gesture };
-enum class Reason : uint8_t { Mapped, SurfaceOnly, Rejected, Untrusted, Sent, SendFailed, NoOutput, Received, Integrated, Qualified, ClockRejected };
+enum class Reason : uint8_t { Mapped, SurfaceOnly, Rejected, Untrusted, Sent, SendFailed, NoOutput, Received, Integrated, Qualified, ClockRejected, UnknownLive, PickupWait, Musical };
 struct Trace {
     uint32_t sequence{};
     int64_t sample{};
@@ -21,17 +22,22 @@ struct Result {
     uint8_t bytes[3]{};
     uint32_t sequence{};
     int64_t sample{};
+    bool musical{};
+    int api{-1},value{};
 };
 class HostEngine {
 public:
     HostEngine() noexcept {
         core_.initializeSourceDefaultNav();
+        core_.enableDiagnosticLive(true);
+        core_.enableTestMidiProjection(true);
         core_.enableDiagnosticQualifiedNav(true); // source-qualified SHORT/LONG NAV only
     }
     static constexpr uint32_t TraceCapacity=256;
     static_assert(std::atomic<uint32_t>::is_always_lock_free,"RT trace requires lock-free indices");
     // Called only by render thread. Host cable is NOT an authenticated device ID.
     Result receive(uint8_t cable,const uint8_t* data,size_t length,int64_t sample,int64_t gestureMs=0) noexcept {
+        started_=true;
         const auto seq=++sequence_;
         record(seq,sample,cable?Stage::RxFeedback:Stage::RxIn,Reason::Received,cable,data,length);
         if(cable) {record(seq,sample,Stage::Decision,Reason::Untrusted,cable,data,length);return {};}
@@ -47,6 +53,7 @@ public:
             const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs);
             record(seq,sample,Stage::Decision,accepted?Reason::Integrated:Reason::ClockRejected,cable,data,length);
             drainCore(seq,sample);
+            if(accepted&&cmd==0xB0&&data[1]<20)return continuous(data[1],data[2],gestureMs,seq,sample);
             return {};
         }
         // Explicit T01 bench profile: CH1 only, exactly two CC mappings, no Thru.
@@ -57,13 +64,20 @@ public:
         record(seq,sample,Stage::Decision,Reason::Mapped,cable,r.bytes,3);
         return r;
     }
+    // Lifecycle-only restore: call before rendering starts, never from UI during render.
+    bool restoreSessionBeforeRendering(const l01::LiveState::SessionImage& image) noexcept {
+        return !started_&&core_.restoreNativeSessionForDiagnostic(image);
+    }
+    l01::LiveRead desiredLive(int cell) const noexcept {return core_.nativeLive().desired(cell);}
     void sent(const Result& r,int32_t status) noexcept {
+        if(r.musical&&status==0){core_.output().apply({10,r.api,r.value,127});core_.output().drain();}
         record(r.sequence,r.sample,Stage::TxOut,status==0?Reason::Sent:Reason::SendFailed,0,r.bytes,3,status);
     }
     void noOutput(const Result& r) noexcept {
         record(r.sequence,r.sample,Stage::Decision,Reason::NoOutput,0,r.bytes,3);
     }
     void stop(int64_t sample) noexcept {
+        started_=true;
         core_.onHostStop(); // must not fabricate UP or clear held keys
         record(++sequence_,sample,Stage::Stop,Reason::SurfaceOnly,0,nullptr,0);
     }
@@ -73,6 +87,7 @@ public:
     int navMode() const noexcept {return core_.nativeNav().active().at(292);}
     bool longNavPending() const noexcept {return core_.longNavPending();}
     void advance(int64_t ms,int64_t sample) noexcept {
+        started_=true;
         if(!core_.gesture().timerNeeded())return;
         const auto seq=++sequence_;
         if(!core_.onTimer(ms))record(seq,sample,Stage::Decision,Reason::ClockRejected,0,nullptr,0);
@@ -91,6 +106,24 @@ public:
     }
     uint32_t overflows() const noexcept {return overflows_.load(std::memory_order_relaxed);}
 private:
+    Result continuous(int cc,int raw,int64_t ms,uint32_t seq,int64_t sample) noexcept {
+        const auto target=continuousTarget(core_.nativeNav().active().route(36+cc));
+        // LOOP needs coherent derived r1/r2/r3 batches, never raw b1/b2/b3/m.
+        if(!target.valid()||(target.api>=569&&target.api<=573))return {};
+        const auto live=core_.nativeLive().desired(target.cell);
+        if(!live.known){record(seq,sample,Stage::Decision,Reason::UnknownLive,0,nullptr,0);return {};}
+        if(core_.nativeLive().revision()>=l01::LiveState::MaxRevision)return {};
+        const int value=pickup_.consider(cc,target.api,live.value,raw,ms);
+        if(value<0){record(seq,sample,Stage::Decision,Reason::PickupWait,0,nullptr,0);return {};}
+        auto projection=core_.output();
+        if(!projection.apply({10,target.api,value,127}))return {};
+        if(!core_.commitNativeLive(target.cell,value,core_.nativeLive().revision()))return {};
+        if(projection.emitted()==0)return {};
+        const auto packet=projection.packet(0);
+        Result r{true,{packet.status,packet.number,packet.value},seq,sample,true,target.api,value};
+        record(seq,sample,Stage::Decision,Reason::Musical,0,r.bytes,3);
+        return r;
+    }
     void drainCore(uint32_t seq,int64_t sample) noexcept {
         for(size_t i=0;i<core_.traceCount();++i) {
             const auto e=core_.trace(i);
@@ -115,6 +148,8 @@ private:
         trace_[w%TraceCapacity]=t;write_.store(w+1,std::memory_order_release);
     }
     l01::CoreCoordinator core_{};
+    ContinuousPickup pickup_{};
+    bool started_{};
     std::array<Trace,TraceCapacity> trace_{};
     std::atomic<uint32_t> read_{0},write_{0},dropped_{0},overflows_{0};
     uint32_t sequence_{};
