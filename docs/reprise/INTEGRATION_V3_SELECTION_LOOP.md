@@ -21,3 +21,5 @@ Tests/test_host_musical_routes.cpp :
 - changement b1 : seul gain569 réévalué ; aucun CC573 et aucun multiplicateur0 inventé.
 
 La CI du commit doit être vérifiée séparément. Pas de recette AUM, LED, synthé ou validation K2 physique déduite de ces tests. PATCH/MEMORY/CUE/LOAD/PRESET/RED/S8, sorties SPOT/actions, horloge BAR/BEAT et profils matériels restent ouverts. Le plan 8 étapes/16 lots est conservé, sans clôture abusive.
+
+CI complète3e901da : PASS (tentative2, après timeout d'archivage) https://github.com/pacomebommier-dot/xone-auv3-test/actions/runs/40397913253 . Le code musical n'a pas été modifié pour résoudre l'erreur réseau.

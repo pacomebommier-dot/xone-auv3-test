@@ -1,0 +1,37 @@
+# Reprise active — intégration XONE native V3
+26 octobre 2026. Branche de travail : feature/native-integration-v3. Aucun merge main.
+
+## Code et preuves
+- e2dcfec : surface K2, gestes S2 et NAV S3 raccordés au callback AUv3 ; DEF-L02-TRACE-01 corrigé. K2_SIM unique préparé en source Mozaic.
+- 08790d0 : sample rate lu après allocation des ressources de rendu.
+- 03be998 : CC physiques -> résolution source -> pickup -> LIVE -> S4/API neutre, sur session connue. CI complète PASS : https://github.com/pacomebommier-dot/xone-auv3-test/actions/runs/40366951514
+- d30bb1d : dernier LIVE dans fullStateForDocument, CRC et snapshots cohérents entre host/rendu ; aucune émission au chargement. CI complète PASS : https://github.com/pacomebommier-dot/xone-auv3-test/actions/runs/40397065753
+- 3e901da : sélections physiques de source raccordées aux routes CC et gains LOOP dérivés cohérents ; résultats MIDI de0 à3 paquets, confirmation séparée de chaque callback. CI complète PASS après relance du seul job iOS affecté par des timeouts réseau : https://github.com/pacomebommier-dot/xone-auv3-test/actions/runs/40397913253
+- e7aefbce369ddbdcc95547be3c82b3baf8c60e2e : état commun fullState/fullStateForDocument, harness de la vraie classe AU et profil SH-01A SOURCE préparé. CI complète PASS : https://github.com/pacomebommier-dot/xone-auv3-test/actions/runs/40400931566
+- Les commits de tests RED 15a7a243 et fc7fcd65 échouent volontairement avant les implémentations correspondantes. Ne pas les prendre pour des releases.
+
+## État technique des 8 étapes / 16 lots
+| Étape | Lots | Raccordements et réserves |
+|---|---|---|
+| E1 | L01/L02 | L01 clos documentairement ; correctif de traces et CI L02 acquis ; parcours iPhone nominal historique conservé, compléments manuels différés |
+| E2 | L03/L04 | Surface et gestes BOT/combos/NAV raccordés ; K2_SIM source préparée, pas de compilation Mozaic ni essai physique nouveau ; SPOT TOUCH/FLASH restent à intégrer |
+| E3 | L05/L06 | NAV, sélection physique, pickup/CC/LIVE/S4, LOOP et horloge gestuelle de rendu raccordés ; BAR/BEAT, actions et releases musicales complètes encore ouverts |
+| E4 | L07/L08 | PATCH/MEMORY et CUE/LOAD/BASE : modules et contrats conservés, pas encore une chaîne musicale intégrée |
+| E5 | L09/L10 | PRESET/RED et propriétaires/alternatives S8 : non raccordés ; les modes SPOT MACHINE ne doivent pas être capturés/restaurés par PATCH/PRESET/RED |
+| E6 | L11/L12 | UNKNOWN conservé ; feedback authentifié et sortie LED séparée non raccordés |
+| E7 | L13/L14 | Persistance du seul dernier LIVE raccordée aux API d'état AU, vérifiée sur une vraie classe AU sous macOS ; autres domaines/NAV/banques et replay vers profil validé ouverts ; table SH-01A source préparée, sans binding/canal/port ; aucune session AUM FX réelle déclarée prête |
+| E8 | L15/L16 | AUM_FULL_DEFERRED ; K2_PHYSICAL_PENDING ; SH01A_PHYSICAL_PENDING. JU-06A après SH. Aucun PASS inventé |
+
+## Limites à respecter
+La session native connue du harness ne vaut pas une image instrument observée. Une AUv3 neuve sans référence connue reste UNKNOWN ; pas de zéros ou de PC Roland inventés. La réouverture restaure actuellement l'image logicielle, sans prétendre avoir restitué le matériel ni toutes les sorties MIDI appliquées.
+Les 12 headers Core, 14 suites historiques, GOLDEN/S7/S8 et preuves V0.1/V0.2 restent préservés. Vérification distante du26/10 : main=5874ae2f29a2543d9df7cda4814803d04dd36257 ; feature/native-l02-v02=8fff66b4ed97acaf1b65f37028700319ed2e935e.
+
+## Reprise pratique
+Lire INTEGRATION_V3.md, INTEGRATION_V3_CC.md, INTEGRATION_V3_SESSION.md et INTEGRATION_V3_SELECTION_LOOP.md avec les documents actifs Drive00/40..44/37 et C-NAT-05/06.
+Le checkout local E:/Mon Drive/MOZAIC SCRIPTS/XONE K2/XONE_ENGINE_NATIVE est resté sur03be998 : le service de revue automatique des commandes locales a atteint son quota. Les modifications suivantes sont publiées via le connecteur GitHub autorisé. Resynchroniser proprement ce checkout quand l'exécution locale est disponible, en vérifiant d'abord son état ; ne pas écraser un travail utilisateur.
+Prochain raccordement : sorties SPOT/actions avec destinations capturées et dettes OFF, horloge BAR/BEAT réelle, puis banques et propriétaires S8. Ne pas réduire cette suite aux remappings CH1 du banc L02. Les essais AUM restent groupés au jalon L15.
+
+## Preuves du dernier code
+GCC, Clang, Apple Clang, ASan/UBSan, contrôle des12 headers et14 suites historiques,20 suites C++ (14 historiques +6 host), régression C V0.1 (10 cas), contrôles source K2_SIM/SH-01A et harness de la vraie classe AU sous macOS : PASS sur e7aefbce. Le build iphoneos unsigned et l'archivage IPA/logs sont PASS sur ce même SHA. Le harness ne constitue pas une exécution AUM/iOS.
+L'artefact porte encore le nom historique V0.2 ; son nom GitHub complet inclut le SHA e7aefbce. Ne pas lui attribuer les essais iPhone de8fff66b, ne pas demander une installation intermédiaire. La recette groupée reste L15.
+Les commits543ea961/9316f550 documentent les corrections du harness (buffer nul interdit puis format non standard refusé). Aucun test ignoré pour obtenir le PASS final.

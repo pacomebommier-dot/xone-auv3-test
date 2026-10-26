@@ -17,3 +17,5 @@ Référence Apple : https://developer.apple.com/documentation/audiotoolbox/auaud
 
 ## Profil SH-01A préparé
 Profiles/SH01A_SOURCE_V1.json : 42 CC explicitement nommés par la fiche Roland officielle, sans liaison/port/canal/default/PC supposé. CC84 n'est pas inventé à partir d'un intervalle générique. Numéros, capacité TX/RX et absence SysEx sont sourcés ; valeurs discrètes et correspondances XONE restent à vérifier. Aucune émission MACHINE raccordée. Le profil reste préparatoire, L14/L16 ouverts, JU-06A séparé.
+
+CI finale e7aefbce : PASS https://github.com/pacomebommier-dot/xone-auv3-test/actions/runs/40400931566 ; harness AU réel macOS,20 suites C++, régression C, ASan/UBSan, contrôles sources, build iOS unsigned et archive. Aucun AUM/iPhone ou matériel ajouté aux preuves.
