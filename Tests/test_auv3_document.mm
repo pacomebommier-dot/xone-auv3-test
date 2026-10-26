@@ -3,6 +3,7 @@
 #import "../Extension/XoneMidiAudioUnit.h"
 #include "../Shared/XoneSession.hpp"
 #include <cassert>
+#include <array>
 #include <iostream>
 int main() {
  @autoreleasepool {
@@ -13,7 +14,7 @@ int main() {
     assert(unit && !error);
     // Deliberately fetch the block BEFORE allocation and before configuring 48 kHz.
     auto render=unit.internalRenderBlock;
-    AVAudioFormat *format=[[AVAudioFormat alloc] initStandardFormatWithSampleRate:48000 channels:2];
+    AVAudioFormat *format=[[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatFloat32 sampleRate:48000 channels:2 interleaved:YES];
     assert([unit.inputBusses[0] setFormat:format error:&error]);
     assert([unit.outputBusses[0] setFormat:format error:&error]);
     unit.maximumFramesToRender=8192;
@@ -28,6 +29,9 @@ int main() {
     assert(sent==0);
     assert([unit allocateRenderResourcesAndReturnError:&error] && !error);
     assert(sent==0);
+    std::array<float,16384> scratch{};
+    AudioBufferList output{};output.mNumberBuffers=1;
+    output.mBuffers[0].mNumberChannels=2;output.mBuffers[0].mData=scratch.data();
     AUEventSampleTime cursor=0;
     auto pump=[&](AVAudioFrameCount frames,int command=-1,int number=0,int value=0) {
         AudioTimeStamp timestamp{};timestamp.mFlags=kAudioTimeStampSampleTimeValid;timestamp.mSampleTime=static_cast<Float64>(cursor);
@@ -35,7 +39,9 @@ int main() {
         event.MIDI.cable=0;event.MIDI.length=static_cast<uint16_t>(command==0xFC?1:3);
         event.MIDI.data[0]=static_cast<uint8_t>(command);event.MIDI.data[1]=static_cast<uint8_t>(number);event.MIDI.data[2]=static_cast<uint8_t>(value);
         AudioUnitRenderActionFlags flags=0;
-        assert(render(&flags,&timestamp,frames,0,nullptr,command<0?nullptr:&event,nil)==noErr);
+        scratch.fill(1);output.mBuffers[0].mDataByteSize=frames*2*sizeof(float);
+        assert(render(&flags,&timestamp,frames,0,&output,command<0?nullptr:&event,nil)==noErr);
+        for(std::size_t i=0;i<2*frames;++i)assert(scratch[i]==0);
         cursor+=frames;
     };
     pump(48,0xBE,16,64);assert(sent==1&&lastStatus==0xBA&&lastNumber==48&&lastValue==64);
@@ -45,6 +51,9 @@ int main() {
     xone::host::SessionImage decoded{};
     assert(xone::host::decodeSession(static_cast<const uint8_t *>(saved.bytes),saved.length,decoded));
     assert(decoded.desired[1328]==100&&decoded.desired[1329]==-2);
+    NSData *generic=unit.fullState[@"XONE_LAST_LIVE_V1"];
+    assert([generic isKindOfClass:[NSData class]]);
+    assert(xone::host::decodeSession(static_cast<const uint8_t *>(generic.bytes),generic.length,decoded)&&decoded.desired[1328]==100);
     // 48 kHz: age 199 ms must not become LONG; the next millisecond must.
     pump(48,0x9E,13,127);pump(4800);pump(4704);
     NSString *trace=[unit drainDiagnosticText];
@@ -65,11 +74,13 @@ int main() {
     // A new real AU subclass instance receives the saved document, not the old engine.
     XoneMidiAudioUnit *reopened=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
     assert(reopened && !error);reopened.MIDIOutputEventBlock=unit.MIDIOutputEventBlock;
-    reopened.fullStateForDocument=state;
+    assert([reopened.inputBusses[0] setFormat:format error:&error]);
+    assert([reopened.outputBusses[0] setFormat:format error:&error]);
+    reopened.fullState=state; // generic API restore, document API readback
     assert([reopened allocateRenderResourcesAndReturnError:&error]);
     auto reopenedRender=reopened.internalRenderBlock;
     AudioTimeStamp timestamp{};timestamp.mFlags=kAudioTimeStampSampleTimeValid;AudioUnitRenderActionFlags flags=0;
-    assert(reopenedRender(&flags,&timestamp,48,0,nullptr,nullptr,nil)==noErr && sent==2);
+    assert(reopenedRender(&flags,&timestamp,48,0,&output,nullptr,nil)==noErr && sent==2);
     NSData *reloaded=reopened.fullStateForDocument[@"XONE_LAST_LIVE_V1"];
     assert(xone::host::decodeSession(static_cast<const uint8_t *>(reloaded.bytes),reloaded.length,decoded)&&decoded.desired[1328]==100);
     [reopened deallocateRenderResources];
