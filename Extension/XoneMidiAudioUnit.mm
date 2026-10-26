@@ -61,7 +61,7 @@
     auto *known = &_transportKnown;
     auto *moving = &_moving;
     auto *elapsedMs = &_gestureElapsedMs;
-    const double rate = _gestureSampleRate > 0 ? _gestureSampleRate : 44100;
+    const double *sampleRate = &_gestureSampleRate;
     AUHostTransportStateBlock __strong *transportSlot = &_cachedTransport;
     return ^AUAudioUnitStatus(AudioUnitRenderActionFlags *actionFlags,
                              const AudioTimeStamp *timestamp,
@@ -71,6 +71,8 @@
                              const AURenderEvent *realtimeEventListHead,
                              AURenderPullInputBlock pullInputBlock) {
         (void)actionFlags; (void)outputBusNumber; (void)pullInputBlock;
+        // Read the rate initialized at allocation, even if this block was fetched earlier.
+        const double rate = *sampleRate > 0 ? *sampleRate : 44100;
         AUMIDIOutputEventBlock __unsafe_unretained sendMIDI = *slot;
         AUHostTransportStateBlock __unsafe_unretained transport = *transportSlot;
         const auto bufferStart = static_cast<AUEventSampleTime>(timestamp->mSampleTime);
