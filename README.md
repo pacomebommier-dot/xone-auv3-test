@@ -1,3 +1,11 @@
+# Branche native L02 — V0.2 en cours de recette
+
+La V0.2 embarque une tranche C++ bornée : deux CC CH1, SurfaceInput CH15 en diagnostic, traces RX/DECISION/TX. Les 12 modules L01/11 sont préservés et testés ; leur présence ne termine pas les lots musicaux. Voir [clôture L01](docs/reprise/CLOTURE_L01.md) et [recette sans K2](docs/reprise/RECETTE_AUM_V02.md).
+
+IPA non signé produit par la CI de cette branche ; signature et essai AUM iPhone restent distincts du build. Composant Xn02 et bundle IDs distincts de V0.1. Aucun merge main ni changement GOLDEN/S7/S8.
+
+---
+
 # XONE ENGINE TEST — V0.1 (prototype AUv3 MIDI pour iPad)
 
 Date : 23 octobre 2026

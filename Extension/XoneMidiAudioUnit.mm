@@ -79,7 +79,8 @@
             } else { *known = false; }
         }
         unsigned processed = 0;
-        for (const AURenderEvent *event = realtimeEventListHead;
+        const AURenderEvent *event = realtimeEventListHead;
+        for (;
              event != nullptr && processed < 256; event = event->head.next, ++processed) {
             if (event->head.eventType != AURenderEventMIDI) continue;
             const auto &m = event->MIDI;
@@ -95,6 +96,7 @@
             if (sendMIDI) engine->sent(result, sendMIDI(sample, 0, 3, result.bytes));
             else engine->noOutput(result);
         }
+        if (event != nullptr) engine->renderOverflow(bufferStart);
         // Aucune production audio. Rendre un tampon silencieux si fourni.
         if (outputData) {
             for (UInt32 n = 0; n < outputData->mNumberBuffers; n++) {
@@ -107,9 +109,9 @@
 }
 - (NSString *)drainDiagnosticText {
     // UI main thread only: the sole trace consumer. Formatting stays off render thread.
-    static const char *stages[] = {"RX_IN","DECISION","TX_OUT","RX_FEEDBACK","STOP"};
+    static const char *stages[] = {"RX_IN","DECISION","TX_OUT","RX_FEEDBACK","STOP","OVERFLOW"};
     static const char *reasons[] = {"MAPPED","SURFACE_ONLY","REJECTED","UNTRUSTED","SENT","SEND_FAILED","NO_OUTPUT"};
-    NSMutableString *text = [NSMutableString stringWithFormat:@"V0.2 | RX_FEEDBACK=UNKNOWN | dropped=%u\n", _engine.dropped()];
+    NSMutableString *text = [NSMutableString stringWithFormat:@"V0.2 | RX_FEEDBACK=UNKNOWN | dropped=%u | overflowBuffers=%u\n", _engine.dropped(), _engine.overflows()];
     xone::host::Trace t{};
     for (unsigned n=0; n<256 && _engine.pop(t); ++n) {
         [text appendFormat:@"%u s=%lld %s %s cable=%u len=%u %02X %02X %02X result=%d\n",

@@ -39,5 +39,8 @@ int main() {
     assert(e.observed()==-2);
     Trace t{}; unsigned count=0; while(e.pop(t)) {++count; assert(count<=HostEngine::TraceCapacity);}
     assert(count>0);
+    e.renderOverflow(6000);
+    assert(e.overflows()==1);
+    assert(e.pop(t) && t.stage==Stage::Overflow && t.sample==6000);
     std::cout << "PASS L02 CC values, trace order, origin gate, loop rejection, UNKNOWN, STOP/real UP, overflow\n";
 }

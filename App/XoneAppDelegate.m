@@ -6,7 +6,7 @@
     (void)application; (void)launchOptions;
     self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     UIViewController *screen = [UIViewController new];
-    screen.view.backgroundColor = [UIColor colorWithRed:0.055 green:0.075 blue:0.205 alpha:1];
+    screen.view.backgroundColor = [UIColor colorWithRed:0.055 green:0.075 blue:0.105 alpha:1];
 
     UILabel *label = [UILabel new];
     label.translatesAutoresizingMaskIntoConstraints = NO;

@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <cstddef>
 namespace xone::host {
-enum class Stage : uint8_t { RxIn, Decision, TxOut, RxFeedback, Stop };
+enum class Stage : uint8_t { RxIn, Decision, TxOut, RxFeedback, Stop, Overflow };
 enum class Reason : uint8_t { Mapped, SurfaceOnly, Rejected, Untrusted, Sent, SendFailed, NoOutput };
 struct Trace {
     uint32_t sequence{};
@@ -67,6 +67,11 @@ public:
         t=trace_[r%TraceCapacity];read_.store(r+1,std::memory_order_release);return true;
     }
     uint32_t dropped() const noexcept {return dropped_.load(std::memory_order_relaxed);}
+    void renderOverflow(int64_t sample) noexcept {
+        overflows_.fetch_add(1,std::memory_order_relaxed);
+        record(++sequence_,sample,Stage::Overflow,Reason::Rejected,0,nullptr,0);
+    }
+    uint32_t overflows() const noexcept {return overflows_.load(std::memory_order_relaxed);}
 private:
     void record(uint32_t sequence,int64_t sample,Stage stage,Reason reason,uint8_t cable,
                 const uint8_t* bytes,size_t length,int32_t result=0) noexcept {
@@ -81,7 +86,7 @@ private:
     }
     l01::SurfaceInput surface_{};
     std::array<Trace,TraceCapacity> trace_{};
-    std::atomic<uint32_t> read_{0},write_{0},dropped_{0};
+    std::atomic<uint32_t> read_{0},write_{0},dropped_{0},overflows_{0};
     uint32_t sequence_{};
 };
 }
