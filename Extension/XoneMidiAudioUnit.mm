@@ -53,6 +53,33 @@
     [super deallocateRenderResources];
 }
 
+// Host/document methods stay off the render thread. The superclass retains its keys.
+- (NSDictionary<NSString *,id> *)fullStateForDocument {
+    @synchronized (self) {
+        NSMutableDictionary *state = [[super fullStateForDocument] mutableCopy];
+        if (!state) state = [NSMutableDictionary dictionary];
+        [state removeObjectForKey:@"XONE_LAST_LIVE_V1"];
+        xone::host::SessionBytes bytes{};
+        const auto image = _engine.sessionForHost();
+        if (xone::host::encodeSession(image, bytes))
+            state[@"XONE_LAST_LIVE_V1"] = [NSData dataWithBytes:bytes.data() length:bytes.size()];
+        return state;
+    }
+}
+- (void)setFullStateForDocument:(NSDictionary<NSString *,id> *)state {
+    @synchronized (self) {
+        id payload = state[@"XONE_LAST_LIVE_V1"];
+        if (payload) {
+            if (![payload isKindOfClass:[NSData class]]) return;
+            NSData *data = (NSData *)payload;
+            xone::host::SessionImage image{};
+            if (!xone::host::decodeSession((const uint8_t *)data.bytes, data.length, image)) return;
+            if (!_engine.requestSessionRestore(image)) return;
+        }
+        [super setFullStateForDocument:state];
+    }
+}
+
 - (AUInternalRenderBlock)internalRenderBlock {
     // Capturer seulement l'adresse du slot de sortie, pas d'envoi de message à self
     // dans le rendu temps réel. Ne pas allouer ni journaliser dans ce bloc.
@@ -71,6 +98,7 @@
                              const AURenderEvent *realtimeEventListHead,
                              AURenderPullInputBlock pullInputBlock) {
         (void)actionFlags; (void)outputBusNumber; (void)pullInputBlock;
+        engine->beginRenderBuffer();
         // Read the rate initialized at allocation, even if this block was fetched earlier.
         const double rate = *sampleRate > 0 ? *sampleRate : 44100;
         AUMIDIOutputEventBlock __unsafe_unretained sendMIDI = *slot;
@@ -107,6 +135,7 @@
         // Rendering progresses while transport is stopped; seeking cannot rewind gestures.
         *elapsedMs += 1000.0 * frameCount / rate;
         engine->advance(static_cast<int64_t>(*elapsedMs), bufferStart+frameCount);
+        engine->endRenderBuffer();
         // Aucune production audio. Rendre un tampon silencieux si fourni.
         if (outputData) {
             for (UInt32 n = 0; n < outputData->mNumberBuffers; n++) {

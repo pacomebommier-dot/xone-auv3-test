@@ -2,6 +2,7 @@
 // Native V3 host: K2 surface/gestures/NAV connected; known-session continuous LIVE/S4 connected; S8 specialization remains pending.
 #include "../Core/CoreCoordinator.hpp"
 #include "XoneContinuousInput.hpp"
+#include "XoneSession.hpp"
 #include <atomic>
 #include <array>
 #include <cstdint>
@@ -67,6 +68,33 @@ public:
     // Lifecycle-only restore: call before rendering starts, never from UI during render.
     bool restoreSessionBeforeRendering(const l01::LiveState::SessionImage& image) noexcept {
         return !started_&&core_.restoreNativeSessionForDiagnostic(image);
+    }
+    // UI/host thread only, serialized externally. Do not call core from these methods.
+    bool requestSessionRestore(const SessionImage& image) noexcept {
+        if(!validSession(image)||requestedToken_==0xFFFFFFFFu)return false;
+        uiSession_={image,++requestedToken_};restores_.publish(uiSession_);return true;
+    }
+    SessionImage sessionForHost() noexcept {
+        SessionFrame next{};
+        if(snapshots_.take(next)&&next.token>=requestedToken_)uiSession_=next;
+        return uiSession_.image;
+    }
+    // Render boundaries are the sole application/publication points.
+    void beginRenderBuffer() noexcept {
+        started_=true;
+        if(!restores_.hasUpdate()||core_.output().outstanding()!=0)return;
+        for(std::size_t i=0;i<36;++i)if(core_.surface().held(i))return;
+        SessionFrame next{};
+        if(restores_.take(next)&&core_.restoreNativeSessionForDiagnostic(next.image)){
+            appliedToken_=next.token;pickup_=ContinuousPickup{};
+            core_.output()=l01::OutputS4{};core_.enableTestMidiProjection(true);
+        }
+    }
+    void endRenderBuffer() noexcept {
+        const auto revision=core_.nativeLive().revision();
+        if(revision==publishedRevision_&&appliedToken_==publishedToken_)return;
+        snapshots_.publish({core_.nativeLive().snapshot(),appliedToken_});
+        publishedRevision_=revision;publishedToken_=appliedToken_;
     }
     l01::LiveRead desiredLive(int cell) const noexcept {return core_.nativeLive().desired(cell);}
     void sent(const Result& r,int32_t status) noexcept {
@@ -150,6 +178,10 @@ private:
     l01::CoreCoordinator core_{};
     ContinuousPickup pickup_{};
     bool started_{};
+    SessionMailbox restores_{},snapshots_{};
+    SessionFrame uiSession_{}; // UI owns cache and request generation.
+    uint32_t requestedToken_{}; // UI only
+    uint32_t appliedToken_{},publishedToken_{},publishedRevision_{}; // render only
     std::array<Trace,TraceCapacity> trace_{};
     std::atomic<uint32_t> read_{0},write_{0},dropped_{0},overflows_{0};
     uint32_t sequence_{};

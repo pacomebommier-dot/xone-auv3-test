@@ -5,7 +5,7 @@ compiler=${CXX:-clang++}
 out=${TEST_OUTPUT:-evidence/ci}
 mkdir -p "$out"
 "$compiler" --version | tee "$out/compiler.txt"
-flags=(-std=c++17 -O2 -UNDEBUG -Wall -Wextra -Wpedantic -Werror)
+flags=(-pthread -std=c++17 -O2 -UNDEBUG -Wall -Wextra -Wpedantic -Werror)
 if [[ "${SANITIZE:-0}" == 1 ]]; then
   flags+=(-O0 -g -fsanitize=address,undefined -fno-omit-frame-pointer)
 fi
