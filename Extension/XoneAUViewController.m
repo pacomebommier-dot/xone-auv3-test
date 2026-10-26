@@ -5,6 +5,9 @@
 
 @interface XoneAUViewController : AUViewController <AUAudioUnitFactory>
 @property (nonatomic, strong) XoneMidiAudioUnit *xoneUnit;
+@property (nonatomic, strong) UILabel *traceLabel;
+@property (nonatomic, strong) NSTimer *traceTimer;
+@property (nonatomic, strong) NSMutableString *traceHistory;
 @end
 
 @implementation XoneAUViewController
@@ -28,7 +31,9 @@
     info.numberOfLines = 0;
     info.textColor = UIColor.whiteColor;
     info.font = [UIFont monospacedSystemFontOfSize:14 weight:UIFontWeightRegular];
-    info.text = @"XONE ENGINE · TEST 0.1\n\nAUv3 MIDI Processor (aumi)\n\nCC 4 → CC 74 · canal 1\nCC 8 → CC 71 · canal 1\n\nRoutez uniquement le XONE:K2 en entrée.\nConnectez XONE TEST OUT à un moniteur MIDI.\nPas de commande LED dans cette version.";
+    self.traceLabel = info;
+    self.traceHistory = [NSMutableString stringWithString:@"XONE ENGINE V0.2 · C++ L02\nCH1: CC4→74 / CC8→71, valeurs conservées.\nCH15: SurfaceInput diagnostic seul, aucune sortie.\nRX_FEEDBACK=UNKNOWN (aucun binding authentifié).\nSource virtuelle → XONE V0.2 → moniteur, aucune boucle.\n\n"];
+    info.text = self.traceHistory;
     [scroll addSubview:info];
 
     [NSLayoutConstraint activateConstraints:@[
@@ -44,4 +49,22 @@
     ]];
     self.view = root;
 }
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self.traceTimer invalidate];
+    __weak XoneAUViewController *weakSelf = self;
+    self.traceTimer = [NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *timer) {
+        (void)timer;
+        XoneAUViewController *owner = weakSelf;
+        if (!owner.xoneUnit) return;
+        [owner.traceHistory appendString:[owner.xoneUnit drainDiagnosticText]];
+        if (owner.traceHistory.length > 24000) [owner.traceHistory deleteCharactersInRange:NSMakeRange(0, owner.traceHistory.length-16000)];
+        owner.traceLabel.text = owner.traceHistory;
+    }];
+}
+- (void)viewDidDisappear:(BOOL)animated {
+    [self.traceTimer invalidate]; self.traceTimer = nil;
+    [super viewDidDisappear:animated];
+}
+- (void)dealloc { [_traceTimer invalidate]; }
 @end

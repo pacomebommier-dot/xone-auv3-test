@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>fr</string>
 	<key>CFBundleDisplayName</key>
-	<string>XONE ENGINE TEST</string>
+	<string>XONE ENGINE V0.2</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -17,7 +17,7 @@
 	<key>CFBundlePackageType</key>
 	<string>XPC!</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1</string>
+	<string>0.2</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>NSExtension</key>
@@ -32,13 +32,13 @@
 			<array>
 				<dict>
 					<key>name</key>
-					<string>XONE Lab: XONE ENGINE TEST</string>
+					<string>XONE Lab: XONE ENGINE V0.2</string>
 					<key>description</key>
-					<string>Two XONE MIDI CC remapping tests</string>
+					<string>Native C++ MIDI diagnostic V0.2</string>
 					<key>manufacturer</key>
 					<string>XnLb</string>
 					<key>subtype</key>
-					<string>Xn01</string>
+					<string>Xn02</string>
 					<key>type</key>
 					<string>aumi</string>
 					<key>version</key>
