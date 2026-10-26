@@ -18,13 +18,23 @@ struct Trace {
     uint8_t cable{},length{},bytes[3]{};
     int32_t result{};
 };
+struct PendingPacket {uint8_t bytes[3]{};int api{-1},value{},type{10};};
 struct Result {
     bool emit{};
     uint8_t bytes[3]{};
     uint32_t sequence{};
     int64_t sample{};
     bool musical{};
-    int api{-1},value{};
+    int api{-1},value{},type{10};
+    std::array<PendingPacket,2> extra{};
+    unsigned extraCount{};
+    unsigned packetCount() const noexcept {return emit?1+extraCount:0;}
+    Result packet(unsigned i) const noexcept {
+        if(!emit||i>extraCount)return {};
+        if(i==0)return {true,{bytes[0],bytes[1],bytes[2]},sequence,sample,musical,api,value,type};
+        const auto& p=extra[i-1];
+        return {true,{p.bytes[0],p.bytes[1],p.bytes[2]},sequence,sample,true,p.api,p.value,p.type};
+    }
 };
 class HostEngine {
 public:
@@ -32,6 +42,7 @@ public:
         core_.initializeSourceDefaultNav();
         core_.enableDiagnosticLive(true);
         core_.enableTestMidiProjection(true);
+        core_.enableDiagnosticTouchNav(true); // source @zk/@zl selection, not SPOT TOUCH output
         core_.enableDiagnosticQualifiedNav(true); // source-qualified SHORT/LONG NAV only
     }
     static constexpr uint32_t TraceCapacity=256;
@@ -98,7 +109,7 @@ public:
     }
     l01::LiveRead desiredLive(int cell) const noexcept {return core_.nativeLive().desired(cell);}
     void sent(const Result& r,int32_t status) noexcept {
-        if(r.musical&&status==0){core_.output().apply({10,r.api,r.value,127});core_.output().drain();}
+        if(r.musical&&status==0){core_.output().apply({r.type,r.api,r.value,127});core_.output().drain();}
         record(r.sequence,r.sample,Stage::TxOut,status==0?Reason::Sent:Reason::SendFailed,0,r.bytes,3,status);
     }
     void noOutput(const Result& r) noexcept {
@@ -136,19 +147,39 @@ public:
 private:
     Result continuous(int cc,int raw,int64_t ms,uint32_t seq,int64_t sample) noexcept {
         const auto target=continuousTarget(core_.nativeNav().active().route(36+cc));
-        // LOOP needs coherent derived r1/r2/r3 batches, never raw b1/b2/b3/m.
-        if(!target.valid()||(target.api>=569&&target.api<=573))return {};
+        if(!target.valid()||target.api==572)return {};
         const auto live=core_.nativeLive().desired(target.cell);
         if(!live.known){record(seq,sample,Stage::Decision,Reason::UnknownLive,0,nullptr,0);return {};}
         if(core_.nativeLive().revision()>=l01::LiveState::MaxRevision)return {};
         const int value=pickup_.consider(cc,target.api,live.value,raw,ms);
         if(value<0){record(seq,sample,Stage::Decision,Reason::PickupWait,0,nullptr,0);return {};}
+        const bool loop=(target.api>=569&&target.api<=571)||target.api==573;
         auto projection=core_.output();
-        if(!projection.apply({10,target.api,value,127}))return {};
+        if(loop){
+            // Compute every derived gain from one staged LIVE revision; m has no CC.
+            auto multiplier=core_.nativeLive().desired(1341);
+            if(target.cell==1341)multiplier={true,value};
+            const int first=target.cell==1341?0:target.api-569;
+            const int last=target.cell==1341?3:first+1;
+            for(int i=first;i<last;++i){
+                auto base=core_.nativeLive().desired(1337+i);
+                if(target.cell==1337+i)base={true,value};
+                if(base.known&&multiplier.known){
+                    const int gain=(base.value*multiplier.value+63)/127;
+                    if(!projection.apply({15,569+i,gain,127}))return {};
+                }else record(seq,sample,Stage::Decision,Reason::UnknownLive,0,nullptr,0);
+            }
+        }else if(!projection.apply({10,target.api,value,127}))return {};
         if(!core_.commitNativeLive(target.cell,value,core_.nativeLive().revision()))return {};
         if(projection.emitted()==0)return {};
-        const auto packet=projection.packet(0);
-        Result r{true,{packet.status,packet.number,packet.value},seq,sample,true,target.api,value};
+        Result r{};
+        for(std::size_t i=0;i<projection.emitted();++i){
+            const auto p=projection.packet(i);
+            const int api=(static_cast<int>(p.status)-0xB0-6)*128+p.number;
+            const int type=loop?15:10;
+            if(i==0)r={true,{p.status,p.number,p.value},seq,sample,true,api,p.value,type};
+            else {r.extra[i-1]={{p.status,p.number,p.value},api,p.value,type};++r.extraCount;}
+        }
         record(seq,sample,Stage::Decision,Reason::Musical,0,r.bytes,3);
         return r;
     }

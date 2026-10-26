@@ -127,9 +127,11 @@
             if (frameCount && sample >= bufferStart + frameCount) sample = bufferStart + frameCount - 1;
             const auto ms = static_cast<int64_t>(*elapsedMs + 1000.0 * (sample-bufferStart) / rate);
             const auto result = engine->receive(m.cable, m.data, m.length, sample, ms);
-            if (!result.emit) continue;
-            if (sendMIDI) engine->sent(result, sendMIDI(sample, 0, 3, result.bytes));
-            else engine->noOutput(result);
+            for (unsigned n=0; n<result.packetCount(); ++n) {
+                const auto packet = result.packet(n);
+                if (sendMIDI) engine->sent(packet, sendMIDI(sample, 0, 3, packet.bytes));
+                else engine->noOutput(packet);
+            }
         }
         if (event != nullptr) engine->renderOverflow(bufferStart);
         // Rendering progresses while transport is stopped; seeking cannot rewind gestures.
