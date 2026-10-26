@@ -1,7 +1,7 @@
 name: L02 native V0.2 build and tests
 on:
   push:
-    branches: [feature/native-l02-v02]
+    branches: [feature/native-l02-v02, feature/native-integration-v3]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -16,7 +16,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Archive integrity and documentary counts
-        run: python3 tools/verify_source.py
+        run: |
+          python3 tools/verify_source.py
+          python3 tools/verify_simulator.py
       - name: Portable suites
         env:
           CXX: ${{ matrix.compiler }}

@@ -11,6 +11,7 @@
     AUHostTransportStateBlock _cachedTransport;
     xone::host::HostEngine _engine;
     bool _transportKnown, _moving;
+    double _gestureElapsedMs, _gestureSampleRate;
 }
 
 - (instancetype)initWithComponentDescription:(AudioComponentDescription)componentDescription
@@ -42,6 +43,7 @@
     _cachedMIDIOutput = [self.MIDIOutputEventBlock copy];
     _cachedTransport = [self.transportStateBlock copy];
     _transportKnown = false;
+    _gestureSampleRate = self.outputBusses[0].format.sampleRate;
     return YES;
 }
 
@@ -58,6 +60,8 @@
     auto *engine = &_engine;
     auto *known = &_transportKnown;
     auto *moving = &_moving;
+    auto *elapsedMs = &_gestureElapsedMs;
+    const double rate = _gestureSampleRate > 0 ? _gestureSampleRate : 44100;
     AUHostTransportStateBlock __strong *transportSlot = &_cachedTransport;
     return ^AUAudioUnitStatus(AudioUnitRenderActionFlags *actionFlags,
                              const AudioTimeStamp *timestamp,
@@ -91,12 +95,16 @@
             AUEventSampleTime sample = m.eventSampleTime;
             if (sample < bufferStart) sample = bufferStart;
             if (frameCount && sample >= bufferStart + frameCount) sample = bufferStart + frameCount - 1;
-            const auto result = engine->receive(m.cable, m.data, m.length, sample);
+            const auto ms = static_cast<int64_t>(*elapsedMs + 1000.0 * (sample-bufferStart) / rate);
+            const auto result = engine->receive(m.cable, m.data, m.length, sample, ms);
             if (!result.emit) continue;
             if (sendMIDI) engine->sent(result, sendMIDI(sample, 0, 3, result.bytes));
             else engine->noOutput(result);
         }
         if (event != nullptr) engine->renderOverflow(bufferStart);
+        // Rendering progresses while transport is stopped; seeking cannot rewind gestures.
+        *elapsedMs += 1000.0 * frameCount / rate;
+        engine->advance(static_cast<int64_t>(*elapsedMs), bufferStart+frameCount);
         // Aucune production audio. Rendre un tampon silencieux si fourni.
         if (outputData) {
             for (UInt32 n = 0; n < outputData->mNumberBuffers; n++) {
@@ -109,9 +117,9 @@
 }
 - (NSString *)drainDiagnosticText {
     // UI main thread only: the sole trace consumer. Formatting stays off render thread.
-    static const char *stages[] = {"RX_IN","DECISION","TX_OUT","RX_FEEDBACK","STOP","OVERFLOW"};
-    static const char *reasons[] = {"MAPPED","SURFACE_ONLY","REJECTED","UNTRUSTED","SENT","SEND_FAILED","NO_OUTPUT"};
-    NSMutableString *text = [NSMutableString stringWithFormat:@"V0.2 | RX_FEEDBACK=UNKNOWN | dropped=%u | overflowBuffers=%u\n", _engine.dropped(), _engine.overflows()];
+    static const char *stages[] = {"RX_IN","DECISION","TX_OUT","RX_FEEDBACK","STOP","OVERFLOW","GESTURE"};
+    static const char *reasons[] = {"MAPPED","SURFACE_ONLY","REJECTED","UNTRUSTED","SENT","SEND_FAILED","NO_OUTPUT","RECEIVED","INTEGRATED","QUALIFIED","CLOCK_REJECTED"};
+    NSMutableString *text = [NSMutableString stringWithFormat:@"V3 dev | K2/S2/NAV | RX_FEEDBACK=UNKNOWN | dropped=%u | overflowBuffers=%u\n", _engine.dropped(), _engine.overflows()];
     xone::host::Trace t{};
     for (unsigned n=0; n<256 && _engine.pop(t); ++n) {
         [text appendFormat:@"%u s=%lld %s %s cable=%u len=%u %02X %02X %02X result=%d\n",

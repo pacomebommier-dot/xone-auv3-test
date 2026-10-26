@@ -1,0 +1,13 @@
+PASS batch explicit valid CC produces test trace
+PASS batch rejects stale LIVE revision
+PASS batch rejects incorrect profile
+PASS batch rejects without NAV
+PASS batch rejects disabled output
+PASS batch rejects without qualified diagnostic
+PASS batch rejects invalid MIDI with complete rollback
+PASS batch valid pair preserves order
+PASS batch forbids zero and overflow
+PASS physical gesture never auto routes S4
+PASS batch refuses during LONG
+PASS STOP keeps no fake output
+PASS 12 L01/11 staged S3/S4 bridge diagnostic scenarios

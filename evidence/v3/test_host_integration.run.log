@@ -1,0 +1,1 @@
+PASS host K2->S1->S2->S3 NAV SHORT/LONG/STOP, independent clock, bounded trace

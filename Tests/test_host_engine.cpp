@@ -11,7 +11,7 @@ int main() {
             assert(r.emit && r.bytes[0]==0xB0 && r.bytes[1]==(cc==4?74:71) && r.bytes[2]==v);
             e.sent(r,0);
             Trace t{};
-            assert(e.pop(t) && t.stage==Stage::RxIn);
+            assert(e.pop(t) && t.stage==Stage::RxIn && t.reason!=Reason::Rejected);
             assert(e.pop(t) && t.stage==Stage::Decision && t.reason==Reason::Mapped);
             assert(e.pop(t) && t.stage==Stage::TxOut && t.sample==1000+v);
             assert(!e.pop(t));
