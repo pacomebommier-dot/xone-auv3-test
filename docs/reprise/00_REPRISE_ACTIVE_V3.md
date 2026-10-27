@@ -3,6 +3,10 @@
 
 Reprise MUTE/SOLO/BAR et LED : voir [INTEGRATION_V3_MUTE.md](INTEGRATION_V3_MUTE.md), qui complète les checkpoints historiques ci-dessous. Les LED MUTE sont raccordées au callback AU ; les sélecteurs BASE connus du contexte NAV sont aussi restitués ; les vues BASE FX/MEMORY restent ouvertes.
 
+## Suivi des prochaines tâches avant AUM
+
+Suivi courant : [SUIVI_REGROUPE_AVANT_L15.md](SUIVI_REGROUPE_AVANT_L15.md). **0/6 regroupements suivants validés automatiquement ; 6 restants. Prochaine tâche : 1/6 — Actions et sorties musicales restantes (à démarrer).** Annoncer le numéro/total et le nombre restant à chaque reprise, puis actualiser le suivi avec les commits et CI. Les indications de prochaine action plus anciennes ci-dessous sont complétées par ce suivi ; les preuves historiques restent conservées.
+
 ## Code et preuves
 - e2dcfec : surface K2, gestes S2 et NAV S3 raccordés au callback AUv3 ; DEF-L02-TRACE-01 corrigé. K2_SIM unique préparé en source Mozaic.
 - 08790d0 : sample rate lu après allocation des ressources de rendu.
