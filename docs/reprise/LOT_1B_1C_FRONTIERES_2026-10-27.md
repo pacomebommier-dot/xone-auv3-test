@@ -1,5 +1,9 @@
 # Tâche 1/6 — LOAD et sorties TOP/BOT
 
+Commit fonctionnel : `50fea91e0e4ff7f6b2d2cac368dc5d7b6f04f743`.
+CI complète PASS : https://github.com/pacomebommier-dot/xone-auv3-test/actions/runs/40578887558.
+GCC, Clang, Apple Clang, ASan/UBSan, vrai wrapper AU macOS, build iOS non signé et artefacts : PASS. Les 50 suites C++ du glob CI et les tests C sont exercés. Cinq suites E3 ciblées finales PASS localement avec GCC, assertions et warnings fatals. Ce checkpoint ne valide pas les fonctions externes ci-dessous.
+
 ## Lot 1B
 
 `HostEngine::BrowserLoadRequest` ajoute une remise de commande à usage unique : deck explicitement configuré, séquence du dernier CC51 livré et séquence du PUSH propriétaire. `pendingBrowserLoad` permet la lecture ; `consumeBrowserLoad` refuse anciennes demandes et doubles consommations. Nouvelle sélection et STOP annulent la demande non remise. Fenêtre de 3 s, owner23, vrai DOWN/UP et priorité sur MUTE sont conservés.

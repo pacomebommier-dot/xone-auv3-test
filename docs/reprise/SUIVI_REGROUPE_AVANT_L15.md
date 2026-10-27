@@ -47,7 +47,7 @@ Si une dépendance bloquante démontrée impose de modifier ce découpage, l’i
 
 | Tâche | Commit(s) fonctionnel(s) | CI | Réserves avant L15 |
 |---|---|---|---|
-| 1/6 | Voir `LOT_1A_DJ_LOOP_2026-10-27.md` et `LOT_1B_1C_FRONTIERES_2026-10-27.md` | 1A PASS : [40576338105](https://github.com/pacomebommier-dot/xone-auv3-test/actions/runs/40576338105) ; 1B/1C en validation | START/STOP audio externe, LOAD et defaults FILTER non reliés ; tâche non clôturée |
+| 1/6 | Voir `LOT_1A_DJ_LOOP_2026-10-27.md` et `LOT_1B_1C_FRONTIERES_2026-10-27.md` | 1A PASS : [40576338105](https://github.com/pacomebommier-dot/xone-auv3-test/actions/runs/40576338105) ; 1B/1C PASS automatique sur `50fea91` : [40578887558](https://github.com/pacomebommier-dot/xone-auv3-test/actions/runs/40578887558) ; frontières exécutantes ouvertes | START/STOP audio externe, LOAD et defaults FILTER non reliés ; tâche non clôturée |
 | 2/6 | — | — | Non commencée |
 | 3/6 | — | — | Non commencée |
 | 4/6 | — | — | Non commencée |
