@@ -151,8 +151,19 @@
             }
         }
         const auto gridObservation=grid->scan(context,frameCount);
-        // The scheduler is connected, but no action is enqueued until L06 source handlers are qualified.
-        scheduler->consume(gridObservation, [](xone::host::DueAction) noexcept {});
+        // Dispatch each authenticated BAR in sample order. A BAR at the exact
+        // MIDI timestamp wins, so a gesture cannot arm retroactively.
+        unsigned gridRead=0;
+        const auto deliverGridThrough = [&](AUEventSampleTime sample) {
+            while(gridObservation.valid && !gridObservation.overflow &&
+                  gridRead<gridObservation.count &&
+                  bufferStart+gridObservation.events[gridRead].offset<=sample){
+                xone::host::GridBatch one{};
+                one.valid=true;one.count=1;one.events[0]=gridObservation.events[gridRead++];
+                scheduler->consume(one, [](xone::host::DueAction) noexcept {});
+                engine->onMusicalGrid(one);
+            }
+        };
         unsigned processed = 0;
         const AURenderEvent *event = realtimeEventListHead;
         for (;
@@ -163,6 +174,7 @@
             AUEventSampleTime sample = m.eventSampleTime;
             if (sample < bufferStart) sample = bufferStart;
             if (frameCount && sample >= bufferStart + frameCount) sample = bufferStart + frameCount - 1;
+            deliverGridThrough(sample);
             if (m.length == 1 && m.data[0] == 0xFC && m.cable == 0) {
                 scheduler->stop(); engine->stop(sample); flushStop(); continue;
             }
@@ -176,6 +188,7 @@
             }
         }
         if (event != nullptr) engine->renderOverflow(bufferStart);
+        else if(frameCount)deliverGridThrough(bufferStart+frameCount-1);
         // Rendering progresses while transport is stopped; seeking cannot rewind gestures.
         *elapsedMs += 1000.0 * frameCount / rate;
         engine->advance(static_cast<int64_t>(*elapsedMs), bufferStart+frameCount);
