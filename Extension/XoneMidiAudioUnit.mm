@@ -129,6 +129,20 @@
             }
         };
         const auto bufferStart = static_cast<AUEventSampleTime>(timestamp->mSampleTime);
+        // MUTE is the fixed virtual NOTE528..543 S7 API. A failed callback
+        // leaves the target dirty; next render retries without claiming delivery.
+        const auto flushMute = [&](AUEventSampleTime sample) {
+            unsigned cursor=0;
+            for(unsigned n=0;n<16;++n){
+                const auto packet=engine->nextMutePacket(cursor);
+                if(!packet.valid)break;
+                if(sendMIDI){
+                    const OSStatus result=sendMIDI(sample,0,3,packet.bytes);
+                    engine->ackMutePacket(packet.target,result==noErr);
+                }
+            }
+        };
+        flushMute(bufferStart); // old failed writes, no fabricated BAR
         if (transport) {
             AUHostTransportStateFlags flags = static_cast<AUHostTransportStateFlags>(0);
             if (transport(&flags, nullptr, nullptr, nullptr)) {
@@ -163,6 +177,7 @@
                 one.valid=true;one.count=1;one.events[0]=gridObservation.events[gridRead++];
                 scheduler->consume(one, [](xone::host::DueAction) noexcept {});
                 engine->onMusicalGrid(one);
+                flushMute(bufferStart+one.events[0].offset);
             }
         };
         unsigned processed = 0;
