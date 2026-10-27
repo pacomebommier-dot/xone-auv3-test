@@ -76,6 +76,7 @@ public:
     unsigned topPatchRecallsDeferred() const noexcept {return topPatchRecallsDeferred_;}
     enum class TopAction : uint8_t { FilterReset, PatchRecall };
     struct TopIntent {int physical{-1};l01::NavRoute route{};uint32_t sequence{};TopAction action{TopAction::FilterReset};};
+    struct TopCapture {l01::NavRoute route{};int context{-2};};
     bool lastTopIntent(unsigned index,TopIntent& out) const noexcept {
         if(index>=4||!topIntentValid_[index])return false;
         out=topIntents_[index];return true;
@@ -161,7 +162,10 @@ public:
             if(accepted&&(cmd==0x90||cmd==0x80)&&physical>=32&&physical<36&&wasHeld!=(cmd==0x90&&data[2]!=0)){
                 const bool down=cmd==0x90&&data[2]!=0;
                 if(down){
-                    topHold_[static_cast<std::size_t>(physical-32)]=core_.nativeNav().active().route(physical);
+                    topHold_[static_cast<std::size_t>(physical-32)]={
+                        core_.nativeNav().active().route(physical),
+                        core_.nativeNav().active().contextMode
+                    };
                 }else{
                     const auto captured=topHold_[static_cast<std::size_t>(physical-32)];
                     topHold_[static_cast<std::size_t>(physical-32)]={};
@@ -170,18 +174,18 @@ public:
                     // Store an observable deferred intent only if the captured
                     // physical destination has not changed during the gesture.
                     const auto current=core_.nativeNav().active().route(physical);
-                    if(captured.address>=0&&captured==current){
+                    if(captured.route.address>=0&&captured.route==current&&
+                       captured.context==core_.nativeNav().active().contextMode){
                         const auto index=static_cast<std::size_t>(physical-32);
                         // Source ownership: SAMPLE(mode3) and MACHINE(mode7)
                         // TOP1..3 are PATCH recalls, not FILTER RESET.
                         // TOP4 is invariant FILTER GLOBAL RESET.
-                        const int context=core_.nativeNav().active().contextMode;
-                        const bool patch=(physical!=35&&(context==3||context==7));
-                        topIntents_[index]={physical,captured,seq,patch?TopAction::PatchRecall:TopAction::FilterReset};
+                        const bool patch=(physical!=35&&(captured.context==3||captured.context==7));
+                        topIntents_[index]={physical,captured.route,seq,patch?TopAction::PatchRecall:TopAction::FilterReset};
                         topIntentValid_[index]=true;
                         if(patch)++topPatchRecallsDeferred_;
                         else ++topResetsDeferred_;
-                        record(seq,sample,Stage::Decision,Reason::TopResetDeferred,0,data,3,captured.address);
+                        record(seq,sample,Stage::Decision,Reason::TopResetDeferred,0,data,3,captured.route.address);
                     }
                 }
             }
@@ -525,7 +529,7 @@ private:
     l01::CoreCoordinatorV3 core_{};
     ContinuousPickup pickup_{};
     DjBrowserWindow browser_{};
-    std::array<l01::NavRoute,4> topHold_{};
+    std::array<TopCapture,4> topHold_{};
     std::array<TopIntent,4> topIntents_{};
     std::array<bool,4> topIntentValid_{};
     unsigned topResetsDeferred_{},topPatchRecallsDeferred_{};
