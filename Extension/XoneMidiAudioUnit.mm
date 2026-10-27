@@ -105,7 +105,7 @@
         AUMIDIOutputEventBlock __unsafe_unretained sendMIDI = *slot;
         AUHostTransportStateBlock __unsafe_unretained transport = *transportSlot;
         const auto flushStop = [&]() {
-            for (unsigned n=0; n<544; ++n) {
+            for (unsigned n=0; n<702; ++n) {
                 const auto packet=engine->nextStopPacket();
                 if (!packet.emit) break;
                 if (!engine->canSend(packet)) continue;
