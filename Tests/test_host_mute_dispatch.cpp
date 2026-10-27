@@ -8,7 +8,7 @@ static Result input(HostEngine& e,int note,bool down,int ms) {
 }
 static GridBatch bar(){GridBatch b{};b.valid=true;b.count=1;b.events[0]={GridKind::Bar,0,4};return b;}
 int main(){
- HostEngine e;
+ HostEngine e;e.enableNativeMutePage(true);
  input(e,13,true,0);input(e,13,false,50); // short BOT2
  assert(e.mutePageVisible());
  input(e,36,true,100);input(e,36,false,199); // BASE 1 short
