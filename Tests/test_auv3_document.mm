@@ -136,6 +136,43 @@ int main() {
     pump(48,0x8E,48,0);assert(sent==20&&lastStatus==0x86&&lastNumber==108&&lastValue==0);
     [clockUnit deallocateRenderResources];
 
+    // Native L06 harness: genuine host 120 BPM / 4:4 BAR, K2 BOT2 SHORT,
+    // physical BASE1 SHORT, virtual S7 MUTE Note528 ON exactly at BAR4.
+    XoneMidiAudioUnit *muteUnit=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
+    assert(muteUnit&&!error);muteUnit.MIDIOutputEventBlock=testOutput;
+    assert([muteUnit.inputBusses[0] setFormat:format error:&error]);
+    assert([muteUnit.outputBusses[0] setFormat:format error:&error]);
+    muteUnit.maximumFramesToRender=8192;
+    muteUnit.transportStateBlock=^BOOL(AUHostTransportStateFlags *flags,double *position,double *start,double *end){
+        (void)position;(void)start;(void)end;
+        if(flags)*flags=AUHostTransportStateMoving;
+        return YES;
+    };
+    cursor=0;
+    muteUnit.musicalContextBlock=^BOOL(double *tempo,double *numerator,NSInteger *denominator,
+                                        double *beatPosition,NSInteger *sampleOffsetToNextBeat,
+                                        double *currentMeasureDownbeatPosition){
+        if(tempo)*tempo=120;
+        if(numerator)*numerator=4;
+        if(denominator)*denominator=4;
+        if(beatPosition)*beatPosition=static_cast<double>(cursor)/24000.0;
+        if(sampleOffsetToNextBeat)*sampleOffsetToNextBeat=static_cast<NSInteger>(
+            ((cursor+23999)/24000)*24000-cursor);
+        if(currentMeasureDownbeatPosition)*currentMeasureDownbeatPosition=0;
+        return YES;
+    };
+    assert([muteUnit allocateRenderResourcesAndReturnError:&error]);
+    render=muteUnit.internalRenderBlock;
+    const NSUInteger beforeMute=sent;
+    pump(48,0x9E,13,127);
+    pump(48,0x8E,13,0);
+    pump(48,0x9E,36,127);
+    pump(48,0x8E,36,0);
+    assert(sent==beforeMute); // no immediate note output on K2 gesture
+    for(unsigned n=0;n<12;++n)pump(8192);
+    assert(sent==beforeMute+1&&lastStatus==0x9A&&lastNumber==16&&lastValue==127);
+    [muteUnit deallocateRenderResources];
+
     std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)\n";
  }
 }
