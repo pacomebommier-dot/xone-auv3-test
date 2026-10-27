@@ -75,6 +75,7 @@ public:
     // Requested state only; no backend status or audio-loop activation asserted.
     bool dj2LoopStartRequestedForDiagnostic() const noexcept {return dj2LoopStartRequested_;}
     uint32_t dj2LoopRequestsForDiagnostic() const noexcept {return dj2LoopRequests_;}
+    uint32_t dj2LoopStopRequestsForDiagnostic() const noexcept {return dj2LoopStopRequests_;}
     // A requested activation is not proof of audio playback. A verified
     // backend can later report ON/OFF through this explicitly gated seam.
     enum class Dj2LoopObserved : uint8_t { Unknown, Off, On };
@@ -369,7 +370,11 @@ public:
             ++stopPendingCount_;
         }
         muteGate_.stop();muteBridge_.stop();browser_.stop();dj2PushRotCaptured_=false;
+        // STOP requests DJ LOOP termination without claiming audio ACK.
+        if(dj2LoopStartRequested_||dj2LoopObserved_==Dj2LoopObserved::On)
+            ++dj2LoopStopRequests_;
         dj2LoopStartRequested_=false;
+        dj2LoopObserved_=Dj2LoopObserved::Unknown;
         for(auto& target:topHold_)target={};
         topIntentValid_.fill(false);
         core_.observeBrowserGuardForDiagnostic(false,0,0);
@@ -567,7 +572,7 @@ private:
     uint32_t dj2QualifiedTurns_{};int dj2LastQualifiedDelta_{};
     bool dj2PushRotCaptured_{},dj2LoopStartRequested_{};
     Dj2LoopObserved dj2LoopObserved_{Dj2LoopObserved::Unknown};
-    uint32_t dj2LoopRequests_{};
+    uint32_t dj2LoopRequests_{},dj2LoopStopRequests_{};
     std::array<SpotHold,12> spots_{};
     std::array<int,702> stopAddresses_{};
     std::array<bool,702> stopAwaiting_{};
