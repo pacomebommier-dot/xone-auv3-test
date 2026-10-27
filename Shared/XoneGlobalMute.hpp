@@ -56,7 +56,7 @@ public:
     bool effectivelyMuted(unsigned target,bool localMuted=false) const noexcept {
         if(target>=Targets)return true;
         if(target==Fx)return explicitMute_[Fx]; // no SOLO for FX global input
-        return explicitMute_[target] || localMuted || (solo_>=0&&solo_!=static_cast<int>(target));
+        return localMuted || (solo_>=0 ? solo_!=static_cast<int>(target) : explicitMute_[target]);
     }
     int soloTarget() const noexcept {return solo_;}
     bool hasSnapshot() const noexcept {return haveSnapshot_;}
