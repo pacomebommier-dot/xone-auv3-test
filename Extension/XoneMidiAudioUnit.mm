@@ -2,6 +2,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import <string.h>
 #include "../Shared/XoneHostEngine.hpp"
+#include "../Shared/XoneHostGrid.hpp"
 
 @implementation XoneMidiAudioUnit {
     AUAudioUnitBusArray *_inputBusArray;
@@ -9,6 +10,8 @@
     // Établi avant de démarrer la boucle de rendu ; ne pas muter en cours de rendu.
     AUMIDIOutputEventBlock _cachedMIDIOutput;
     AUHostTransportStateBlock _cachedTransport;
+    AUHostMusicalContextBlock _cachedMusicalContext;
+    xone::host::HostGrid _musicalGrid;
     xone::host::HostEngine _engine;
     bool _transportKnown, _moving;
     double _gestureElapsedMs, _gestureSampleRate;
@@ -42,6 +45,8 @@
     if (![super allocateRenderResourcesAndReturnError:outError]) return NO;
     _cachedMIDIOutput = [self.MIDIOutputEventBlock copy];
     _cachedTransport = [self.transportStateBlock copy];
+    _cachedMusicalContext = [self.musicalContextBlock copy];
+    _musicalGrid.reset();
     _transportKnown = false;
     _gestureSampleRate = self.outputBusses[0].format.sampleRate;
     return YES;
@@ -50,6 +55,8 @@
 - (void)deallocateRenderResources {
     _cachedMIDIOutput = nil;
     _cachedTransport = nil;
+    _cachedMusicalContext = nil;
+    _musicalGrid.reset();
     [super deallocateRenderResources];
 }
 
@@ -91,6 +98,8 @@
     auto *elapsedMs = &_gestureElapsedMs;
     const double *sampleRate = &_gestureSampleRate;
     AUHostTransportStateBlock __strong *transportSlot = &_cachedTransport;
+    AUHostMusicalContextBlock __strong *musicSlot = &_cachedMusicalContext;
+    auto *grid = &_musicalGrid;
     return ^AUAudioUnitStatus(AudioUnitRenderActionFlags *actionFlags,
                              const AudioTimeStamp *timestamp,
                              AVAudioFrameCount frameCount,
@@ -104,6 +113,7 @@
         const double rate = *sampleRate > 0 ? *sampleRate : 44100;
         AUMIDIOutputEventBlock __unsafe_unretained sendMIDI = *slot;
         AUHostTransportStateBlock __unsafe_unretained transport = *transportSlot;
+        AUHostMusicalContextBlock __unsafe_unretained music = *musicSlot;
         const auto flushStop = [&]() {
             for (unsigned n=0; n<702; ++n) {
                 const auto packet=engine->nextStopPacket();
@@ -122,6 +132,22 @@
                 *known = true; *moving = nowMoving;
             } else { *known = false; }
         }
+        // Host-derived grid is observation only, not yet a scheduler.
+        xone::host::MusicalContext context{};
+        context.sampleRate=rate;
+        context.moving=(*known && *moving);
+        if(context.moving && music) {
+            double tempo=0, numerator=0, beat=0, downbeat=0;
+            NSInteger denominator=0, nextBeat=0;
+            if(music(&tempo,&numerator,&denominator,&beat,&nextBeat,&downbeat)) {
+                context.available=true;context.tempo=tempo;context.numerator=numerator;
+                context.denominator=static_cast<int>(denominator);
+                context.beatPosition=beat;context.measureDownbeat=downbeat;
+                context.offsetToNextBeat=static_cast<int64_t>(nextBeat);
+            }
+        }
+        const auto gridObservation=grid->scan(context,frameCount);
+        (void)gridObservation; // L05.3 will consume events only after source oracles.
         unsigned processed = 0;
         const AURenderEvent *event = realtimeEventListHead;
         for (;
