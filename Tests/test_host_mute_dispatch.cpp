@@ -10,7 +10,7 @@ static GridBatch bar(){GridBatch b{};b.valid=true;b.count=1;b.events[0]={GridKin
 int main(){
  HostEngine e;e.enableNativeMutePage(true);
  input(e,13,true,0);input(e,13,false,50); // short BOT2
- assert(e.mutePageVisible());
+ assert(e.mutePageVisible() && e.navMode()==0); // BOT2 did not also trigger legacy PRESET NAV
  input(e,36,true,100);input(e,36,false,199); // BASE 1 short
  assert(e.muteGesturePending()&&!e.globalMute().explicitlyMuted(0));
  assert(e.onMusicalGrid(bar())==1&&e.globalMute().explicitlyMuted(0));
