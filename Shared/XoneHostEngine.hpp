@@ -121,9 +121,19 @@ public:
             if(accepted&&cmd==0xB0){
                 if(data[1]<20)return continuous(data[1],data[2],gestureMs,seq,sample);
                 const auto turn=decodeDjTurn(data[1],data[2]);
-                // Relative input is observed but never sent as an absolute
-                // CC or guessed browser/Loopy command without verified S7 binding.
-                if(turn.valid())record(seq,sample,Stage::Gesture,Reason::DjRelative,0,data,3,turn.delta);
+                if(turn.valid()){
+                    record(seq,sample,Stage::Gesture,Reason::DjRelative,0,data,3,turn.delta);
+                    // S7 source API: kind16 / address 947 (DJ1), 948 (DJ2).
+                    // Two's-complement RAW is forwarded without pickup or CC de-dup.
+                    // This is the virtual control API, NOT an assumed audio backend.
+                    const int api=947+static_cast<int>(data[1])-20;
+                    auto staged=core_.output();
+                    if(!staged.apply({16,api,data[2],127})||staged.emitted()!=1)return {};
+                    const auto p=staged.packet(0);
+                    Result out{true,{p.status,p.number,p.value},seq,sample,true,api,data[2],16};
+                    record(seq,sample,Stage::Decision,Reason::Musical,0,out.bytes,3);
+                    return out;
+                }
             }
             return {};
         }
