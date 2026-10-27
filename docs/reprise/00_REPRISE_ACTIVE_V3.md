@@ -1,5 +1,7 @@
 # Reprise active — intégration XONE native V3
-27 octobre 2026. Branche de travail : feature/native-integration-v3. Aucun merge main.
+27 octobre 2026. Branche de reprise ciblée : feature/native-e3-bar-beat-reprise. Aucun merge main.
+
+Reprise MUTE/SOLO/BAR et LED : voir [INTEGRATION_V3_MUTE.md](INTEGRATION_V3_MUTE.md), qui complète les checkpoints historiques ci-dessous. Les LED MUTE sont raccordées au callback AU ; le renderer du contexte sous-jacent reste ouvert.
 
 ## Code et preuves
 - e2dcfec : surface K2, gestes S2 et NAV S3 raccordés au callback AUv3 ; DEF-L02-TRACE-01 corrigé. K2_SIM unique préparé en source Mozaic.
@@ -22,7 +24,7 @@
 | E3 | L05/L06 | NAV, sélection physique, pickup/CC/LIVE/S4, LOOP, SPOT SMART/MIX/TOUCH/FLASH et OFF au STOP raccordés ; BAR/BEAT, actions et releases musicales complètes encore ouverts |
 | E4 | L07/L08 | PATCH/MEMORY et CUE/LOAD/BASE : modules et contrats conservés, pas encore une chaîne musicale intégrée |
 | E5 | L09/L10 | PRESET/RED et propriétaires/alternatives S8 : non raccordés ; les modes SPOT MACHINE ne doivent pas être capturés/restaurés par PATCH/PRESET/RED |
-| E6 | L11/L12 | UNKNOWN conservé ; feedback authentifié et sortie LED séparée non raccordés |
+| E6 | L11/L12 | UNKNOWN conservé ; LED MUTE MIDI15 raccordées, feedback authentifié et autres vues LED ouverts |
 | E7 | L13/L14 | Persistance du seul dernier LIVE raccordée aux API d'état AU, vérifiée sur une vraie classe AU sous macOS ; autres domaines/NAV/banques et replay vers profil validé ouverts ; table SH-01A source préparée, sans binding/canal/port ; aucune session AUM FX réelle déclarée prête |
 | E8 | L15/L16 | AUM_FULL_DEFERRED ; K2_PHYSICAL_PENDING ; SH01A_PHYSICAL_PENDING. JU-06A après SH. Aucun PASS inventé |
 
