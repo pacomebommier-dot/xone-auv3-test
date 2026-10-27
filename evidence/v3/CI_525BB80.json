@@ -1,0 +1,179 @@
+{
+  "date": "2026-10-27",
+  "id": 40474469116,
+  "head_sha": "525bb80e60bfaac8dccfd886fc23e7a22c52abcb",
+  "status": "completed",
+  "conclusion": "success",
+  "html_url": "https://github.com/pacomebommier-dot/xone-auv3-test/actions/runs/40474469116",
+  "run_attempt": 1,
+  "jobs": [
+    {
+      "id": 122089163797,
+      "name": "portable (clang++)",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Archive integrity and documentary counts",
+          "conclusion": "success"
+        },
+        {
+          "name": "Portable suites",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 122089163946,
+      "name": "portable (g++)",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Archive integrity and documentary counts",
+          "conclusion": "success"
+        },
+        {
+          "name": "Portable suites",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 122089425581,
+      "name": "ios",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native suites with Apple Clang",
+          "conclusion": "success"
+        },
+        {
+          "name": "Sanitizers",
+          "conclusion": "success"
+        },
+        {
+          "name": "Real AU subclass document and render harness (macOS)",
+          "conclusion": "success"
+        },
+        {
+          "name": "Xcode and project generation",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build unsigned V0.2",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 12719833598,
+      "name": "native-g++-525bb80e60bfaac8dccfd886fc23e7a22c52abcb",
+      "size_in_bytes": 12845,
+      "digest": "sha256:970e510d512b5a87a1cadbf753b27ac4616a894344e19b30e405795d7921839e",
+      "expires_at": "2027-01-25T08:34:35Z"
+    },
+    {
+      "id": 12719129459,
+      "name": "XoneEngineNative-V0.2-525bb80e60bfaac8dccfd886fc23e7a22c52abcb",
+      "size_in_bytes": 85842,
+      "digest": "sha256:e02dd3b636858f3f6cd14382880929406744030e77a84637d32eeeef40670a6b",
+      "expires_at": "2026-11-26T08:37:51Z"
+    },
+    {
+      "id": 12719044187,
+      "name": "native-clang++-525bb80e60bfaac8dccfd886fc23e7a22c52abcb",
+      "size_in_bytes": 12845,
+      "digest": "sha256:6e67aef1f9e53d3569172ddb2862ed3b159b8f22cd386db6f1f1467dfb4a597a",
+      "expires_at": "2027-01-25T08:34:35Z"
+    }
+  ],
+  "log_evidence": [
+    "2026-10-27T08:36:09.5429840Z PASS SMART/MIX musical output, captured destination, 199/200ms, failed ON/OFF debts, multi-note STOP, UNKNOWN",
+    "2026-10-27T08:36:44.8431390Z PASS SMART/MIX musical output, captured destination, 199/200ms, failed ON/OFF debts, multi-note STOP, UNKNOWN",
+    "2026-10-27T08:36:53.9296720Z PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, corruption, no load TX (macOS harness)",
+    "2026-10-27T08:37:50.7657210Z ** BUILD SUCCEEDED **",
+    "2026-10-27T08:37:52.8959220Z SHA256 digest of uploaded artifact zip is e02dd3b636858f3f6cd14382880929406744030e77a84637d32eeeef40670a6b",
+    "2026-10-27T08:37:53.3608210Z Artifact XoneEngineNative-V0.2-525bb80e60bfaac8dccfd886fc23e7a22c52abcb.zip successfully finalized. Artifact ID 12719129459",
+    "2026-10-27T08:37:53.3610740Z Artifact XoneEngineNative-V0.2-525bb80e60bfaac8dccfd886fc23e7a22c52abcb has been successfully uploaded! Final size is 85842 bytes. Artifact ID is 12719129459"
+  ],
+  "claims": {
+    "cpp_suites": 21,
+    "c_v01_cases": 10,
+    "compilers": [
+      "GCC",
+      "Clang",
+      "Apple Clang"
+    ],
+    "sanitizers": "ASan/UBSan PASS",
+    "real_AU_wrapper": "macOS PASS, including explicit MIDI STOP and host transport STOP",
+    "ios": "unsigned build PASS; artifact archived",
+    "manual_AUM_iPhone_K2_SH01A": "NOT_RUN_DEFERRED_L15_L16",
+    "scope": "SMART/MIX only; TOUCH/FLASH, BAR/BEAT actions, banks and specialized S8 remain open",
+    "digest_note": "Artifact ZIP digest, not inner IPA hash"
+  },
+  "preserved_refs": {
+    "main": "5874ae2f29a2543d9df7cda4814803d04dd36257",
+    "feature/native-l02-v02": "8fff66b4ed97acaf1b65f37028700319ed2e935e"
+  }
+}
