@@ -24,6 +24,13 @@ jobs:
         env:
           CXX: ${{ matrix.compiler }}
         run: bash Tests/run_native.sh
+      - name: Show failing native test diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          for f in evidence/ci/test_host_*.compile.log evidence/ci/test_host_*.run.log; do
+            if [[ -f "$f" ]]; then echo "::group::$f"; tail -40 "$f"; echo "::endgroup::"; fi
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
