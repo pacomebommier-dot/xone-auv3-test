@@ -47,6 +47,7 @@ public:
         core_.enableTestMidiProjection(true);
         core_.enableDiagnosticTouchNav(true); // source @zk/@zl selection, not SPOT TOUCH output
         core_.enableDiagnosticQualifiedNav(true); // source-qualified SHORT/LONG NAV only
+        core_.enableNativeMuteBot2(true); // exclusive solo BOT2 owner
     }
     bool mutePageVisible() const noexcept {return muteGate_.visible();}
     bool muteGesturePending() const noexcept {return muteBridge_.state().pendingCount()!=0;}
@@ -77,7 +78,7 @@ public:
             if(accepted&&(cmd==0x90||cmd==0x80)&&physical>=0){
                 const bool down=cmd==0x90&&data[2]!=0;
                 if(physical==1){
-                    if(down)muteGate_.beginBot2(gestureMs,true);
+                    if(down)muteGate_.beginBot2(gestureMs,core_.s3().physicalOwner(1)==1);
                     else muteGate_.releaseBot2(gestureMs);
                 }else if(physical>=4&&physical<20){
                     const unsigned base=static_cast<unsigned>(physical-4);
