@@ -4,6 +4,7 @@
 #include "XoneContinuousInput.hpp"
 #include "XoneSession.hpp"
 #include "../Core/MutePhysicalGate.hpp"
+#include "XoneMuteMidiProjection.hpp"
 #include <atomic>
 #include <array>
 #include <cstdint>
@@ -53,7 +54,18 @@ public:
     bool mutePageVisible() const noexcept {return mutePageEnabled_&&muteGate_.visible();}
     bool muteGesturePending() const noexcept {return muteBridge_.state().pendingCount()!=0;}
     const GlobalMuteState& globalMute() const noexcept {return muteBridge_.state();}
-    unsigned onMusicalGrid(const GridBatch& b) noexcept {return muteBridge_.observe(b);}
+    unsigned onMusicalGrid(const GridBatch& b) noexcept {
+        if(!mutePageEnabled_)return 0;
+        const unsigned committed=muteBridge_.observe(b);
+        if(committed)muteMidi_.observe(muteBridge_.state());
+        return committed;
+    }
+    MuteMidiProjection::Packet nextMutePacket(unsigned& cursor) const noexcept {
+        return mutePageEnabled_?muteMidi_.next(cursor):MuteMidiProjection::Packet{};
+    }
+    void ackMutePacket(unsigned target,bool callbackSucceeded) noexcept {
+        muteMidi_.confirm(target,callbackSucceeded);
+    }
     static constexpr uint32_t TraceCapacity=256;
     static_assert(std::atomic<uint32_t>::is_always_lock_free,"RT trace requires lock-free indices");
     // Called only by render thread. Host cable is NOT an authenticated device ID.
@@ -228,6 +240,7 @@ private:
     bool mutePageEnabled_{};
     l01::MutePhysicalGate muteGate_{};
     MuteBarBridge muteBridge_{};
+    MuteMidiProjection muteMidi_{};
     struct SpotHold {int cell{-1},api{-1},mode{},previous{};int64_t downMs{};};
     static int spotApi(int cell) noexcept {
         if(cell<320&&cell%40>=16&&cell%40<28)return 12*(cell/40)+cell%40-16;
