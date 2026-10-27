@@ -170,6 +170,11 @@ int main() {
     pump(48,0x8E,36,0);
     assert(sent==beforeMute); // no immediate note output on K2 gesture
     for(unsigned n=0;n<12;++n)pump(8192);
+    if(sent!=beforeMute+1||lastStatus!=0x9A||lastNumber!=16||lastValue!=127)
+        std::cerr<<"MUTE BAR: initial="<<beforeMute<<" sent="<<sent
+                 <<" status="<<int(lastStatus)<<" note="<<int(lastNumber)
+                 <<" value="<<int(lastValue)
+                 <<" trace="<<[[muteUnit drainDiagnosticText] UTF8String]<<"\\n";
     assert(sent==beforeMute+1&&lastStatus==0x9A&&lastNumber==16&&lastValue==127);
     [muteUnit deallocateRenderResources];
 
