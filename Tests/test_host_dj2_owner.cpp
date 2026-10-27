@@ -39,6 +39,18 @@ int main(){
         input(e,14,false,120);
         assert(e.dj2QualifiedTurnsForDiagnostic()==0);
     }
+    // The callback cannot turn a nonqualified DJ2 packet into a qualified
+    // action merely because a newer physical gesture owns BOT3.
+    {
+        HostEngine e;
+        auto unqualified=turn(e,1,10);assert(unqualified.emit&&!unqualified.dj2Qualified);
+        input(e,14,true,20);
+        auto qualified=turn(e,2,30);assert(qualified.emit&&qualified.dj2Qualified);
+        e.sent(unqualified,0);
+        assert(e.dj2QualifiedTurnsForDiagnostic()==0);
+        e.sent(qualified,0);
+        assert(e.dj2QualifiedTurnsForDiagnostic()==1);
+    }
     // At 200ms no new push+rot gesture may be qualified.
     {
         HostEngine e;input(e,14,true,100);

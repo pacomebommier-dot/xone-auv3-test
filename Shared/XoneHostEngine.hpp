@@ -33,7 +33,7 @@ struct Result {
     int api{-1},value{},type{10};
     std::array<PendingPacket,2> extra{};
     unsigned extraCount{};
-    int key{127};bool requiresOff{};int64_t gestureMs{};
+    int key{127};bool requiresOff{};int64_t gestureMs{};bool dj2Qualified{};
     unsigned packetCount() const noexcept {return emit?1+extraCount:0;}
     Result packet(unsigned i) const noexcept {
         if(!emit||i>extraCount)return {};
@@ -175,6 +175,8 @@ public:
                     const auto p=staged.packet(0);
                     Result out{true,{p.status,p.number,p.value},seq,sample,true,api,data[2],16};
                     out.gestureMs=gestureMs;
+                    out.dj2Qualified=data[1]==21&&core_.surface().held(2)&&
+                        core_.s3().physicalOwner(2)==40;
                     record(seq,sample,Stage::Decision,Reason::Musical,0,out.bytes,3);
                     return out;
                 }
@@ -265,7 +267,7 @@ public:
             // A qualified push+rotation, unlike a bare DJ2 turn, has a
             // captured gesture owner. Count requested length changes only;
             // actual DJ loop playback requires authenticated backend ACKs.
-            if(dj2PushRotCaptured_){
+            if(r.dj2Qualified){
                 ++dj2QualifiedTurns_;
                 dj2LastQualifiedDelta_=decodeDjTurn(21,static_cast<unsigned>(r.value)).delta;
             }
