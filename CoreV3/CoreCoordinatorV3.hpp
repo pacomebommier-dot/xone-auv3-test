@@ -3,16 +3,16 @@
 // Physical events -> S1 surface -> S2 gestures -> qualified S3 INPUT QUEUE.
 // No assumed musical mapping, routing, current-mode, or backend readiness.
 // The previous Engine.hpp remains a separate structural oracle, not a musical owner.
-#include "Engine.hpp"
-#include "GestureS2.hpp"
-#include "OutputS4.hpp"
-#include "S3DecisionBoundary.hpp"
-#include "NavS3.hpp"
-#include "S3LongTransaction.hpp"
-#include "S3TouchNav.hpp"
-#include "LiveState.hpp"
-#include "FxS6.hpp"
-#include "BankS6.hpp"
+#include "../Core/Engine.hpp"
+#include "../Core/GestureS2.hpp"
+#include "../Core/OutputS4.hpp"
+#include "../Core/S3DecisionBoundary.hpp"
+#include "../Core/NavS3.hpp"
+#include "../Core/S3LongTransaction.hpp"
+#include "../Core/S3TouchNav.hpp"
+#include "../Core/LiveState.hpp"
+#include "../Core/FxS6.hpp"
+#include "../Core/BankS6.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdint>
