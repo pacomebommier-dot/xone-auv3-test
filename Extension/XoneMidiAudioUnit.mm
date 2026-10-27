@@ -3,6 +3,7 @@
 #import <string.h>
 #include "../Shared/XoneHostEngine.hpp"
 #include "../Shared/XoneHostGrid.hpp"
+#include "../Shared/XoneHostScheduler.hpp"
 
 @implementation XoneMidiAudioUnit {
     AUAudioUnitBusArray *_inputBusArray;
@@ -12,6 +13,7 @@
     AUHostTransportStateBlock _cachedTransport;
     AUHostMusicalContextBlock _cachedMusicalContext;
     xone::host::HostGrid _musicalGrid;
+    xone::host::HostActionScheduler _musicalScheduler;
     xone::host::HostEngine _engine;
     bool _transportKnown, _moving;
     double _gestureElapsedMs, _gestureSampleRate;
@@ -47,6 +49,7 @@
     _cachedTransport = [self.transportStateBlock copy];
     _cachedMusicalContext = [self.musicalContextBlock copy];
     _musicalGrid.reset();
+    _musicalScheduler.stop();
     _transportKnown = false;
     _gestureSampleRate = self.outputBusses[0].format.sampleRate;
     return YES;
@@ -100,6 +103,7 @@
     AUHostTransportStateBlock __strong *transportSlot = &_cachedTransport;
     AUHostMusicalContextBlock __strong *musicSlot = &_cachedMusicalContext;
     auto *grid = &_musicalGrid;
+    auto *scheduler = &_musicalScheduler;
     return ^AUAudioUnitStatus(AudioUnitRenderActionFlags *actionFlags,
                              const AudioTimeStamp *timestamp,
                              AVAudioFrameCount frameCount,
@@ -128,7 +132,7 @@
             AUHostTransportStateFlags flags = static_cast<AUHostTransportStateFlags>(0);
             if (transport(&flags, nullptr, nullptr, nullptr)) {
                 const bool nowMoving = (flags & AUHostTransportStateMoving) != 0;
-                if (*known && *moving && !nowMoving) { engine->stop(bufferStart); flushStop(); }
+                if (*known && *moving && !nowMoving) { scheduler->stop(); engine->stop(bufferStart); flushStop(); }
                 *known = true; *moving = nowMoving;
             } else { *known = false; }
         }
@@ -147,7 +151,8 @@
             }
         }
         const auto gridObservation=grid->scan(context,frameCount);
-        (void)gridObservation; // L05.3 will consume events only after source oracles.
+        // The scheduler is connected, but no action is enqueued until L06 source handlers are qualified.
+        scheduler->consume(gridObservation, [](xone::host::DueAction) noexcept {});
         unsigned processed = 0;
         const AURenderEvent *event = realtimeEventListHead;
         for (;
@@ -159,7 +164,7 @@
             if (sample < bufferStart) sample = bufferStart;
             if (frameCount && sample >= bufferStart + frameCount) sample = bufferStart + frameCount - 1;
             if (m.length == 1 && m.data[0] == 0xFC && m.cable == 0) {
-                engine->stop(sample); flushStop(); continue;
+                scheduler->stop(); engine->stop(sample); flushStop(); continue;
             }
             const auto ms = static_cast<int64_t>(*elapsedMs + 1000.0 * (sample-bufferStart) / rate);
             const auto result = engine->receive(m.cable, m.data, m.length, sample, ms);
