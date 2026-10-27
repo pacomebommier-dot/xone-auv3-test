@@ -43,7 +43,7 @@ int main() {
     assert(sent==0);
     AVAudioPCMBuffer *audio=[[AVAudioPCMBuffer alloc] initWithPCMFormat:format frameCapacity:8192];
     assert(audio && audio.floatChannelData);
-    AUEventSampleTime cursor=0;
+    __block AUEventSampleTime cursor=0; // musicalContextBlock must read live render cursor
     auto pump=[&](AVAudioFrameCount frames,int command=-1,int number=0,int value=0,AVAudioFrameCount offset=0) {
         AudioTimeStamp timestamp{};timestamp.mFlags=kAudioTimeStampSampleTimeValid;timestamp.mSampleTime=static_cast<Float64>(cursor);
         AURenderEvent event{};event.MIDI.eventType=AURenderEventMIDI;event.MIDI.eventSampleTime=cursor+offset;
