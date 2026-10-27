@@ -67,6 +67,11 @@ public:
     bool djBrowserPendingAt(int64_t ms) const noexcept {return browser_.pendingAt(ms);}
     bool djBrowserOwnsBot2() const noexcept {return browser_.pushOwned();}
     uint32_t browserLoadIntentsForDiagnostic() const noexcept {return browserLoadIntents_;}
+    // Qualified DJ2 performance gesture is a request only: no audio engine
+    // or synthetic LOOPY control is installed by this diagnostic seam.
+    uint32_t dj2QualifiedTurnsForDiagnostic() const noexcept {return dj2QualifiedTurns_;}
+    int dj2LastQualifiedDeltaForDiagnostic() const noexcept {return dj2LastQualifiedDelta_;}
+    bool dj2PushRotationCapturedForDiagnostic() const noexcept {return dj2PushRotCaptured_;}
     int lastBrowserLoadDeckForDiagnostic() const noexcept {return lastBrowserLoadDeck_;}
     const GlobalMuteState& globalMute() const noexcept {return muteBridge_.state();}
     unsigned onMusicalGrid(const GridBatch& b) noexcept {
@@ -113,6 +118,8 @@ public:
             const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs,muteBaseOwned);
             record(seq,sample,Stage::Decision,accepted?Reason::Integrated:Reason::ClockRejected,cable,data,length);
             drainCore(seq,sample);
+            if(accepted&&physical==2&&(cmd==0x90||cmd==0x80)&&
+               wasHeld&&!(cmd==0x90&&data[2]!=0))dj2PushRotCaptured_=false;
             if(accepted&&physical==1&&(cmd==0x90||cmd==0x80)){
                 const bool down=cmd==0x90&&data[2]!=0;
                 if(down&&!wasHeld&&core_.s3().physicalOwner(1)==23){
@@ -154,6 +161,11 @@ public:
                 const auto turn=decodeDjTurn(data[1],data[2]);
                 if(turn.valid()){
                     record(seq,sample,Stage::Gesture,Reason::DjRelative,0,data,3,turn.delta);
+                    // The S2->S3 resolver has already run; role10 (BOT3+DJ2
+                    // rotation) is only valid if it captured physical owner40.
+                    // Capture this one gesture before any MIDI callback result.
+                    if(data[1]==21&&core_.surface().held(2)&&
+                       core_.s3().physicalOwner(2)==40)dj2PushRotCaptured_=true;
                     // S7 source API: kind16 / address 947 (DJ1), 948 (DJ2).
                     // Two's-complement RAW is forwarded without pickup or CC de-dup.
                     // This is the virtual control API, NOT an assumed audio backend.
@@ -249,6 +261,15 @@ public:
         }
         // Do not arm Browser on a failed or unsent relative rotation:
         // there is no verified track selection for DJ1 PUSH to confirm.
+        if(status==0&&r.musical&&r.type==16&&r.api==948&&r.sequence==sequence_){
+            // A qualified push+rotation, unlike a bare DJ2 turn, has a
+            // captured gesture owner. Count requested length changes only;
+            // actual DJ loop playback requires authenticated backend ACKs.
+            if(dj2PushRotCaptured_){
+                ++dj2QualifiedTurns_;
+                dj2LastQualifiedDelta_=decodeDjTurn(21,static_cast<unsigned>(r.value)).delta;
+            }
+        }
         if(status==0&&r.musical&&r.type==16&&r.api==947&&r.sequence==sequence_&&
            browser_.observeTurn(decodeDjTurn(20,static_cast<unsigned>(r.value)).delta,r.gestureMs)){
             core_.observeBrowserGuardForDiagnostic(true,browser_.deck(),browser_.deadlineMs());
@@ -276,7 +297,7 @@ public:
             stopAwaiting_[static_cast<std::size_t>(a)]=true;
             ++stopPendingCount_;
         }
-        muteGate_.stop();muteBridge_.stop();browser_.stop();
+        muteGate_.stop();muteBridge_.stop();browser_.stop();dj2PushRotCaptured_=false;
         core_.observeBrowserGuardForDiagnostic(false,0,0);
         core_.onHostStop(); // must not fabricate UP or clear held keys
         core_.output()=output;
@@ -465,6 +486,8 @@ private:
     ContinuousPickup pickup_{};
     DjBrowserWindow browser_{};
     uint32_t browserLoadIntents_{};int lastBrowserLoadDeck_{};
+    uint32_t dj2QualifiedTurns_{};int dj2LastQualifiedDelta_{};
+    bool dj2PushRotCaptured_{};
     std::array<SpotHold,12> spots_{};
     std::array<int,702> stopAddresses_{};
     std::array<bool,702> stopAwaiting_{};
