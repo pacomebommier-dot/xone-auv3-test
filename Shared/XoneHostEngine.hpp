@@ -31,7 +31,7 @@ struct Result {
     int64_t sample{};
     bool musical{};
     int api{-1},value{},type{10};
-    std::array<PendingPacket,2> extra{};
+    std::array<PendingPacket,27> extra{}; // SAMPLE recall: 16 CC + 12 states
     unsigned extraCount{};
     int key{127};bool requiresOff{};int64_t gestureMs{};bool dj2Qualified{};
     unsigned packetCount() const noexcept {return emit?1+extraCount:0;}
@@ -245,6 +245,7 @@ public:
                         const bool patch=(physical!=35&&(captured.context==3||captured.context==7));
                         topIntents_[index]={physical,captured.route,seq,patch?TopAction::PatchRecall:TopAction::FilterReset};
                         topIntentValid_[index]=true;
+                        if(patch && captured.context==3)armSamplePatch(index);
                         if(patch)++topPatchRecallsDeferred_;
                         else ++topResetsDeferred_;
                         record(seq,sample,Stage::Decision,Reason::TopResetDeferred,0,data,3,captured.route.address);
@@ -296,6 +297,58 @@ public:
     bool restoreSessionBeforeRendering(const l01::LiveState::SessionImage& image) noexcept {
         return !started_&&core_.restoreNativeSessionForDiagnostic(image);
     }
+    // Lifecycle-only bank input, distinct from file selection/loading and from
+    // an observed instrument. New banks are empty; no automatic legacy import.
+    bool storeSamplePatchBeforeRendering(int owner,int slot,int config,
+            const l01::BankS6::PatchImage& image,uint32_t expectedRevision) noexcept {
+        if(started_ || owner<0 || owner>=8 || slot<0 || slot>=3 || config<1 ||
+           config!=core_.nativeLive().sessionConfig() || !l01::BankS6::validatePatch(owner,image))return false;
+        if(!core_.nativeBank().initialized() && !core_.initializeEmptyNativeBanksForDiagnostic())return false;
+        return core_.saveNativePatchForDiagnostic(owner,slot,config,image,expectedRevision);
+    }
+    bool samplePatchPending() const noexcept {return samplePatch_.owner>=0;}
+    Result samplePatchOnGrid(const GridBatch& batch,int64_t bufferStart) noexcept {
+        if(!batch.valid || batch.overflow || batch.count>batch.events.size())return {};
+        for(unsigned i=0;i<batch.count;++i){
+            const auto& edge=batch.events[i];
+            // HostGrid suppresses stale edges and creates a fresh anchor on seek.
+            // A smaller ordinal may therefore be a genuine BAR after a rewind.
+            if(edge.kind!=GridKind::Bar || edge.ordinal<0 || edge.ordinal==lastSamplePatchBar_)continue;
+            lastSamplePatchBar_=edge.ordinal;
+            if(!samplePatchPending())continue;
+            const auto request=samplePatch_;samplePatch_={};
+            const int base=40*request.owner;
+            // A recall must not steal a physical TOUCH/MIX owner or its OFF.
+            for(const auto& hold:spots_)if(hold.cell>=base && hold.cell<base+40)return {};
+            l01::BankS6::PatchRecord patch{};
+            if(!core_.nativeBank().readPatch(request.owner,request.slot,patch) || !patch.valid ||
+               patch.revision!=request.revision || patch.config!=core_.nativeLive().sessionConfig())return {};
+            auto projection=core_.output();projection.drain();
+            Result result{};
+            const auto seq=++sequence_;
+            const auto sample=bufferStart+edge.offset;
+            for(int field=0;field<28;++field){
+                const int type=field<16?10:11;
+                const int api=field<16?16*request.owner+field:12*request.owner+field-16;
+                const int value=patch.values[static_cast<std::size_t>(field)];
+                if(!projection.apply({type,api,value,127}))return {};
+                // OutputS4 deduplicates CC/state writes. Preserve its exact bytes.
+                for(std::size_t n=0;n<projection.emitted();++n){
+                    const auto packet=projection.packet(n);
+                    if(!result.emit)result={true,{packet.status,packet.number,packet.value},seq,sample,true,api,value,type};
+                    else {
+                        if(result.extraCount>=result.extra.size())return {};
+                        result.extra[result.extraCount++]={{packet.status,packet.number,packet.value},api,value,type,127,false};
+                    }
+                }
+                projection.drain();
+            }
+            if(!core_.recallNativeSamplePatch(request.owner,request.slot,request.revision,
+                                             core_.nativeLive().revision()))return {};
+            return result;
+        }
+        return {};
+    }
     // UI/host thread only, serialized externally. Do not call core from these methods.
     bool requestSessionRestore(const SessionImage& image) noexcept {
         if(!validSession(image)||requestedToken_==0xFFFFFFFFu)return false;
@@ -316,6 +369,7 @@ public:
         if(restores_.take(next)&&core_.restoreNativeSessionForDiagnostic(next.image)){
             appliedToken_=next.token;pickup_=ContinuousPickup{};
             core_.output()=l01::OutputS4{};core_.enableTestMidiProjection(true);
+            samplePatch_={}; // a restored session cannot execute an old queued recall
         }
     }
     void endRenderBuffer() noexcept {
@@ -416,6 +470,7 @@ public:
         requestDjLoopStop(false,true);
         for(auto& target:topHold_)target={};
         topIntentValid_.fill(false);
+        samplePatch_={};lastSamplePatchBar_=-1;
         browserLoadPending_=false;browserSelectionSequence_=0;
         core_.observeBrowserGuardForDiagnostic(false,0,0);
         core_.onHostStop(); // must not fabricate UP or clear held keys
@@ -474,6 +529,21 @@ public:
     }
     uint32_t overflows() const noexcept {return overflows_.load(std::memory_order_relaxed);}
 private:
+    struct SamplePatchRequest {int owner{-1},slot{-1};uint32_t revision{};};
+    SamplePatchRequest samplePatch_{};int64_t lastSamplePatchBar_{-1};
+    void armSamplePatch(unsigned index) noexcept {
+        if(samplePatchPending() || index>=3 || !topIntentValid_[index])return;
+        const auto& intent=topIntents_[index];
+        const int packed=intent.route.address;
+        if(packed<0 || packed/1024!=11 || (packed%1024)/32!=1)return;
+        const int owner=packed%32-1,slot=intent.route.position;
+        l01::BankS6::PatchRecord patch{};
+        if(owner<0 || owner>=8 || slot<0 || slot>=3 ||
+           !core_.nativeBank().readPatch(owner,slot,patch) || !patch.valid ||
+           patch.config!=core_.nativeLive().sessionConfig())return;
+        samplePatch_={owner,slot,patch.revision};
+        topIntentValid_[index]=false; // command accepted once; BAR still has not applied it
+    }
     void requestDjLoopStop(bool reset,bool invalidate=false) noexcept {
         if(dj2LoopStartRequested_ || dj2LoopObserved_==Dj2LoopObserved::On){
             ++dj2LoopStopRequests_;

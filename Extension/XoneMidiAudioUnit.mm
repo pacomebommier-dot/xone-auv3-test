@@ -195,6 +195,13 @@
                 one.valid=true;one.count=1;one.events[0]=gridObservation.events[gridRead++];
                 scheduler->consume(one, [](xone::host::DueAction) noexcept {});
                 engine->onMusicalGrid(one);
+                const auto patch=engine->samplePatchOnGrid(one,bufferStart);
+                for(unsigned n=0;n<patch.packetCount();++n){
+                    const auto packet=patch.packet(n);
+                    if(!engine->canSend(packet))continue;
+                    if(sendMIDI)engine->sent(packet,sendMIDI(packet.sample,0,3,packet.bytes));
+                    else engine->noOutput(packet);
+                }
                 flushMute(bufferStart+one.events[0].offset);
                 flushMuteLeds(bufferStart+one.events[0].offset,static_cast<int64_t>(*elapsedMs+1000.0*one.events[0].offset/rate));
             }

@@ -124,6 +124,22 @@ public:
         if(!next.commitFxMemoryImage(owner,m.values,expectedLiveRevision,m.config))return false;
         live_=next;return true;
     }
+    // SAMPLE retains its source 40-field payload, including its own modes.
+    // MACHINE snapshots require the S8 mode-excluding adapter, not this path.
+    bool recallNativeSamplePatch(int owner,int slot,std::uint32_t bankRevision,
+                                 std::uint32_t liveRevision) noexcept {
+        if(!diagnosticLive_ || owner<0 || owner>=8 || longTx_.pending() ||
+           touch_.busy() || nav_.hasStage() || touchOwner_!=-1 || liveRevision!=live_.revision())return false;
+        BankS6::PatchRecord record{};
+        if(!nativeBank_.readPatch(owner,slot,record) || !record.valid ||
+           record.revision!=bankRevision || record.config!=live_.sessionConfig() ||
+           !BankS6::validatePatch(owner,record.values))return false;
+        auto next=live_;
+        for(int i=0;i<40;++i)
+            if(!next.commitDesired(40*owner+i,record.values[static_cast<std::size_t>(i)],
+                                   next.revision(),record.config))return false;
+        live_=next;return true;
+    }
     const BankS6& nativeBank() const noexcept {return nativeBank_;}
     // L01/10: read-only FX-memory snapshots; no persistence implied.
     bool supplyFxMemoryForDiagnostic(int owner,int slot,const FxS6::MemorySnapshot& m)noexcept {
