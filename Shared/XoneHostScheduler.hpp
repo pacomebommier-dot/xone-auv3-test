@@ -1,0 +1,62 @@
+#pragma once
+// L05.3: fixed-capacity render-thread musical command scheduler.
+// Does not emit MIDI or infer BAR when the host clock is absent.
+#include "XoneHostGrid.hpp"
+#include <array>
+#include <cstdint>
+namespace xone::host {
+enum class ScheduleWhen : unsigned char { NextBeat, NextBar };
+struct ScheduledAction {
+    std::uint16_t command{},destination{};
+    std::uint32_t generation{};
+    ScheduleWhen when{ScheduleWhen::NextBar};
+};
+struct DueAction {
+    ScheduledAction action{};
+    std::uint32_t sampleOffset{};
+    std::int64_t musicalOrdinal{};
+};
+class HostActionScheduler {
+public:
+    static constexpr unsigned Capacity=32;
+    void stop() noexcept { clear(); ++generation_; }
+    void clear() noexcept { count_=0; }
+    std::uint32_t generation() const noexcept {return generation_;}
+    unsigned pending() const noexcept {return count_;}
+    bool enqueue(std::uint16_t command,std::uint16_t destination,ScheduleWhen when) noexcept {
+        if(count_==Capacity)return false;
+        pending_[count_++]={command,destination,generation_,when};
+        return true;
+    }
+    // The caller increments generation when switching session/destination; stale actions cannot fire.
+    void invalidate() noexcept { ++generation_;clear(); }
+    // When clock is missing or has reset, never execute or guess timing.
+    // Pending items remain queued during temporary clock loss, unless caller explicitly stops.
+    template <typename Consumer>
+    unsigned consume(const GridBatch& batch,Consumer&& consumer) noexcept {
+        if(!batch.valid || batch.overflow)return 0;
+        unsigned fired=0;
+        for(unsigned i=0;i<batch.count;++i){
+            const auto& edge=batch.events[i];
+            unsigned write=0;
+            for(unsigned j=0;j<count_;++j){
+                const auto& item=pending_[j];
+                const bool due=item.generation==generation_ &&
+                    (item.when==ScheduleWhen::NextBeat || edge.kind==GridKind::Bar);
+                if(due){
+                    consumer(DueAction{item,edge.offset,edge.ordinal});
+                    ++fired;
+                }else if(item.generation==generation_){
+                    pending_[write++]=item;
+                }
+            }
+            count_=write;
+        }
+        return fired;
+    }
+private:
+    std::array<ScheduledAction,Capacity> pending_{};
+    unsigned count_{};
+    std::uint32_t generation_{1};
+};
+} // namespace xone::host
