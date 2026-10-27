@@ -100,7 +100,7 @@ public:
                 }
                 // Any second BOT starts an S2 combo or concurrent BOT gesture.
                 // In that case BOT2 is no longer entitled to a solo MUTE short/long.
-                if(down&&physical<4&&physical!=1&&muteGate_.botHeld())muteGate_.cancelBot2();
+                if(down&&physical<4&&physical!=1&&muteGate_.botHeld()&&core_.s3().physicalOwner(1)==30)muteGate_.cancelBot2();
             }
             if(accepted&&(cmd==0x90||cmd==0x80)&&physical>=20&&physical<32){
                 const bool down=cmd==0x90&&data[2]!=0;
