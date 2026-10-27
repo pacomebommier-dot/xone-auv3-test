@@ -67,7 +67,7 @@ public:
     void ackMutePacket(unsigned target,bool callbackSucceeded) noexcept {
         muteMidi_.confirm(target,callbackSucceeded);
     }
-    void prepareMuteLeds(int64_t ms) noexcept {muteLeds_.observe(globalMute(),mutePageVisible(),ms);}
+    void prepareMuteLeds(int64_t ms) noexcept {muteLeds_.observe(globalMute(),mutePageVisible(),ms,BaseLedView::compose(core_.nativeNav()));}
     MuteLedOutput::Packet nextMuteLedPacket(unsigned& cursor) const noexcept {return muteLeds_.next(cursor);}
     void ackMuteLedPacket(const MuteLedOutput::Packet& packet,bool success) noexcept {muteLeds_.confirm(packet,success);}
     static constexpr uint32_t TraceCapacity=256;
@@ -89,18 +89,22 @@ public:
             if(!valid) {record(seq,sample,Stage::Decision,Reason::Rejected,cable,data,length);return {};}
             const int physical=l01::SurfaceInput::physicalControl(data[1]);
             const bool wasHeld=physical>=0&&core_.surface().held(physical);
-            const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs);
+            auto muteNext=muteGate_;muteNext.advance(gestureMs);
+            const bool baseEvent=(cmd==0x90||cmd==0x80)&&physical>=4&&physical<20;
+            const bool muteBaseOwned=mutePageEnabled_&&baseEvent&&
+                (wasHeld?muteGate_.ownsBase(static_cast<unsigned>(physical-4)):muteNext.visible());
+            const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs,muteBaseOwned);
             record(seq,sample,Stage::Decision,accepted?Reason::Integrated:Reason::ClockRejected,cable,data,length);
             drainCore(seq,sample);
             if(mutePageEnabled_&&accepted&&(cmd==0x90||cmd==0x80)&&physical>=0){
-                muteGate_.advance(gestureMs); // qualify LONG before this physical event
+                muteGate_=muteNext; // commit time qualification only after accepted input
                 const bool down=cmd==0x90&&data[2]!=0;
                 if(physical==1){
                     if(down)muteGate_.beginBot2(gestureMs,core_.s3().physicalOwner(1)==1);
                     else muteGate_.releaseBot2(gestureMs);
                 }else if(physical>=4&&physical<20){
                     const unsigned base=static_cast<unsigned>(physical-4);
-                    if(down)muteGate_.beginBase(base,gestureMs,true);
+                    if(down)muteGate_.beginBase(base,gestureMs,muteBaseOwned);
                     else muteGate_.releaseBase(base,gestureMs,muteBridge_);
                 }
                 // Any second BOT starts an S2 combo or concurrent BOT gesture.

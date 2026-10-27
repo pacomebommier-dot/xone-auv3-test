@@ -11,6 +11,7 @@ class MutePhysicalGate {
 public:
  bool visible()const noexcept{return nav_.visible();}
  bool botHeld()const noexcept{return botHeld_;}
+ bool ownsBase(unsigned base)const noexcept{return base<16&&baseHeld_[base];}
  bool timerNeeded()const noexcept {
   if(botHeld_&&!botLong_)return true;
   for(unsigned i=0;i<16;++i)if(baseHeld_[i]&&!baseLong_[i])return true;

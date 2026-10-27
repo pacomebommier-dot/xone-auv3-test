@@ -21,7 +21,7 @@ class CoreCoordinatorV3 {
 public:
     static constexpr std::size_t TraceCapacity=128;
     static constexpr std::size_t S3TraceCapacity=512;
-    bool onMidi(MidiInput msg,std::int64_t ms)noexcept {
+    bool onMidi(MidiInput msg,std::int64_t ms,bool muteBaseOwned=false)noexcept {
         if(ms<0||(started_&&ms<lastMs_))return false;
         if(msg.channel!=14||msg.value<0||msg.value>127||msg.number<0||msg.number>127)return false;
         if(count_+10>TraceCapacity||s3Count_+20>S3TraceCapacity)return false;
@@ -33,7 +33,7 @@ public:
         if(item.kind!=SurfaceKind::None){
             if(!gest.accept(item,ms,b)||!s3.accept(b,proposals,ms))return false;
         }
-        if(!touch.process(b,ms,nav,s3,diagnosticTouch_,tx.pending() || touchOwner_!=-1))return false;
+        if(!muteBaseOwned && !touch.process(b,ms,nav,s3,diagnosticTouch_,tx.pending() || touchOwner_!=-1))return false;
         if(!processQualifiedNav(nav,s3,tx,proposals,machineLow,machineHigh,touch.busy()))return false;
         surface_=surf;gesture_=gest;s3_=s3;nav_=nav;longTx_=tx;touch_=touch;machineLastLow_=machineLow;machineLastHigh_=machineHigh;
         append(b);appendS3(proposals);lastMs_=ms;started_=true;return true;

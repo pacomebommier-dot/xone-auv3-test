@@ -1,23 +1,23 @@
 #pragma once
 // Physical encoding from frozen L10 S7 @LedInitBindings/@LedRenderAll:
 // row-major BASE, MIDI15 (index14), red/+36 amber/+72 green, 100ms phase.
-// Owns only the 16 BASE LEDs while MUTE is visible; exit clears that image.
-#include "XoneMuteLedView.hpp"
+// One BASE output cache: MUTE overlay or known underlying context.
+#include "XoneBaseLedView.hpp"
 #include "../Core/NativeSlices.hpp"
 namespace xone::host {
 class MuteLedOutput {
 public:
  struct Packet {bool valid{};unsigned target{},color{};bool on{};std::uint8_t bytes[3]{};};
  void beginBuffer() noexcept {failed_.fill(false);}
- void observe(const GlobalMuteState& mute,bool visible,std::int64_t ms) noexcept {
+ void observe(const GlobalMuteState& mute,bool visible,std::int64_t ms,const BaseLedView::Image& context={}) noexcept {
   if(visible&&!visible_){known_.fill(0);owned_=true;}
   visible_=visible;
   if(!owned_)return;
   const auto image=MuteLedView::compose(mute);
   for(unsigned i=0;i<16;++i){
-   const auto led=image[i];
+   const auto led=visible?image[i]:MuteLed{context[i].color,context[i].blinking};
    const unsigned color=static_cast<unsigned>(led.color);
-   const bool lit=visible && (!led.blinking || (ms>=0 && (ms/100)%2==0));
+   const bool lit=(visible||context[i].known) && (!led.blinking || (ms>=0 && (ms/100)%2==0));
    desired_[i]=lit&&color>0&&color<4?static_cast<std::uint8_t>(1u<<(color-1)):0;
   }
  }

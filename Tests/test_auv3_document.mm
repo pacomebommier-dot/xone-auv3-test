@@ -177,6 +177,7 @@ int main() {
     assert([muteUnit allocateRenderResourcesAndReturnError:&error]);
     render=muteUnit.internalRenderBlock;
     const NSUInteger beforeMute=sent;ledSent=0;
+    pump(48,0x9E,37,127);pump(48,0x8E,37,0);assert(ledSent==0); // known underlying yellow BASE2
     pump(48,0x9E,13,127);
     pump(48,0x8E,13,0);
     assert(ledSent==64&&ledRecorded[3][0]==0x9E&&ledRecorded[3][1]==108);
@@ -231,6 +232,13 @@ int main() {
     pump(96,0xFC,0,0,48);
     assert(sent==beforeTie+1&&lastStatus==0x9A&&lastNumber==18);
     pump(48);assert(sent==beforeTie+1);
+    const NSUInteger beforeRestore=ledSent;
+    pump(48,0x9E,13,127);pump(48,0x8E,13,0);
+    bool restoredBase2=false;
+    for(NSUInteger i=beforeRestore;i<ledSent;++i)
+        if(ledRecorded[i][0]==0x9E){assert(ledRecorded[i][1]==73&&ledRecorded[i][2]==127);restoredBase2=true;}
+    assert(restoredBase2&&sent==beforeTie+1); // known context restored, music untouched
+    const NSUInteger afterRestore=ledSent;pump(48);assert(ledSent==afterRestore);
     [muteUnit deallocateRenderResources];
 
     std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)\n";
