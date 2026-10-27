@@ -73,7 +73,9 @@ public:
     int dj2LastQualifiedDeltaForDiagnostic() const noexcept {return dj2LastQualifiedDelta_;}
     bool dj2PushRotationCapturedForDiagnostic() const noexcept {return dj2PushRotCaptured_;}
     unsigned topResetsDeferred() const noexcept {return topResetsDeferred_;}
-    struct TopIntent {int physical{-1};l01::NavRoute route{};uint32_t sequence{};};
+    unsigned topPatchRecallsDeferred() const noexcept {return topPatchRecallsDeferred_;}
+    enum class TopAction : uint8_t { FilterReset, PatchRecall };
+    struct TopIntent {int physical{-1};l01::NavRoute route{};uint32_t sequence{};TopAction action{TopAction::FilterReset};};
     bool lastTopIntent(unsigned index,TopIntent& out) const noexcept {
         if(index>=4||!topIntentValid_[index])return false;
         out=topIntents_[index];return true;
@@ -170,9 +172,15 @@ public:
                     const auto current=core_.nativeNav().active().route(physical);
                     if(captured.address>=0&&captured==current){
                         const auto index=static_cast<std::size_t>(physical-32);
-                        topIntents_[index]={physical,captured,seq};
+                        // Source ownership: SAMPLE(mode3) and MACHINE(mode7)
+                        // TOP1..3 are PATCH recalls, not FILTER RESET.
+                        // TOP4 is invariant FILTER GLOBAL RESET.
+                        const int context=core_.nativeNav().active().contextMode;
+                        const bool patch=(physical!=35&&(context==3||context==7));
+                        topIntents_[index]={physical,captured,seq,patch?TopAction::PatchRecall:TopAction::FilterReset};
                         topIntentValid_[index]=true;
-                        ++topResetsDeferred_;
+                        if(patch)++topPatchRecallsDeferred_;
+                        else ++topResetsDeferred_;
                         record(seq,sample,Stage::Decision,Reason::TopResetDeferred,0,data,3,captured.address);
                     }
                 }
@@ -520,7 +528,7 @@ private:
     std::array<l01::NavRoute,4> topHold_{};
     std::array<TopIntent,4> topIntents_{};
     std::array<bool,4> topIntentValid_{};
-    unsigned topResetsDeferred_{};
+    unsigned topResetsDeferred_{},topPatchRecallsDeferred_{};
     uint32_t browserLoadIntents_{};int lastBrowserLoadDeck_{};
     uint32_t dj2QualifiedTurns_{};int dj2LastQualifiedDelta_{};
     bool dj2PushRotCaptured_{};
