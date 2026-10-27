@@ -28,7 +28,7 @@ int main(){
     // The same AUM identifier can exist in a DIFFERENT physical pool.
     assert(a.request(2,1,7)==A::Request::Accepted);
     p=a.prepareNextBar(ready);assert(a.finalize(p,true)&&a.active()[2]==1);
-    const auto old=a.active(),rev=a.revision();
+    const auto old=a.active();const auto rev=a.revision();
     const A::Targets duplicate{{2,2,0,1}};
     p=a.prepareRecall(duplicate,ready);assert(!p.valid); // C04 full rejection
     assert(!a.finalize(p,true)&&a.active()==old&&a.revision()==rev);
