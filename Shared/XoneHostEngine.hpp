@@ -75,6 +75,16 @@ public:
     // Requested state only; no backend status or audio-loop activation asserted.
     bool dj2LoopStartRequestedForDiagnostic() const noexcept {return dj2LoopStartRequested_;}
     uint32_t dj2LoopRequestsForDiagnostic() const noexcept {return dj2LoopRequests_;}
+    // A requested activation is not proof of audio playback. A verified
+    // backend can later report ON/OFF through this explicitly gated seam.
+    enum class Dj2LoopObserved : uint8_t { Unknown, Off, On };
+    Dj2LoopObserved dj2LoopObservedForDiagnostic() const noexcept {return dj2LoopObserved_;}
+    bool observeDj2LoopBackendForDiagnostic(Dj2LoopObserved observed) noexcept {
+        if(observed==Dj2LoopObserved::Unknown)return false;
+        dj2LoopObserved_=observed;
+        if(observed==Dj2LoopObserved::Off)dj2LoopStartRequested_=false;
+        return true;
+    }
     unsigned topResetsDeferred() const noexcept {return topResetsDeferred_;}
     unsigned topPatchRecallsDeferred() const noexcept {return topPatchRecallsDeferred_;}
     enum class TopAction : uint8_t { FilterReset, PatchRecall };
@@ -325,7 +335,7 @@ public:
                 dj2LastQualifiedDelta_=decodeDjTurn(21,static_cast<unsigned>(r.value)).delta;
                 // Q6: an admitted BOT3+DJ2 ROT requests activation if
                 // currently OFF. This is *requested*, never an audio ACK.
-                if(!dj2LoopStartRequested_){
+                if(dj2LoopObserved_!=Dj2LoopObserved::On&&!dj2LoopStartRequested_){
                     dj2LoopStartRequested_=true;
                     ++dj2LoopRequests_;
                 }
@@ -556,6 +566,7 @@ private:
     uint32_t browserLoadIntents_{};int lastBrowserLoadDeck_{};
     uint32_t dj2QualifiedTurns_{};int dj2LastQualifiedDelta_{};
     bool dj2PushRotCaptured_{},dj2LoopStartRequested_{};
+    Dj2LoopObserved dj2LoopObserved_{Dj2LoopObserved::Unknown};
     uint32_t dj2LoopRequests_{};
     std::array<SpotHold,12> spots_{};
     std::array<int,702> stopAddresses_{};
