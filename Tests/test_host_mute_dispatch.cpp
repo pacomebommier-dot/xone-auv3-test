@@ -22,7 +22,14 @@ int main(){
  // BOT2 as the SECOND control in a qualified BOT3+BOT2 combo is not a solo owner.
  input(e,14,true,575);input(e,13,true,580);input(e,13,false,585);input(e,14,false,590);
  assert(e.mutePageVisible());
- input(e,36,true,600);e.stop(650);input(e,36,false,700);
+ // A second BOT pressed AFTER the 90ms combo window cannot steal a true
+ // BOT2 momentary overlay or prevent its restoration on the actual UP.
+ input(e,13,true,600);e.advance(801,801*48);
+ assert(!e.mutePageVisible());
+ input(e,15,true,820);input(e,15,false,830);
+ assert(!e.mutePageVisible());
+ input(e,13,false,840);assert(e.mutePageVisible());
+ input(e,36,true,900);e.stop(950);input(e,36,false,1000);
  assert(!e.muteGesturePending());
  std::cout<<"PASS K2 BOT2 BASE host MUTE, BAR, S2 combo, STOP\n";
 }
