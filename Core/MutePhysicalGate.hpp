@@ -17,6 +17,7 @@ public:
   return false;
  }
  void cancelBot2()noexcept { // an S2 combo has captured BOT2 before LONG
+  if(botLong_)nav_.longRelease();
   botHeld_=false;botLong_=false;
  }
  bool beginBot2(std::int64_t ms,bool qualifiedOwner)noexcept {
