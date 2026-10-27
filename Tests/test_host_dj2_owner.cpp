@@ -78,5 +78,14 @@ int main(){
         input(e,14,false,120);
         assert(!e.dj2PushRotationCapturedForDiagnostic());
     }
+    // A later incoming event must not change which push owns an earlier
+    // MIDI packet, even when the late callback succeeds.
+    {
+        HostEngine e;input(e,14,true,100);
+        auto qualified=turn(e,1,110);assert(qualified.emit&&qualified.dj2Qualified);
+        input(e,14,false,115);
+        e.sent(qualified,0);
+        assert(e.dj2QualifiedTurnsForDiagnostic()==0);
+    }
     std::cout<<"PASS DJ2 owner40 qualification, signed delta, callback failure, expiry and STOP\n";
 }

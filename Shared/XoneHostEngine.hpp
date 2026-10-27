@@ -263,7 +263,8 @@ public:
         }
         // Do not arm Browser on a failed or unsent relative rotation:
         // there is no verified track selection for DJ1 PUSH to confirm.
-        if(status==0&&r.musical&&r.type==16&&r.api==948&&r.sequence==sequence_){
+        if(status==0&&r.musical&&r.type==16&&r.api==948&&r.sequence==sequence_&&
+           r.dj2Qualified&&core_.surface().held(2)&&core_.s3().physicalOwner(2)==40){
             // A qualified push+rotation, unlike a bare DJ2 turn, has a
             // captured gesture owner. Count requested length changes only;
             // actual DJ loop playback requires authenticated backend ACKs.
