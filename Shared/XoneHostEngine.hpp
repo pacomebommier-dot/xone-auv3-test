@@ -14,7 +14,7 @@
 #include <cstddef>
 namespace xone::host {
 enum class Stage : uint8_t { RxIn, Decision, TxOut, RxFeedback, Stop, Overflow, Gesture };
-enum class Reason : uint8_t { Mapped, SurfaceOnly, Rejected, Untrusted, Sent, SendFailed, NoOutput, Received, Integrated, Qualified, ClockRejected, UnknownLive, PickupWait, Musical, DjRelative, BrowserLoadIntent };
+enum class Reason : uint8_t { Mapped, SurfaceOnly, Rejected, Untrusted, Sent, SendFailed, NoOutput, Received, Integrated, Qualified, ClockRejected, UnknownLive, PickupWait, Musical, DjRelative, BrowserLoadIntent, TopResetDeferred };
 struct Trace {
     uint32_t sequence{};
     int64_t sample{};
@@ -72,6 +72,7 @@ public:
     uint32_t dj2QualifiedTurnsForDiagnostic() const noexcept {return dj2QualifiedTurns_;}
     int dj2LastQualifiedDeltaForDiagnostic() const noexcept {return dj2LastQualifiedDelta_;}
     bool dj2PushRotationCapturedForDiagnostic() const noexcept {return dj2PushRotCaptured_;}
+    unsigned topResetsDeferred() const noexcept {return topResetsDeferred_;}
     int lastBrowserLoadDeckForDiagnostic() const noexcept {return lastBrowserLoadDeck_;}
     const GlobalMuteState& globalMute() const noexcept {return muteBridge_.state();}
     unsigned onMusicalGrid(const GridBatch& b) noexcept {
@@ -149,6 +150,24 @@ public:
                 // Any second BOT starts an S2 combo or concurrent BOT gesture.
                 // In that case BOT2 is no longer entitled to a solo MUTE short/long.
                 if(down&&physical<4&&physical!=1&&muteGate_.botHeld()&&core_.s3().physicalOwner(1)==30)muteGate_.cancelBot2();
+            }
+            if(accepted&&(cmd==0x90||cmd==0x80)&&physical>=32&&physical<36&&wasHeld!=(cmd==0x90&&data[2]!=0)){
+                const bool down=cmd==0x90&&data[2]!=0;
+                if(down){
+                    topHold_[static_cast<std::size_t>(physical-32)]=core_.nativeNav().active().route(physical);
+                }else{
+                    const auto captured=topHold_[static_cast<std::size_t>(physical-32)];
+                    topHold_[static_cast<std::size_t>(physical-32)]={};
+                    // TOP is a RESET request. Without authenticated RESET_DEFAULT
+                    // it must never emit an invented zero or an arbitrary CC.
+                    // Store an observable deferred intent only if the captured
+                    // physical destination has not changed during the gesture.
+                    const auto current=core_.nativeNav().active().route(physical);
+                    if(captured.address>=0&&captured==current){
+                        ++topResetsDeferred_;
+                        record(seq,sample,Stage::Decision,Reason::TopResetDeferred,0,data,3,captured.address);
+                    }
+                }
             }
             if(accepted&&(cmd==0x90||cmd==0x80)&&physical>=20&&physical<32){
                 const bool down=cmd==0x90&&data[2]!=0;
@@ -301,6 +320,7 @@ public:
             ++stopPendingCount_;
         }
         muteGate_.stop();muteBridge_.stop();browser_.stop();dj2PushRotCaptured_=false;
+        for(auto& target:topHold_)target={};
         core_.observeBrowserGuardForDiagnostic(false,0,0);
         core_.onHostStop(); // must not fabricate UP or clear held keys
         core_.output()=output;
@@ -488,6 +508,8 @@ private:
     l01::CoreCoordinatorV3 core_{};
     ContinuousPickup pickup_{};
     DjBrowserWindow browser_{};
+    std::array<l01::NavRoute,4> topHold_{};
+    unsigned topResetsDeferred_{};
     uint32_t browserLoadIntents_{};int lastBrowserLoadDeck_{};
     uint32_t dj2QualifiedTurns_{};int dj2LastQualifiedDelta_{};
     bool dj2PushRotCaptured_{};
