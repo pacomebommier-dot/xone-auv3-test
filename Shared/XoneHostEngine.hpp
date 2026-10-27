@@ -189,6 +189,14 @@ public:
             }else if(status==0||(r.type==11&&r.value==1))output.apply({r.type,r.api,r.value,127});
             output.drain();
             if(status==0&&r.type==11&&r.value==0){confirmedOffSequence_=r.sequence;confirmedOffApi_=r.api;}
+            // Remove an acknowledged STOP debt permanently: a later new ON
+            // at this address must not be mistaken for the old stopped note.
+            if(status==0&&(r.type==13||(r.type==11&&r.value==0))&&
+               r.api>=0&&r.api<702&&stopAwaiting_[static_cast<std::size_t>(r.api)]&&
+               !output.debt(r.api)){
+                stopAwaiting_[static_cast<std::size_t>(r.api)]=false;
+                --stopPendingCount_;
+            }
         }
         record(r.sequence,r.sample,Stage::TxOut,status==0?Reason::Sent:Reason::SendFailed,0,r.bytes,3,status);
     }
@@ -198,12 +206,21 @@ public:
         }
         record(r.sequence,r.sample,Stage::Decision,Reason::NoOutput,0,r.bytes,3);
     }
+    // Re-arm the scan once per render buffer. A callback failure or absent
+    // MIDI output must never consume a pending STOP NoteOff permanently.
+    void beginStopRetryPass() noexcept {stopRead_=0;}
+    unsigned pendingStopOffs() const noexcept {return stopPendingCount_;}
     void stop(int64_t sample) noexcept {
         started_=true;
         // Keep output debts until the real callback confirms each OFF.
         const auto output=core_.output();
-        stopCount_=stopRead_=0;stopSample_=sample;
-        for(int a=0;a<702;++a)if(output.debt(a))stopAddresses_[stopCount_++]=a;
+        stopCount_=stopRead_=stopPendingCount_=0;stopSample_=sample;
+        stopAwaiting_.fill(false);
+        for(int a=0;a<702;++a)if(output.debt(a)){
+            stopAddresses_[stopCount_++]=a;
+            stopAwaiting_[static_cast<std::size_t>(a)]=true;
+            ++stopPendingCount_;
+        }
         muteGate_.stop();muteBridge_.stop();
         core_.onHostStop(); // must not fabricate UP or clear held keys
         core_.output()=output;
@@ -215,11 +232,20 @@ public:
         record(++sequence_,sample,Stage::Stop,stopCount_?Reason::Musical:Reason::SurfaceOnly,0,nullptr,0);
     }
     Result nextStopPacket() noexcept {
-        if(stopRead_>=stopCount_)return {};
-        const int a=stopAddresses_[stopRead_++];
-        Result r{true,{static_cast<uint8_t>(0x86+a/128),static_cast<uint8_t>(a%128),0},sequence_,stopSample_,true,a,0,11};
-        for(int key=0;key<36;++key)if(core_.output().owner(key)==a){r.type=13;r.key=key;break;}
-        return r;
+        if(!stopPendingCount_)return {};
+        while(stopRead_<stopCount_){
+            const int a=stopAddresses_[stopRead_++];
+            if(!stopAwaiting_[static_cast<std::size_t>(a)])continue;
+            if(!core_.output().debt(a)){
+                stopAwaiting_[static_cast<std::size_t>(a)]=false;
+                --stopPendingCount_;
+                continue;
+            }
+            Result r{true,{static_cast<uint8_t>(0x86+a/128),static_cast<uint8_t>(a%128),0},sequence_,stopSample_,true,a,0,11};
+            for(int key=0;key<36;++key)if(core_.output().owner(key)==a){r.type=13;r.key=key;break;}
+            return r;
+        }
+        return {};
     }
     int observed() const noexcept {return -2;} // no authenticated backend profile in L02
     bool surfaceHeld(size_t i) const noexcept {return core_.surface().held(i);}
@@ -383,7 +409,8 @@ private:
     ContinuousPickup pickup_{};
     std::array<SpotHold,12> spots_{};
     std::array<int,702> stopAddresses_{};
-    unsigned stopCount_{},stopRead_{};int64_t stopSample_{};
+    std::array<bool,702> stopAwaiting_{};
+    unsigned stopCount_{},stopRead_{},stopPendingCount_{};int64_t stopSample_{};
     bool started_{};
     SessionMailbox restores_{},snapshots_{};
     SessionFrame uiSession_{}; // UI owns cache and request generation.

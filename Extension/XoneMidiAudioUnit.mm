@@ -156,6 +156,10 @@
             }
         };
         flushMute(bufferStart); // old failed writes, no fabricated BAR
+        // Retry only genuine outstanding STOP OFF debts. This precedes any
+        // fresh physical MIDI in this buffer and cannot invent a note ON.
+        engine->beginStopRetryPass();
+        flushStop();
         if (transport) {
             AUHostTransportStateFlags flags = static_cast<AUHostTransportStateFlags>(0);
             if (transport(&flags, nullptr, nullptr, nullptr)) {
