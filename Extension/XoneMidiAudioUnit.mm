@@ -180,16 +180,19 @@
                 flushMute(bufferStart+one.events[0].offset);
             }
         };
+        AUEventSampleTime lastEventSample=bufferStart;
         unsigned processed = 0;
         const AURenderEvent *event = realtimeEventListHead;
         for (;
              event != nullptr && processed < 256; event = event->head.next, ++processed) {
             if (event->head.eventType != AURenderEventMIDI) continue;
             const auto &m = event->MIDI;
-            // Preserve host sample timeline; clamp late/out-of-buffer events.
-            AUEventSampleTime sample = m.eventSampleTime;
-            if (sample < bufferStart) sample = bufferStart;
-            if (frameCount && sample >= bufferStart + frameCount) sample = bufferStart + frameCount - 1;
+            // Immediate is explicitly allowed by AU; other events must belong
+            // to this buffer and preserve the host's timestamp ordering.
+            const AUEventSampleTime sample = m.eventSampleTime==AUEventSampleTimeImmediate
+                ?bufferStart:m.eventSampleTime;
+            if(sample<bufferStart || !frameCount || sample>=bufferStart+frameCount || sample<lastEventSample)continue;
+            lastEventSample=sample;
             deliverGridThrough(sample);
             if (m.length == 1 && m.data[0] == 0xFC && m.cable == 0) {
                 scheduler->stop(); engine->stop(sample); flushStop(); continue;

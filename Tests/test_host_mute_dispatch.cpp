@@ -31,5 +31,19 @@ int main(){
  input(e,13,false,840);assert(e.mutePageVisible());
  input(e,36,true,900);e.stop(950);input(e,36,false,1000);
  assert(!e.muteGesturePending());
+ // Two independently held BASE controls commit together, in release order.
+ HostEngine multi;multi.enableNativeMutePage(true);
+ input(multi,13,true,0);input(multi,13,false,10);
+ input(multi,36,true,20);input(multi,37,true,21);
+ input(multi,36,false,40);input(multi,37,false,41);
+ assert(multi.globalMute().pendingCount()==2);
+ assert(!multi.globalMute().explicitlyMuted(0)&&!multi.globalMute().explicitlyMuted(1));
+ assert(multi.onMusicalGrid(bar())==1);
+ assert(multi.globalMute().explicitlyMuted(0)&&multi.globalMute().explicitlyMuted(1));
+ // A rejected late UP must neither arm nor release the physical capture.
+ input(multi,38,true,100);input(multi,38,false,99);
+ assert(!multi.muteGesturePending()&&multi.surfaceHeld(6));
+ multi.stop(110*48);input(multi,38,false,120);
+ assert(!multi.muteGesturePending()&&multi.onMusicalGrid(bar())==0);
  std::cout<<"PASS K2 BOT2 BASE host MUTE, BAR, S2 combo, STOP\n";
 }

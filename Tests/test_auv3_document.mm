@@ -44,7 +44,7 @@ int main() {
     AVAudioPCMBuffer *audio=[[AVAudioPCMBuffer alloc] initWithPCMFormat:format frameCapacity:8192];
     assert(audio && audio.floatChannelData);
     AUEventSampleTime cursor=0;
-    auto pump=[&](AVAudioFrameCount frames,int command=-1,int number=0,int value=0,AVAudioFrameCount offset=0) {
+    auto pump=[&](AVAudioFrameCount frames,int command=-1,int number=0,int value=0,AUEventSampleTime offset=0) {
         AudioTimeStamp timestamp{};timestamp.mFlags=kAudioTimeStampSampleTimeValid;timestamp.mSampleTime=static_cast<Float64>(cursor);
         AURenderEvent event{};event.MIDI.eventType=AURenderEventMIDI;event.MIDI.eventSampleTime=cursor+offset;
         event.MIDI.cable=0;event.MIDI.length=static_cast<uint16_t>(command==0xFC?1:3);
@@ -58,6 +58,8 @@ int main() {
     };
     pump(48,0xBE,16,64);assert(sent==1&&lastStatus==0xBA&&lastNumber==48&&lastValue==64);
     pump(48,0xBE,16,100);assert(sent==2&&lastValue==100);
+    pump(48,0xBE,16,120,-2);assert(sent==2); // late CC cannot be moved to buffer start
+    pump(48,0xBE,16,120,48);assert(sent==2); // future CC cannot be moved to buffer end
     NSDictionary *state=unit.fullStateForDocument;
     NSData *saved=state[@"XONE_LAST_LIVE_V1"];assert([saved isKindOfClass:[NSData class]]);
     xone::host::SessionImage decoded{};

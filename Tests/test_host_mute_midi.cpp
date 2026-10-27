@@ -31,5 +31,14 @@ int main(){
    assert(q.bytes[0]==0x8A);p.confirm(q.target,true);++count;
  }
  assert(count==14);
+ GlobalMuteState uncertain;MuteMidiProjection retry;
+ assert(uncertain.arm(3,GlobalMuteState::Gesture::ShortMute));assert(uncertain.onBar());
+ retry.observe(uncertain);auto failed=take(retry);assert(failed.valid&&failed.target==3);
+ retry.confirm(3,false);
+ assert(uncertain.arm(3,GlobalMuteState::Gesture::ShortMute));assert(uncertain.onBar());
+ retry.observe(uncertain);failed=take(retry);
+ assert(failed.valid&&failed.bytes[0]==0x8A&&failed.bytes[1]==19);
+ retry.confirm(3,false);assert(take(retry).valid);
+ retry.confirm(3,true);assert(!take(retry).valid);
  std::cout<<"PASS S7 MUTE NOTE 528..543, callback retry and SOLO projection\n";
 }

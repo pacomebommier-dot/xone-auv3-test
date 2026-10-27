@@ -17,7 +17,7 @@ public:
  void observe(const GlobalMuteState& state) noexcept {
   for(unsigned i=0;i<GlobalMuteState::Targets;++i){
    desired_[i]=state.effectivelyMuted(i)?1:0;
-   if(sent_[i]!=desired_[i])dirty_[i]=true;
+   if(uncertain_[i]||sent_[i]!=desired_[i])dirty_[i]=true;
    else dirty_[i]=false;
   }
  }
@@ -34,7 +34,9 @@ public:
   return {};
  }
  void confirm(unsigned target,bool callbackSucceeded) noexcept {
-  if(target>=GlobalMuteState::Targets||!callbackSucceeded)return;
+  if(target>=GlobalMuteState::Targets)return;
+  if(!callbackSucceeded){uncertain_[target]=true;dirty_[target]=true;return;}
+  uncertain_[target]=false;
   sent_[target]=desired_[target];dirty_[target]=false;
  }
  bool pending(unsigned target) const noexcept {
@@ -42,6 +44,6 @@ public:
  }
 private:
  std::array<int,GlobalMuteState::Targets> desired_{},sent_{};
- std::array<bool,GlobalMuteState::Targets> dirty_{};
+ std::array<bool,GlobalMuteState::Targets> dirty_{},uncertain_{};
 };
 } // namespace xone::host
