@@ -58,6 +58,7 @@ public:
     }
     // Test-only gate; musical output and unqualified NAV transitions remain disabled.
     void enableDiagnosticShortNav(bool yes) noexcept {shortNavDiagnostic_=yes;}
+    void enableNativeMuteBot2(bool yes) noexcept {muteBot2Exclusive_=yes;}
     void enableDiagnosticQualifiedNav(bool yes) noexcept {qualifiedNavDiagnostic_=yes;}
     // L01/07 legacy diagnostic override for unported TOUCH contexts.
     void enableDiagnosticTouchNav(bool yes) noexcept {diagnosticTouch_=yes;}
@@ -230,6 +231,9 @@ private:
                 continue;
             }
             if(!normal&&!combo)continue;
+            // BOT2 solo belongs exclusively to the native global-MUTE overlay.
+            // Keep BOT2 combos and their qualified NAV roles independent.
+            if(muteBot2Exclusive_ && p.role==1 && normal)continue;
             const int mode=NavS3::shortRoleMode(p.role);
             if(mode<0)continue;
             if(p.qualifiedPhase==QualifiedPhase::LongRelease){
@@ -254,7 +258,7 @@ private:
     SurfaceInput surface_{};
     GestureS2 gesture_{};
     S3DecisionBoundary s3_{};
-    NavS3 nav_{};bool shortNavDiagnostic_{};bool qualifiedNavDiagnostic_{};
+    NavS3 nav_{};bool shortNavDiagnostic_{};bool qualifiedNavDiagnostic_{};bool muteBot2Exclusive_{};
     S3LongTransaction longTx_{};S3TouchNav touch_{};bool diagnosticTouch_{};int touchOwner_{-1};
     int machineLastLow_{-1},machineLastHigh_{-1};
     LiveState live_{};bool diagnosticLive_{};FxS6 fx_{};BankS6 nativeBank_{};std::uint32_t fxOrigin_{};
