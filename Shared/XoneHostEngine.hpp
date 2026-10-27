@@ -47,9 +47,10 @@ public:
         core_.enableTestMidiProjection(true);
         core_.enableDiagnosticTouchNav(true); // source @zk/@zl selection, not SPOT TOUCH output
         core_.enableDiagnosticQualifiedNav(true); // source-qualified SHORT/LONG NAV only
-        core_.enableNativeMuteBot2(true); // exclusive solo BOT2 owner
+        // Opt-in native BOT2 overlay; legacy diagnostic harness retains NAV role1.
     }
-    bool mutePageVisible() const noexcept {return muteGate_.visible();}
+    void enableNativeMutePage(bool yes) noexcept {mutePageEnabled_=yes;core_.enableNativeMuteBot2(yes);}
+    bool mutePageVisible() const noexcept {return mutePageEnabled_&&muteGate_.visible();}
     bool muteGesturePending() const noexcept {return muteBridge_.state().pendingCount()!=0;}
     const GlobalMuteState& globalMute() const noexcept {return muteBridge_.state();}
     unsigned onMusicalGrid(const GridBatch& b) noexcept {return muteBridge_.observe(b);}
@@ -75,7 +76,7 @@ public:
             const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs);
             record(seq,sample,Stage::Decision,accepted?Reason::Integrated:Reason::ClockRejected,cable,data,length);
             drainCore(seq,sample);
-            if(accepted&&(cmd==0x90||cmd==0x80)&&physical>=0){
+            if(mutePageEnabled_&&accepted&&(cmd==0x90||cmd==0x80)&&physical>=0){
                 const bool down=cmd==0x90&&data[2]!=0;
                 if(physical==1){
                     if(down)muteGate_.beginBot2(gestureMs,core_.s3().physicalOwner(1)==1);
@@ -224,6 +225,7 @@ public:
     }
     uint32_t overflows() const noexcept {return overflows_.load(std::memory_order_relaxed);}
 private:
+    bool mutePageEnabled_{};
     l01::MutePhysicalGate muteGate_{};
     MuteBarBridge muteBridge_{};
     struct SpotHold {int cell{-1},api{-1},mode{},previous{};int64_t downMs{};};
