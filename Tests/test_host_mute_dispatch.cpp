@@ -19,8 +19,8 @@ int main(){
  input(e,13,true,500);input(e,15,true,550); // BOT2 then BOT4 combo
  input(e,15,false,560);input(e,13,false,570);
  assert(e.mutePageVisible()); // combo must not toggle BOT2
- // BOT2 as the SECOND control in a qualified BOT1+BOT2 combo is not a solo owner.
- input(e,12,true,575);input(e,13,true,580);input(e,13,false,585);input(e,12,false,590);
+ // BOT2 as the SECOND control in a qualified BOT3+BOT2 combo is not a solo owner.
+ input(e,14,true,575);input(e,13,true,580);input(e,13,false,585);input(e,14,false,590);
  assert(e.mutePageVisible());
  input(e,36,true,600);e.stop(650);input(e,36,false,700);
  assert(!e.muteGesturePending());
