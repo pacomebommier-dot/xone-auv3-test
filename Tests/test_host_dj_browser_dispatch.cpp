@@ -75,5 +75,33 @@ int main(){
         e.stop(11*48);assert(!e.canSend(r));
         e.sent(r,0);assert(!e.djBrowserPendingAt(20));
     }
+    // Missing MIDI output cannot authorize Browser just because a packet
+    // was prepared; BOT2 keeps its original MUTE owner.
+    {
+        HostEngine e;assert(e.configureDjBrowserDeckForDiagnostic(1));
+        e.enableNativeMutePage(true);
+        auto r=turn(e,1,10);assert(r.emit);
+        e.noOutput(r);
+        assert(!e.djBrowserPendingAt(11));
+        edge(e,13,true,20);edge(e,13,false,40);
+        assert(e.mutePageVisible()&&e.browserLoadIntentsForDiagnostic()==0);
+    }
+    // Same relative delta twice is two browser navigation commands.
+    // A known deck is necessary but insufficient until delivery succeeds.
+    {
+        HostEngine e;assert(e.configureDjBrowserDeckForDiagnostic(1));
+        auto r=turn(e,1,10);assert(r.emit);e.sent(r,0);
+        assert(e.djBrowserPendingAt(3009)&&!e.djBrowserPendingAt(3010));
+        r=turn(e,1,100);assert(r.emit&&r.bytes[2]==1);e.sent(r,0);
+        assert(e.djBrowserPendingAt(3099)&&!e.djBrowserPendingAt(3100));
+        // No callback may report an earlier prepared packet after newer
+        // gestures and silently rearm the browser deadline.
+        r=turn(e,1,200);assert(r.emit);
+        auto future=turn(e,1,210);assert(future.emit);
+        e.sent(r,0);
+        assert(!e.djBrowserPendingAt(3150));
+        e.sent(future,0);
+        assert(e.djBrowserPendingAt(3150));
+    }
     std::cout<<"PASS DJ1 Browser -> S3 owner23 -> BOT2 exclusion, failed callback, exact expiry, combo, STOP, no fake LOAD\n";
 }
