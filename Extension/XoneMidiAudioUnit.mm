@@ -45,6 +45,7 @@
 
 - (BOOL)allocateRenderResourcesAndReturnError:(NSError * _Nullable __autoreleasing *)outError {
     if (![super allocateRenderResourcesAndReturnError:outError]) return NO;
+    _engine.enableNativeMutePage(true);
     _cachedMIDIOutput = [self.MIDIOutputEventBlock copy];
     _cachedTransport = [self.transportStateBlock copy];
     _cachedMusicalContext = [self.musicalContextBlock copy];
