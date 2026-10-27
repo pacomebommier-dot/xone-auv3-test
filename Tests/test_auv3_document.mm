@@ -25,7 +25,7 @@ int main() {
     };
     __block NSUInteger sent=0,failAt=0;
     uint8_t bytesSent[64][3]{};auto *recorded=bytesSent;
-    __block NSUInteger ledSent=0;
+    __block NSUInteger ledSent=0,failLedAt=0;
     uint8_t ledBytes[4096][3]{};auto *ledRecorded=ledBytes;
     __block uint8_t lastStatus=0,lastNumber=0,lastValue=0;
     AUMIDIOutputEventBlock testOutput=^OSStatus(AUEventSampleTime time,uint8_t cable,NSInteger length,const uint8_t *data) {
@@ -33,7 +33,7 @@ int main() {
         if((data[0]&15)==14){
             assert(ledSent<4096&&(data[0]==0x8E||data[0]==0x9E));
             for(unsigned i=0;i<3;++i)ledRecorded[ledSent][i]=data[i];
-            ++ledSent;return noErr;
+            ++ledSent;return ledSent==failLedAt?static_cast<OSStatus>(-1):noErr;
         }
         assert(sent<64);
         for(unsigned i=0;i<3;++i)recorded[sent][i]=data[i];
@@ -180,9 +180,13 @@ int main() {
     pump(48,0x9E,13,127);
     pump(48,0x8E,13,0);
     assert(ledSent==64&&ledRecorded[3][0]==0x9E&&ledRecorded[3][1]==108);
+    failLedAt=66; // fail the first pending red ON after green OFF
     pump(48,0x9E,36,127);
     pump(48,0x8E,36,0);
     assert(ledSent==66&&ledRecorded[64][0]==0x8E&&ledRecorded[64][1]==108&&ledRecorded[65][0]==0x9E&&ledRecorded[65][1]==36);
+    failLedAt=0;pump(48);assert(ledSent==70); // three proven OFFs then desired red ON
+    assert(ledRecorded[66][0]==0x8E&&ledRecorded[66][1]==36&&ledRecorded[69][0]==0x9E&&ledRecorded[69][1]==36);
+    pump(48);assert(ledSent==70); // success clears debt; no duplicate LED ON
     assert(sent==beforeMute); // no immediate note output on K2 gesture
     for(unsigned n=0;n<12;++n)pump(8192);
     if(sent!=beforeMute+1||lastStatus!=0x9A||lastNumber!=16||lastValue!=127)
