@@ -17,12 +17,22 @@ int main(){
         assert(!edge(e,n,false,t+1).emit);
     }
     assert(e.topResetsDeferred()==4);
+    for(unsigned i=0;i<4;++i){
+        HostEngine::TopIntent intent{};
+        assert(e.lastTopIntent(i,intent));
+        assert(intent.physical==static_cast<int>(32+i)&&intent.route.address>=0);
+        assert(intent.sequence>0);
+    }
     assert(!edge(e,52,false,100).emit);
     assert(e.topResetsDeferred()==4); // orphan UP cannot reset
     edge(e,52,true,110);
     e.stop(111*48);
     edge(e,52,false,120);
     assert(e.topResetsDeferred()==4); // STOP cancels ownership
+    for(unsigned i=0;i<4;++i){
+        HostEngine::TopIntent intent{};
+        assert(!e.lastTopIntent(i,intent));
+    }
     assert(!e.nextStopPacket().emit);
     std::cout<<"PASS TOP source-bound reset intent, no guessed MIDI defaults, orphan UP, STOP\n";
 }

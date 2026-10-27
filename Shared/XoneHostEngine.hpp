@@ -73,6 +73,11 @@ public:
     int dj2LastQualifiedDeltaForDiagnostic() const noexcept {return dj2LastQualifiedDelta_;}
     bool dj2PushRotationCapturedForDiagnostic() const noexcept {return dj2PushRotCaptured_;}
     unsigned topResetsDeferred() const noexcept {return topResetsDeferred_;}
+    struct TopIntent {int physical{-1};l01::NavRoute route{};uint32_t sequence{};};
+    bool lastTopIntent(unsigned index,TopIntent& out) const noexcept {
+        if(index>=4||!topIntentValid_[index])return false;
+        out=topIntents_[index];return true;
+    }
     int lastBrowserLoadDeckForDiagnostic() const noexcept {return lastBrowserLoadDeck_;}
     const GlobalMuteState& globalMute() const noexcept {return muteBridge_.state();}
     unsigned onMusicalGrid(const GridBatch& b) noexcept {
@@ -164,6 +169,9 @@ public:
                     // physical destination has not changed during the gesture.
                     const auto current=core_.nativeNav().active().route(physical);
                     if(captured.address>=0&&captured==current){
+                        const auto index=static_cast<std::size_t>(physical-32);
+                        topIntents_[index]={physical,captured,seq};
+                        topIntentValid_[index]=true;
                         ++topResetsDeferred_;
                         record(seq,sample,Stage::Decision,Reason::TopResetDeferred,0,data,3,captured.address);
                     }
@@ -321,6 +329,7 @@ public:
         }
         muteGate_.stop();muteBridge_.stop();browser_.stop();dj2PushRotCaptured_=false;
         for(auto& target:topHold_)target={};
+        topIntentValid_.fill(false);
         core_.observeBrowserGuardForDiagnostic(false,0,0);
         core_.onHostStop(); // must not fabricate UP or clear held keys
         core_.output()=output;
@@ -509,6 +518,8 @@ private:
     ContinuousPickup pickup_{};
     DjBrowserWindow browser_{};
     std::array<l01::NavRoute,4> topHold_{};
+    std::array<TopIntent,4> topIntents_{};
+    std::array<bool,4> topIntentValid_{};
     unsigned topResetsDeferred_{};
     uint32_t browserLoadIntents_{};int lastBrowserLoadDeck_{};
     uint32_t dj2QualifiedTurns_{};int dj2LastQualifiedDelta_{};
