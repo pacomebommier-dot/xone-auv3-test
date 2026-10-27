@@ -24,3 +24,5 @@ La fixture MACHINE connue est une référence logicielle de test. Ce raccordemen
 Validation locale :22 suites C++ GCC16.2 PASS,10 cas C V0.1 PASS ; manifest12/14 et contrôles source K2_SIM/SH-01A PASS. Preuve : evidence/v3/TOUCH_FLASH_LOCAL_GCC.json. Validation Apple et iOS à confirmer par la CI du nouveau commit.
 
 Ordre des événements corrigé après test RED : la capture de route SPOT se fait après la qualification S2/S3 de cet événement, car un LONG peut devenir valide à son timestamp. Son UP conserve cette capture même après retour du NAV temporaire. Le harness AU couvre un appui situé480frames après le début d’un buffer48kHz qui franchit ce seuil ; les suites historiques restent inchangées.
+
+La CI812b5b3 conserve un échec du nouveau test AU intra-buffer (22 suites et sanitizers PASS, émission attendue absente). Le harness réinstalle désormais son bloc callback conservé explicitement dans chaque nouvelle AU, au lieu de relire le callback d’une AU dont les ressources ont été libérées. Le test d’émission reste inchangé, avec trace conditionnelle en cas d’échec. La CI suivante doit confirmer ce diagnostic.

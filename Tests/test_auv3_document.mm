@@ -26,11 +26,12 @@ int main() {
     __block NSUInteger sent=0,failAt=0;
     uint8_t bytesSent[64][3]{};auto *recorded=bytesSent;
     __block uint8_t lastStatus=0,lastNumber=0,lastValue=0;
-    unit.MIDIOutputEventBlock=^OSStatus(AUEventSampleTime time,uint8_t cable,NSInteger length,const uint8_t *data) {
+    AUMIDIOutputEventBlock testOutput=^OSStatus(AUEventSampleTime time,uint8_t cable,NSInteger length,const uint8_t *data) {
         (void)time;assert(cable==0&&length==3&&sent<64);
         for(unsigned i=0;i<3;++i)recorded[sent][i]=data[i];
         ++sent;lastStatus=data[0];lastNumber=data[1];lastValue=data[2];return sent==failAt?static_cast<OSStatus>(-1):noErr;
     };
+    unit.MIDIOutputEventBlock=testOutput;
     xone::host::SessionImage image{};image.schema=1;image.config=1;image.revision=1;image.desired.fill(-2);image.desired[1328]=64;image.desired[1768]=0;
     image.desired[380]=0;image.desired[392]=3;
     image.desired[381]=0;image.desired[393]=4;
@@ -107,7 +108,7 @@ int main() {
     [unit deallocateRenderResources];
     // A new real AU subclass instance receives the saved document, not the old engine.
     XoneMidiAudioUnit *reopened=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
-    assert(reopened && !error);reopened.MIDIOutputEventBlock=unit.MIDIOutputEventBlock;
+    assert(reopened && !error);reopened.MIDIOutputEventBlock=testOutput;
     assert([reopened.inputBusses[0] setFormat:format error:&error]);
     assert([reopened.outputBusses[0] setFormat:format error:&error]);
     reopened.fullState=state; // generic API restore, document API readback
@@ -118,15 +119,19 @@ int main() {
     NSData *reloaded=reopened.fullStateForDocument[@"XONE_LAST_LIVE_V1"];
     assert(xone::host::decodeSession(static_cast<const uint8_t *>(reloaded.bytes),reloaded.length,decoded)&&decoded.desired[1328]==100);
     [reopened deallocateRenderResources];
+    std::cout<<"AU fixture callback retained="<<(testOutput!=nil)<<" deallocated-unit callback="<<(unit.MIDIOutputEventBlock!=nil)<<"\n";
     // LONG is crossed by an event inside the buffer, before the end-buffer timer.
     XoneMidiAudioUnit *clockUnit=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
-    assert(clockUnit&&!error);clockUnit.MIDIOutputEventBlock=unit.MIDIOutputEventBlock;clockUnit.maximumFramesToRender=8192;
+    assert(clockUnit&&!error);clockUnit.MIDIOutputEventBlock=testOutput;clockUnit.maximumFramesToRender=8192;
     assert([clockUnit.inputBusses[0] setFormat:format error:&error]);
     assert([clockUnit.outputBusses[0] setFormat:format error:&error]);
     clockUnit.fullState=@{@"XONE_LAST_LIVE_V1":[NSData dataWithBytes:bytes.data() length:bytes.size()]};
     assert([clockUnit allocateRenderResourcesAndReturnError:&error]);render=clockUnit.internalRenderBlock;
     pump(48,0x9E,13,127);pump(48,0x9E,15,127);pump(8192);pump(960);
-    pump(960,0x9E,48,127,480);assert(sent==19&&lastStatus==0x96&&lastNumber==108&&lastValue==127);
+    pump(960,0x9E,48,127,480);
+    if(sent!=19||lastStatus!=0x96||lastNumber!=108||lastValue!=127)
+        std::cerr<<"in-buffer LONG: sent="<<sent<<" last="<<int(lastStatus)<<","<<int(lastNumber)<<","<<int(lastValue)<<" trace="<<[[clockUnit drainDiagnosticText] UTF8String]<<"\n";
+    assert(sent==19&&lastStatus==0x96&&lastNumber==108&&lastValue==127);
     pump(48,0x8E,15,0);pump(48,0x8E,13,0);
     pump(48,0x8E,48,0);assert(sent==20&&lastStatus==0x86&&lastNumber==108&&lastValue==0);
     [clockUnit deallocateRenderResources];
