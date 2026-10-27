@@ -10,6 +10,15 @@ namespace xone::l01 {
 class MutePhysicalGate {
 public:
  bool visible()const noexcept{return nav_.visible();}
+ bool botHeld()const noexcept{return botHeld_;}
+ bool timerNeeded()const noexcept {
+  if(botHeld_&&!botLong_)return true;
+  for(unsigned i=0;i<16;++i)if(baseHeld_[i]&&!baseLong_[i])return true;
+  return false;
+ }
+ void cancelBot2()noexcept { // an S2 combo has captured BOT2 before LONG
+  botHeld_=false;botLong_=false;
+ }
  bool beginBot2(std::int64_t ms,bool qualifiedOwner)noexcept {
   if(!qualifiedOwner||botHeld_||ms<0)return false;
   botHeld_=true;botDown_=ms;botLong_=false;return true;
@@ -33,7 +42,7 @@ public:
   if(base>=16||!baseHeld_[base]||now<baseDown_[base])return false;
   advance(now);const bool longOne=baseLong_[base];
   baseHeld_[base]=false;baseLong_[base]=false;
-  if(!nav_.visible())return false;
+  // DOWN owns this BASE; later overlay changes cannot retarget its UP.
   return bridge.request(base,longOne?xone::host::GlobalMuteState::Gesture::LongSolo:
     xone::host::GlobalMuteState::Gesture::ShortMute,true);
  }
