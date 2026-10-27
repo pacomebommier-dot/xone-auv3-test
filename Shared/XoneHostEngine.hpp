@@ -38,7 +38,7 @@ struct Result {
     Result packet(unsigned i) const noexcept {
         if(!emit||i>extraCount)return {};
         Result r{};
-        if(i==0){r={true,{bytes[0],bytes[1],bytes[2]},sequence,sample,musical,api,value,type};r.key=key;r.requiresOff=requiresOff;}
+        if(i==0){r={true,{bytes[0],bytes[1],bytes[2]},sequence,sample,musical,api,value,type};r.key=key;r.requiresOff=requiresOff;r.gestureMs=gestureMs;r.dj2Qualified=dj2Qualified;}
         else{const auto& p=extra[i-1];r={true,{p.bytes[0],p.bytes[1],p.bytes[2]},sequence,sample,true,p.api,p.value,p.type};r.key=p.key;r.requiresOff=p.requiresOff;}
         return r;
     }
@@ -89,8 +89,21 @@ public:
     bool observeDj2LoopBackendForDiagnostic(Dj2LoopObserved observed,uint32_t generation) noexcept {
         if(observed==Dj2LoopObserved::Unknown||generation!=dj2BackendGeneration_)return false;
         dj2LoopObserved_=observed;
-        if(observed==Dj2LoopObserved::Off)dj2LoopStartRequested_=false;
+        if(observed==Dj2LoopObserved::Off){
+            dj2LoopStartRequested_=false;
+            if(djLoopCommand_==DjLoopCommand::Start)djLoopCommand_=DjLoopCommand::None;
+        }
         return true;
+    }
+    // Explicit unresolved audio service boundary, separate from LOOP1/2/3.
+    // Handoff acknowledges receipt only; playback still requires observation.
+    enum class DjLoopCommand : uint8_t { None, Start, Stop, StopReset };
+    struct DjLoopService {DjLoopCommand command{};uint32_t generation{};};
+    DjLoopService pendingDjLoopService() const noexcept {return {djLoopCommand_,dj2BackendGeneration_};}
+    bool acknowledgeDjLoopService(DjLoopService service) noexcept {
+        if(service.command==DjLoopCommand::None || service.command!=djLoopCommand_ ||
+           service.generation!=dj2BackendGeneration_)return false;
+        djLoopCommand_=DjLoopCommand::None;return true;
     }
     unsigned topResetsDeferred() const noexcept {return topResetsDeferred_;}
     unsigned topPatchRecallsDeferred() const noexcept {return topPatchRecallsDeferred_;}
@@ -150,12 +163,16 @@ public:
             // BOT2 is also DJ1 PUSH. Ownership is captured on its true DOWN,
             // never reconstructed from a deadline at UP.
             const bool browserBot2Release=physical==1&&wasHeld&&browser_.pushOwned();
+            const bool wasMuteVisible=mutePageVisible();
             auto muteNext=muteGate_;muteNext.advance(gestureMs);
             const bool baseEvent=(cmd==0x90||cmd==0x80)&&physical>=4&&physical<20;
             const bool muteBaseOwned=mutePageEnabled_&&baseEvent&&
                 (wasHeld?muteGate_.ownsBase(static_cast<unsigned>(physical-4)):muteNext.visible());
+            const int previousNav=navMode();
+            core_.retainDjLoopPage(dj2LoopObserved_!=Dj2LoopObserved::Off || dj2LoopStartRequested_);
             const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs,muteBaseOwned);
             record(seq,sample,Stage::Decision,accepted?Reason::Integrated:Reason::ClockRejected,cable,data,length);
+            if(accepted)resolveDjLoopNavigation(previousNav);
             drainCore(seq,sample);
             if(accepted&&physical==2&&(cmd==0x90||cmd==0x80)&&
                wasHeld&&!(cmd==0x90&&data[2]!=0))dj2PushRotCaptured_=false;
@@ -189,6 +206,8 @@ public:
                 // In that case BOT2 is no longer entitled to a solo MUTE short/long.
                 if(down&&physical<4&&physical!=1&&muteGate_.botHeld()&&core_.s3().physicalOwner(1)==30)muteGate_.cancelBot2();
             }
+            if(accepted && !wasMuteVisible && mutePageVisible() && (navMode()==2 || navMode()==4))
+                requestDjLoopStop(true);
             if(accepted&&(cmd==0x90||cmd==0x80)&&physical>=32&&physical<36&&wasHeld!=(cmd==0x90&&data[2]!=0)){
                 const bool down=cmd==0x90&&data[2]!=0;
                 if(down){
@@ -234,7 +253,7 @@ public:
                     // rotation) is only valid if it captured physical owner40.
                     // Capture this one gesture before any MIDI callback result.
                     if(data[1]==21&&core_.surface().held(2)&&
-                       core_.s3().physicalOwner(2)==40)dj2PushRotCaptured_=true;
+                       core_.s3().physicalOwner(2)==40&&core_.djLoopRotationAllowed())dj2PushRotCaptured_=true;
                     // S7 source API: kind16 / address 947 (DJ1), 948 (DJ2).
                     // Two's-complement RAW is forwarded without pickup or CC de-dup.
                     // This is the virtual control API, NOT an assumed audio backend.
@@ -245,7 +264,7 @@ public:
                     Result out{true,{p.status,p.number,p.value},seq,sample,true,api,data[2],16};
                     out.gestureMs=gestureMs;
                     out.dj2Qualified=data[1]==21&&core_.surface().held(2)&&
-                        core_.s3().physicalOwner(2)==40;
+                        core_.s3().physicalOwner(2)==40&&core_.djLoopRotationAllowed();
                     record(seq,sample,Stage::Decision,Reason::Musical,0,out.bytes,3);
                     return out;
                 }
@@ -344,6 +363,8 @@ public:
                 // currently OFF. This is *requested*, never an audio ACK.
                 if(dj2LoopObserved_!=Dj2LoopObserved::On&&!dj2LoopStartRequested_){
                     dj2LoopStartRequested_=true;
+                    ++dj2BackendGeneration_;
+                    djLoopCommand_=DjLoopCommand::Start;
                     ++dj2LoopRequests_;
                 }
             }
@@ -377,11 +398,7 @@ public:
         }
         muteGate_.stop();muteBridge_.stop();browser_.stop();dj2PushRotCaptured_=false;
         // STOP requests DJ LOOP termination without claiming audio ACK.
-        if(dj2LoopStartRequested_||dj2LoopObserved_==Dj2LoopObserved::On)
-            ++dj2LoopStopRequests_;
-        dj2LoopStartRequested_=false;
-        dj2LoopObserved_=Dj2LoopObserved::Unknown;
-        ++dj2BackendGeneration_;
+        requestDjLoopStop(false,true);
         for(auto& target:topHold_)target={};
         topIntentValid_.fill(false);
         core_.observeBrowserGuardForDiagnostic(false,0,0);
@@ -417,10 +434,15 @@ public:
     bool longNavPending() const noexcept {return core_.longNavPending();}
     void advance(int64_t ms,int64_t sample) noexcept {
         started_=true;
+        const bool wasMuteVisible=mutePageVisible();
         muteGate_.advance(ms);
+        if(!wasMuteVisible && mutePageVisible() && (navMode()==2 || navMode()==4))requestDjLoopStop(true);
         if(!core_.gesture().timerNeeded())return;
         const auto seq=++sequence_;
+        const int previousNav=navMode();
+        core_.retainDjLoopPage(dj2LoopObserved_!=Dj2LoopObserved::Off || dj2LoopStartRequested_);
         if(!core_.onTimer(ms))record(seq,sample,Stage::Decision,Reason::ClockRejected,0,nullptr,0);
+        else resolveDjLoopNavigation(previousNav);
         drainCore(seq,sample);
     }
     // SPSC: exactly one consumer (UI main thread); no reset while rendering.
@@ -436,6 +458,23 @@ public:
     }
     uint32_t overflows() const noexcept {return overflows_.load(std::memory_order_relaxed);}
 private:
+    void requestDjLoopStop(bool reset,bool invalidate=false) noexcept {
+        if(dj2LoopStartRequested_ || dj2LoopObserved_==Dj2LoopObserved::On){
+            ++dj2LoopStopRequests_;
+            if(reset || djLoopCommand_!=DjLoopCommand::StopReset)
+                djLoopCommand_=reset?DjLoopCommand::StopReset:DjLoopCommand::Stop;
+        }
+        dj2LoopStartRequested_=false;
+        ++dj2BackendGeneration_; // rejects late START observations after any STOP
+        if(invalidate)dj2LoopObserved_=Dj2LoopObserved::Unknown;
+    }
+    void resolveDjLoopNavigation(int previous) noexcept {
+        if(core_.djLoopStopPush())requestDjLoopStop(false);
+        const bool wasDjPage=previous==2 || previous==4;
+        const bool isDjPage=navMode()==2 || navMode()==4;
+        if(wasDjPage && !isDjPage)requestDjLoopStop(true);
+    }
+    DjLoopCommand djLoopCommand_{DjLoopCommand::None};
     bool mutePageEnabled_{};
     l01::MutePhysicalGate muteGate_{};
     MuteBarBridge muteBridge_{};

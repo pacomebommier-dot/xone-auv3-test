@@ -58,6 +58,14 @@ public:
     }
     // Test-only gate; musical output and unqualified NAV transitions remain disabled.
     void enableDiagnosticShortNav(bool yes) noexcept {shortNavDiagnostic_=yes;}
+    // Backend state belongs to the host; S3 remains the sole NAV writer.
+    void retainDjLoopPage(bool retain) noexcept {retainDjLoopPage_=retain;}
+    bool djLoopStopPush() const noexcept {return djLoopStopPush_;}
+    bool djLoopRotationAllowed() const noexcept {
+        return nav_.stable() && !nav_.hasStage() && !longTx_.pending() &&
+            touchOwner_==-1 && !touch_.busy() &&
+            (nav_.active().at(292)==2 || nav_.active().at(292)==4);
+    }
     void enableNativeMuteBot2(bool yes) noexcept {muteBot2Exclusive_=yes;}
     void enableDiagnosticQualifiedNav(bool yes) noexcept {qualifiedNavDiagnostic_=yes;}
     // L01/07 legacy diagnostic override for unported TOUCH contexts.
@@ -212,6 +220,7 @@ public:
 private:
     bool processQualifiedNav(NavS3& nav,S3DecisionBoundary& s3,S3LongTransaction& tx,
                              const S3ProposalBatch& proposals,int& machineLow,int& machineHigh,bool physicalTouchBusy) noexcept {
+        djLoopStopPush_=false;
         if(!nav.stable())return true;
         for(std::size_t i=0;i<proposals.count;++i){
             const auto& p=proposals.items[i];
@@ -224,10 +233,13 @@ private:
                 continue;
             }
             if(p.kind==S3ProposalKind::Dj2Rot){
-                // @z4: DJ2+BOT3 qualifies @zj(h7=2) only outside 2/4 modes.
+                // DJ LOOP contract: enter GLOBAL outside 2/4; retain GLOBAL/LOOP within.
                 if(qualifiedNavDiagnostic_ && !tx.pending() && touchOwner_==-1 && !physicalTouchBusy && !nav.hasStage() &&
-                   nav.active().at(292)!=2 && nav.active().at(292)!=4 && p.navAtDown==nav.active().at(292) &&
-                   nav.applyShortMode(2))s3.observeNav(nav.active().at(292),true);
+                   p.navAtDown==nav.active().at(292)){
+                    // A rotation in GLOBAL/LOOP retains its page. Else enter GLOBAL.
+                    if(nav.active().at(292)==2 || nav.active().at(292)==4 || nav.applyShortMode(2))
+                        s3.observeNav(nav.active().at(292),true);
+                }
                 continue;
             }
             if(!normal&&!combo)continue;
@@ -243,6 +255,13 @@ private:
             }
             // @zj guards h0=1, h1=0, a9=-1, plus context owned at true physical DOWN.
             if(tx.pending() || touchOwner_!=-1 || physicalTouchBusy || nav.hasStage() || p.navAtDown!=nav.active().at(292))continue;
+            // Solo LONG qualifies at 200ms too; it must not open a temporary
+            // NAV transaction while the same DJ PUSH is stopping an active loop.
+            if(qualifiedNavDiagnostic_ && p.role==2 && retainDjLoopPage_ &&
+               (nav.active().at(292)==2 || nav.active().at(292)==4) &&
+               (p.qualifiedPhase==QualifiedPhase::Short || p.qualifiedPhase==QualifiedPhase::LongBegin)){
+                djLoopStopPush_=true;continue;
+            }
             if(p.qualifiedPhase==QualifiedPhase::Short){
                 if((shortNavDiagnostic_ || qualifiedNavDiagnostic_)&&nav.applyShortMode(mode))
                     s3.observeNav(nav.active().at(292),true);
@@ -258,6 +277,7 @@ private:
     SurfaceInput surface_{};
     GestureS2 gesture_{};
     S3DecisionBoundary s3_{};
+    bool retainDjLoopPage_{},djLoopStopPush_{};
     NavS3 nav_{};bool shortNavDiagnostic_{};bool qualifiedNavDiagnostic_{};bool muteBot2Exclusive_{};
     S3LongTransaction longTx_{};S3TouchNav touch_{};bool diagnosticTouch_{};int touchOwner_{-1};
     int machineLastLow_{-1},machineLastHigh_{-1};

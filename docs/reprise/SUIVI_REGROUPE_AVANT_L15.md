@@ -10,7 +10,7 @@ Ce suivi organise le travail restant dans les lots natifs existants ; il ne remp
 
 - Tâches de développement validées automatiquement : **0/6** dans ce nouveau suivi.
 - Tâches de développement restantes : **6**, tâche courante comprise lorsqu’elle démarre.
-- Tâche suivante : **1/6 — Actions et sorties musicales restantes**. Statut : À DÉMARRER ; aucun code nouveau de cette tâche n’est revendiqué par la création du suivi.
+- Tâche suivante : **1/6 — Actions et sorties musicales restantes**. Statut : EN COURS. Lot 1A : transitions DJ2/GLOBAL/LOOP et conservation des métadonnées dans le vrai chemin AU en validation. Lots 1B/1C ouverts ; aucune clôture sur de seules intentions.
 - Travail déjà acquis avant ce compteur : surface/S2/NAV, CC/pickup/LIVE, LOOP, SPOT SMART/MIX/TOUCH/FLASH, horloge et MUTE/SOLO/BAR, LED MUTE et restitution des sélecteurs BASE NAV, état AU du dernier LIVE. Les réserves et preuves restent dans leurs reprises spécialisées.
 - L15 = campagne de validation AUM après ces six regroupements. L16 = essais matériels ensuite. Aucun PASS AUM ou matériel à ce stade.
 
@@ -18,7 +18,7 @@ Ce suivi organise le travail restant dans les lots natifs existants ; il ne remp
 
 | N° | Fonction à livrer | Limite concrète et preuve attendue | État |
 |---|---|---|---|
-| 1/6 | Actions et sorties musicales restantes — E3, L05/L06 | Raccorder les actions TOP/BOT/DJ encore absentes au vrai dispatcher AU et à l’API S7, avec quantification contractuelle, captures de destination, OFF dus, STOP, collisions et callbacks échoués. La transition vers une destination non prête reste refusée ; son intégration aux owners S8 relève de 3/6. Pas de réécriture de MUTE, CC ou SPOT déjà raccordés. | À DÉMARRER |
+| 1/6 | Actions et sorties musicales restantes — E3, L05/L06 | Raccorder les actions TOP/BOT/DJ encore absentes au vrai dispatcher AU et à l’API S7, avec quantification contractuelle, captures de destination, OFF dus, STOP, collisions et callbacks échoués. La transition vers une destination non prête reste refusée ; son intégration aux owners S8 relève de 3/6. Pas de réécriture de MUTE, CC ou SPOT déjà raccordés. | EN COURS — lot 1A |
 | 2/6 | Chaîne PATCH / MEMORY / CUE / LOAD / BASE — E4, L07/L08 | Raccorder les modules de banques existants aux gestes et décisions réels : save/recall, destination et BASE validées, protections contre rappel incomplet, règles de capture et UNKNOWN/INVALID conservées. Vérifier les octets musicaux produits et les interactions avec 1/6. La persistance entre instances AU relève de 5/6. | À DÉMARRER |
 | 3/6 | PRESET / RED et propriétaires S8 — E5, L09/L10 | Raccorder le rappel cohérent, les alternatives exclusives et transitions de propriétaire aux banques et à BAR. Fermer les anciens owners/OFF avant la nouvelle destination ; appliquer les arbitrages C01/C03/C04 existants. Restaurer les états MUTE/SOLO selon le contrat et annuler les demandes en attente concernées. Exclure les modes SPOT MACHINE des captures PATCH/PRESET/RED. | À DÉMARRER |
 | 4/6 | Feedback et ensemble des vues LED — E6, L11/L12 | Raccorder les observations authentifiées et les vues restantes, dont BASE FX/MEMORY, PRESET/RED et contextes associés, en utilisant les données devenues disponibles en 2/6 et 3/6. Préserver UNKNOWN et séparer désiré, envoyé et observé ; tests des octets MIDI15, pending/applied, refus, STOP, sorties de page et reconnexion. | À DÉMARRER |
@@ -47,7 +47,7 @@ Si une dépendance bloquante démontrée impose de modifier ce découpage, l’i
 
 | Tâche | Commit(s) fonctionnel(s) | CI | Réserves avant L15 |
 |---|---|---|---|
-| 1/6 | — | — | Non commencée |
+| 1/6 | Voir `LOT_1A_DJ_LOOP_2026-10-27.md` | Validation en cours | START/STOP audio externe, LOAD et defaults FILTER non reliés ; tâche non clôturée |
 | 2/6 | — | — | Non commencée |
 | 3/6 | — | — | Non commencée |
 | 4/6 | — | — | Non commencée |

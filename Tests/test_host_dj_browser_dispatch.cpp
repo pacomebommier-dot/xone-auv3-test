@@ -103,5 +103,15 @@ int main(){
         e.sent(future,0);
         assert(e.djBrowserPendingAt(3150));
     }
+    // The actual AU enumerates Result::packet before calling sent().
+    // Preserve gesture time: a turn at 5000 must expire at 8000, not at 3000.
+    {
+        HostEngine e;assert(e.configureDjBrowserDeckForDiagnostic(1));
+        auto r=turn(e,1,5000);const auto packet=r.packet(0);
+        assert(packet.gestureMs==5000);e.sent(packet,0);
+        assert(e.djBrowserPendingAt(7999)&&!e.djBrowserPendingAt(8000));
+        edge(e,13,true,7999);edge(e,13,false,8001);
+        assert(e.browserLoadIntentsForDiagnostic()==1);
+    }
     std::cout<<"PASS DJ1 Browser -> S3 owner23 -> BOT2 exclusion, failed callback, exact expiry, combo, STOP, no fake LOAD\n";
 }
