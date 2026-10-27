@@ -37,6 +37,15 @@ int main(){
   bytes=deliver(e,edge(e,48,true,43));assert(bytes.size()==2&&bytes[0].status==0x96&&bytes[1].status==0x86); // a new pulse is never deduplicated
   assert(!edge(e,48,false,44).emit);e.stop(45);assert(!e.nextStopPacket().emit);
  }
+ // S2 qualifies LONG before this same SPOT input; capture the newly qualified NAV.
+ {
+  HostEngine e;assert(e.restoreSessionBeforeRendering(image(3)));
+  edge(e,13,true,0);edge(e,15,true,10);
+  auto on=edge(e,48,true,220);assert(e.navMode()==7&&e.longNavPending());
+  auto bytes=deliver(e,on);assert(bytes.size()==1&&bytes[0].status==0x96&&bytes[0].number==108);
+  edge(e,15,false,230);edge(e,13,false,240);assert(e.navMode()==0&&!e.longNavPending());
+  offOnly(deliver(e,edge(e,48,false,250)));assert(e.desiredLive(380).value==0);
+ }
  // No FLASH ON after failed nominal OFF. No later replay, even after unrelated success.
  {
   HostEngine e;assert(e.restoreSessionBeforeRendering(image(4,1)));machine(e);

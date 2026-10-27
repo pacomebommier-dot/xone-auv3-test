@@ -22,3 +22,5 @@ Tests/test_host_touch_flash.cpp : états initiaux0/1, bytes MIDI exacts, répét
 La fixture MACHINE connue est une référence logicielle de test. Ce raccordement ne prouve ni port authentifié, ni destination S8 réelle, ni état Roland observé. Les registres de propriétaires S8 par destination, actions BAR/BEAT, banques et session AUM restent ouverts. Aucun test iPhone, AUM natif, K2 ou SH-01A nouveau ; aucune clôture matérielle L04/L06/L15/L16.
 
 Validation locale :22 suites C++ GCC16.2 PASS,10 cas C V0.1 PASS ; manifest12/14 et contrôles source K2_SIM/SH-01A PASS. Preuve : evidence/v3/TOUCH_FLASH_LOCAL_GCC.json. Validation Apple et iOS à confirmer par la CI du nouveau commit.
+
+Ordre des événements corrigé après test RED : la capture de route SPOT se fait après la qualification S2/S3 de cet événement, car un LONG peut devenir valide à son timestamp. Son UP conserve cette capture même après retour du NAV temporaire. Le harness AU couvre un appui situé480frames après le début d’un buffer48kHz qui franchit ce seuil ; les suites historiques restent inchangées.

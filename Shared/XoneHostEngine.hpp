@@ -1,5 +1,5 @@
 #pragma once
-// Native V3 host: K2 surface/gestures/NAV connected; known-session continuous LIVE/S4 connected; S8 specialization remains pending.
+// Native V3: K2/gestures/NAV, known-session CC/LOOP and SMART/MIX/TOUCH/FLASH; specialized S8 remains pending.
 #include "../Core/CoreCoordinator.hpp"
 #include "XoneContinuousInput.hpp"
 #include "XoneSession.hpp"
@@ -66,12 +66,13 @@ public:
             if(!valid) {record(seq,sample,Stage::Decision,Reason::Rejected,cable,data,length);return {};}
             const int physical=l01::SurfaceInput::physicalControl(data[1]);
             const bool wasHeld=physical>=0&&core_.surface().held(physical);
-            const auto captured=physical>=4?core_.nativeNav().active().route(physical):l01::NavRoute{};
             const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs);
             record(seq,sample,Stage::Decision,accepted?Reason::Integrated:Reason::ClockRejected,cable,data,length);
             drainCore(seq,sample);
             if(accepted&&(cmd==0x90||cmd==0x80)&&physical>=20&&physical<32){
                 const bool down=cmd==0x90&&data[2]!=0;
+                // S2 advances before input: a LONG in this packet must qualify NAV first.
+                const auto captured=core_.nativeNav().active().route(physical);
                 if(wasHeld!=down)return spot(physical,down,captured,gestureMs,seq,sample);
             }
             if(accepted&&cmd==0xB0&&data[1]<20)return continuous(data[1],data[2],gestureMs,seq,sample);

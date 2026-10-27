@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-27",
+  "base_commit": "85b081e3382980918b5931091dbaeec1c503aefc",
+  "red": "New LONG NAV qualified in same MIDI event, but pre-S2 route captured; ON missing at test_host_touch_flash.cpp:45",
+  "green": "All3 targeted GCC suites PASS: TOUCH/FLASH, SMART/MIX, host integration",
+  "results": [
+    {
+      "suite": "test_host_integration",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_host_spots",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_host_touch_flash",
+      "compile": 0,
+      "run": 0
+    }
+  ],
+  "prior_full_local_suites": 22,
+  "prior_full_ci": "https://github.com/pacomebommier-dot/xone-auv3-test/actions/runs/40477205051",
+  "full_ci_on_new_commit": "REQUIRED_PENDING",
+  "harness": "Adds inside-buffer event offset at48kHz crossing LONG threshold and true UP after temporary NAV restoration",
+  "sha256": {
+    "Shared/XoneHostEngine.hpp": "c2de1bdb567f529f02f573a058784822fc5a87d824cbd5c7f5e4323913256e65",
+    "Tests/test_host_touch_flash.cpp": "06579fbb2e8fdaeddaa9f334c1cde66492c3619300a8a660839b4710ce5a312d",
+    "Tests/test_auv3_document.mm": "f1d142bf2bec6042f635fa8ec7dd1ecd4ba4efc3b94b5192a8c0e31e36d7d704"
+  },
+  "manual_tests": "NOT_RUN_DEFERRED_L15_L16"
+}

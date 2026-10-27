@@ -43,9 +43,9 @@ int main() {
     AVAudioPCMBuffer *audio=[[AVAudioPCMBuffer alloc] initWithPCMFormat:format frameCapacity:8192];
     assert(audio && audio.floatChannelData);
     AUEventSampleTime cursor=0;
-    auto pump=[&](AVAudioFrameCount frames,int command=-1,int number=0,int value=0) {
+    auto pump=[&](AVAudioFrameCount frames,int command=-1,int number=0,int value=0,AVAudioFrameCount offset=0) {
         AudioTimeStamp timestamp{};timestamp.mFlags=kAudioTimeStampSampleTimeValid;timestamp.mSampleTime=static_cast<Float64>(cursor);
-        AURenderEvent event{};event.MIDI.eventType=AURenderEventMIDI;event.MIDI.eventSampleTime=cursor;
+        AURenderEvent event{};event.MIDI.eventType=AURenderEventMIDI;event.MIDI.eventSampleTime=cursor+offset;
         event.MIDI.cable=0;event.MIDI.length=static_cast<uint16_t>(command==0xFC?1:3);
         event.MIDI.data[0]=static_cast<uint8_t>(command);event.MIDI.data[1]=static_cast<uint8_t>(number);event.MIDI.data[2]=static_cast<uint8_t>(value);
         AudioUnitRenderActionFlags flags=0;
@@ -118,6 +118,19 @@ int main() {
     NSData *reloaded=reopened.fullStateForDocument[@"XONE_LAST_LIVE_V1"];
     assert(xone::host::decodeSession(static_cast<const uint8_t *>(reloaded.bytes),reloaded.length,decoded)&&decoded.desired[1328]==100);
     [reopened deallocateRenderResources];
-    std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, corruption, no load TX (macOS harness)\n";
+    // LONG is crossed by an event inside the buffer, before the end-buffer timer.
+    XoneMidiAudioUnit *clockUnit=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
+    assert(clockUnit&&!error);clockUnit.MIDIOutputEventBlock=unit.MIDIOutputEventBlock;clockUnit.maximumFramesToRender=8192;
+    assert([clockUnit.inputBusses[0] setFormat:format error:&error]);
+    assert([clockUnit.outputBusses[0] setFormat:format error:&error]);
+    clockUnit.fullState=@{@"XONE_LAST_LIVE_V1":[NSData dataWithBytes:bytes.data() length:bytes.size()]};
+    assert([clockUnit allocateRenderResourcesAndReturnError:&error]);render=clockUnit.internalRenderBlock;
+    pump(48,0x9E,13,127);pump(48,0x9E,15,127);pump(8192);pump(960);
+    pump(960,0x9E,48,127,480);assert(sent==19&&lastStatus==0x96&&lastNumber==108&&lastValue==127);
+    pump(48,0x8E,15,0);pump(48,0x8E,13,0);
+    pump(48,0x8E,48,0);assert(sent==20&&lastStatus==0x86&&lastNumber==108&&lastValue==0);
+    [clockUnit deallocateRenderResources];
+
+    std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)\n";
  }
 }
