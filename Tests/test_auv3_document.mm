@@ -70,7 +70,7 @@ int main() {
     pump(48,0x9E,13,127);pump(4800);pump(4704);
     NSString *trace=[unit drainDiagnosticText];
     assert([trace containsString:@"01 04 00"] && ![trace containsString:@"01 01 01"]);
-    pump(48);trace=[unit drainDiagnosticText];assert([trace containsString:@"01 01 01"]);
+    pump(48);trace=[unit drainDiagnosticText];assert([trace containsString:@"01 01 00"]); // BOT2 long owns MUTE momentary, not legacy PRESET NAV
     pump(48,0x8E,13,0);trace=[unit drainDiagnosticText];assert([trace containsString:@"01 02 00"]);
     pump(48,0x9E,13,127);(void)[unit drainDiagnosticText];
     pump(48,0xFC);pump(48,0x8E,13,0);trace=[unit drainDiagnosticText];
