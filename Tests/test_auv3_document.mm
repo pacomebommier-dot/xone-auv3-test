@@ -179,6 +179,18 @@ int main() {
                  <<" value="<<int(lastValue)
                  <<" trace="<<[[muteUnit drainDiagnosticText] UTF8String]<<"\\n";
     assert(sent==beforeMute+1&&lastStatus==0x9A&&lastNumber==16&&lastValue==127);
+    // Real AU callback failure at the NEXT host BAR must not acknowledge
+    // a global MUTE OFF. Retry exactly once at the next render buffer.
+    // This is a MIDI callback acknowledgement, not an AUM effect ACK.
+    pump(48,0x9E,36,127);pump(48,0x8E,36,0);
+    assert(sent==beforeMute+1); // the new gesture is still queued
+    failAt=beforeMute+2;
+    for(unsigned n=0;n<12;++n)pump(8192);
+    assert(sent==beforeMute+2&&lastStatus==0x8A&&lastNumber==16&&lastValue==0);
+    failAt=0;
+    pump(48); // pending failed OFF retransmits at render start
+    assert(sent==beforeMute+3&&lastStatus==0x8A&&lastNumber==16&&lastValue==0);
+    pump(48);assert(sent==beforeMute+3); // successful ACK clears debt
     [muteUnit deallocateRenderResources];
 
     std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)\n";
