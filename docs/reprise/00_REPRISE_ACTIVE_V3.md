@@ -12,7 +12,7 @@
 
 - 23e75ce puis525bb80e60bfaac8dccfd886fc23e7a22c52abcb : SPOT SMART/MIX physiques, destination capturée, dettes OFF confirmées et fermeture STOP réelle, y compris borne de révision LIVE. CI complète PASS : https://github.com/pacomebommier-dot/xone-auv3-test/actions/runs/40474469116 ; preuve evidence/v3/CI_525BB80.json. Ce checkpoint SMART/MIX est complété par le raccordement TOUCH/FLASH décrit ci-dessous ; actions encore ouvertes.
 
-- TOUCH/FLASH raccordés au callback AU : voir INTEGRATION_V3_TOUCH_FLASH.md ; nouvelle CI à consigner après vérification. Aucun lot matériel clôturé.
+- 85b081e puis812b5b3/9e2866911331bf70e1aa439dbc62ef9f415aadf5 : TOUCH/FLASH raccordés, ownership physique, pulse conditionnel et capture après qualification LONG du même événement. CI complète PASS : https://github.com/pacomebommier-dot/xone-auv3-test/actions/runs/40478692311 ; preuve evidence/v3/CI_9E28669.json. Le test AU intra-buffer reste actif ; son ancien échec provenait du callback relu sur une AU désallouée. Aucun lot matériel clôturé.
 
 ## État technique des 8 étapes / 16 lots
 | Étape | Lots | Raccordements et réserves |
@@ -28,7 +28,7 @@
 
 ## Limites à respecter
 La session native connue du harness ne vaut pas une image instrument observée. Une AUv3 neuve sans référence connue reste UNKNOWN ; pas de zéros ou de PC Roland inventés. La réouverture restaure actuellement l'image logicielle, sans prétendre avoir restitué le matériel ni toutes les sorties MIDI appliquées.
-Les 12 headers Core, 14 suites historiques, GOLDEN/S7/S8 et preuves V0.1/V0.2 restent préservés. Vérification distante du26/10 : main=5874ae2f29a2543d9df7cda4814803d04dd36257 ; feature/native-l02-v02=8fff66b4ed97acaf1b65f37028700319ed2e935e.
+Les 12 headers Core, 14 suites historiques, GOLDEN/S7/S8 et preuves V0.1/V0.2 restent préservés. Vérification distante du27/10 : main=5874ae2f29a2543d9df7cda4814803d04dd36257 ; feature/native-l02-v02=8fff66b4ed97acaf1b65f37028700319ed2e935e.
 
 ## Reprise pratique
 Lire INTEGRATION_V3.md, INTEGRATION_V3_CC.md, INTEGRATION_V3_SESSION.md et INTEGRATION_V3_SELECTION_LOOP.md et INTEGRATION_V3_SPOTS.md et INTEGRATION_V3_TOUCH_FLASH.md avec les documents actifs Drive00/40..44/37 et C-NAT-05/06.
@@ -42,3 +42,6 @@ Les commits543ea961/9316f550 documentent les corrections du harness (buffer nul 
 
 ## Preuves du code525bb80 (checkpoint SMART/MIX)
 21 suites C++ (14 historiques +7 host) et10 cas C V0.1 PASS sous GCC/Clang/Apple Clang, ASan/UBSan PASS, vrai wrapper AU macOS PASS, build iOS et archivage PASS. Le harness exerce les ON/OFF réels du wrapper pour STOP MIDI et transport host. Aucun essai AUM/iPhone/K2/SH-01A exécuté. La branche locale est synchronisée avec GitHub ; aucun merge main.
+
+## Preuves du dernier code9e28669
+22 suites C++ (14 historiques +8 host),10 cas C V0.1, GCC/Clang/Apple Clang, ASan/UBSan : PASS. Vraie classe AU macOS : TOUCH/FLASH, échecs de callback, STOP et qualification LONG à offset intra-buffer PASS. Build iOS unsigned et archivage PASS sur le même SHA. Aucun essai natif Mozaic/AUM/iPhone/K2/SH-01A exécuté ; recette L15 et matériel L16 restent ouverts. Source et tests synchronisés local/GitHub, main et preuve L02 inchangés.

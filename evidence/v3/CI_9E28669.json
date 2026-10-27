@@ -1,0 +1,192 @@
+{
+  "date": "2026-10-27",
+  "id": 40478692311,
+  "head_sha": "9e2866911331bf70e1aa439dbc62ef9f415aadf5",
+  "status": "completed",
+  "conclusion": "success",
+  "html_url": "https://github.com/pacomebommier-dot/xone-auv3-test/actions/runs/40478692311",
+  "run_attempt": 1,
+  "jobs": [
+    {
+      "id": 122103227618,
+      "name": "portable (g++)",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Archive integrity and documentary counts",
+          "conclusion": "success"
+        },
+        {
+          "name": "Portable suites",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 122103227981,
+      "name": "portable (clang++)",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Archive integrity and documentary counts",
+          "conclusion": "success"
+        },
+        {
+          "name": "Portable suites",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 122103489846,
+      "name": "ios",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native suites with Apple Clang",
+          "conclusion": "success"
+        },
+        {
+          "name": "Sanitizers",
+          "conclusion": "success"
+        },
+        {
+          "name": "Real AU subclass document and render harness (macOS)",
+          "conclusion": "success"
+        },
+        {
+          "name": "Xcode and project generation",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build unsigned V0.2",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 12722705294,
+      "name": "XoneEngineNative-V0.2-9e2866911331bf70e1aa439dbc62ef9f415aadf5",
+      "size_in_bytes": 87893,
+      "digest": "sha256:08b6b5612f603bd5f064d45571d2b90bd3f1346464eae8a45aa37ac3da3129ba",
+      "expires_at": "2026-11-26T09:15:29Z"
+    },
+    {
+      "id": 12722180457,
+      "name": "native-clang++-9e2866911331bf70e1aa439dbc62ef9f415aadf5",
+      "size_in_bytes": 13267,
+      "digest": "sha256:4b70f6d6bde4c48a3acec40d38688079df303caabae3aa6ce6437c38826c85d3",
+      "expires_at": "2027-01-25T09:09:49Z"
+    },
+    {
+      "id": 12721782011,
+      "name": "native-g++-9e2866911331bf70e1aa439dbc62ef9f415aadf5",
+      "size_in_bytes": 13267,
+      "digest": "sha256:6e2a9f236c0c472afc3649184fc5471f95c171172edd819d4cdb47cb63ae1735",
+      "expires_at": "2027-01-25T09:09:49Z"
+    }
+  ],
+  "log_evidence": [
+    "2026-10-27T09:12:27.7090410Z PASS TOUCH/FLASH source sequences, ownership, conditional pulse, failed ON/OFF, STOP, revision bound, deferred restore, UNKNOWN",
+    "2026-10-27T09:13:50.3451370Z PASS TOUCH/FLASH source sequences, ownership, conditional pulse, failed ON/OFF, STOP, revision bound, deferred restore, UNKNOWN",
+    "2026-10-27T09:14:06.0201550Z AU fixture callback retained=1 deallocated-unit callback=0",
+    "2026-10-27T09:14:06.0285520Z PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)",
+    "2026-10-27T09:15:26.0047170Z ** BUILD SUCCEEDED **",
+    "2026-10-27T09:15:30.9390550Z SHA256 digest of uploaded artifact zip is 08b6b5612f603bd5f064d45571d2b90bd3f1346464eae8a45aa37ac3da3129ba",
+    "2026-10-27T09:15:31.5358220Z Artifact XoneEngineNative-V0.2-9e2866911331bf70e1aa439dbc62ef9f415aadf5.zip successfully finalized. Artifact ID 12722705294",
+    "2026-10-27T09:15:31.5390670Z Artifact XoneEngineNative-V0.2-9e2866911331bf70e1aa439dbc62ef9f415aadf5 has been successfully uploaded! Final size is 87893 bytes. Artifact ID is 12722705294"
+  ],
+  "claims": {
+    "cpp_suites": 22,
+    "historical_cpp_suites": 14,
+    "host_cpp_suites": 8,
+    "c_v01_cases": 10,
+    "compilers": [
+      "GCC",
+      "Clang",
+      "Apple Clang"
+    ],
+    "sanitizers": "ASan/UBSan PASS",
+    "AU_wrapper": "Actual XoneMidiAudioUnit under macOS: TOUCH, FLASH, callback failures, STOP and same-event LONG at intra-buffer offset PASS",
+    "ios": "unsigned iphoneos build PASS and artifact archived",
+    "manual_AUM_iPhone_K2_SH01A": "NOT_RUN_DEFERRED_L15_L16",
+    "connected_scope": "SMART/MIX/TOUCH/FLASH through physical K2 input and neutral MIDI on explicitly known software LIVE",
+    "remaining": "BAR/BEAT actions, banks/recalls, destination owners S8, authenticated feedback, separate LED, complete persistence and real AUM FX/SH profile binding",
+    "digest_note": "GitHub artifact ZIP SHA256, not inner IPA SHA256"
+  },
+  "prior_failure": {
+    "sha": "812b5b3cfb01fea698b86448fcf74e6a03b7d52a",
+    "run_id": 40477942174,
+    "step": "Real AU subclass document and render harness (macOS)",
+    "assertion": "sent==19&&lastStatus==0x96&&lastNumber==108&&lastValue==127",
+    "other_checks": "22 suites and sanitizers PASS",
+    "cause_confirmed": "Harness read MIDIOutputEventBlock from deallocated AU; final run logs retained callback=1 but deallocated-unit callback=0",
+    "resolution": "Retain host callback explicitly and install it in every recreated AU. Emission assertion kept; no test disabled."
+  },
+  "preserved_refs": {
+    "main": "5874ae2f29a2543d9df7cda4814803d04dd36257",
+    "feature/native-l02-v02": "8fff66b4ed97acaf1b65f37028700319ed2e935e"
+  }
+}
