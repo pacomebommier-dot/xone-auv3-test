@@ -21,7 +21,7 @@ struct GridBatch {
 class HostGrid {
 public:
     // Do not extrapolate across render calls. The host owns tempo, meter and transport.
-    void reset() noexcept { armed_=false; }
+    void reset() noexcept { armed_=false; lastOrdinal_=-1; lastBeat_=-1; lastBarSize_=0; }
     GridBatch scan(const MusicalContext& c, std::uint32_t frames) noexcept {
         GridBatch out{};
         if (!c.available || !c.moving || frames==0 ||
@@ -47,6 +47,9 @@ public:
            integerBeat>static_cast<double>(std::numeric_limits<std::int64_t>::max()/2)){
             reset();return out;
         }
+        // Seek backwards or a new time signature requires a fresh anchor.
+        if(armed_ && (c.beatPosition+0.001<lastBeat_ || std::abs(beatsPerBar-lastBarSize_)>0.0001)) reset();
+        lastBeat_=c.beatPosition;lastBarSize_=beatsPerBar;
         out.valid=true;
         for(unsigned i=0;i<64;++i){
             const double at=static_cast<double>(c.offsetToNextBeat)+i*samplesPerBeat;
@@ -68,5 +71,6 @@ public:
     }
 private:
     bool armed_{}; std::int64_t lastOrdinal_{-1};
+    double lastBeat_{-1},lastBarSize_{};
 };
 } // namespace xone::host
