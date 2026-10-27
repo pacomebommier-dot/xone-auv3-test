@@ -7,13 +7,14 @@
 #include "XoneMuteMidiProjection.hpp"
 #include "XoneMuteLedOutput.hpp"
 #include "XoneDjRelative.hpp"
+#include "XoneDjBrowserWindow.hpp"
 #include <atomic>
 #include <array>
 #include <cstdint>
 #include <cstddef>
 namespace xone::host {
 enum class Stage : uint8_t { RxIn, Decision, TxOut, RxFeedback, Stop, Overflow, Gesture };
-enum class Reason : uint8_t { Mapped, SurfaceOnly, Rejected, Untrusted, Sent, SendFailed, NoOutput, Received, Integrated, Qualified, ClockRejected, UnknownLive, PickupWait, Musical, DjRelative };
+enum class Reason : uint8_t { Mapped, SurfaceOnly, Rejected, Untrusted, Sent, SendFailed, NoOutput, Received, Integrated, Qualified, ClockRejected, UnknownLive, PickupWait, Musical, DjRelative, BrowserLoadIntent };
 struct Trace {
     uint32_t sequence{};
     int64_t sample{};
@@ -32,7 +33,7 @@ struct Result {
     int api{-1},value{},type{10};
     std::array<PendingPacket,2> extra{};
     unsigned extraCount{};
-    int key{127};bool requiresOff{};
+    int key{127};bool requiresOff{};int64_t gestureMs{};
     unsigned packetCount() const noexcept {return emit?1+extraCount:0;}
     Result packet(unsigned i) const noexcept {
         if(!emit||i>extraCount)return {};
@@ -55,6 +56,18 @@ public:
     void enableNativeMutePage(bool yes) noexcept {mutePageEnabled_=yes;core_.enableNativeMuteBot2(yes);}
     bool mutePageVisible() const noexcept {return mutePageEnabled_&&muteGate_.visible();}
     bool muteGesturePending() const noexcept {return muteBridge_.state().pendingCount()!=0;}
+    // Until a backend validates the deck, DJ1 remains MIDI-only. This
+    // explicit diagnostic seam cannot authenticate any host/AUM destination.
+    bool configureDjBrowserDeckForDiagnostic(int deck) noexcept {
+        if(started_)return false;
+        browser_.configureDeck(deck);
+        core_.observeBrowserGuardForDiagnostic(false,0,0);
+        return browser_.deck()!=0;
+    }
+    bool djBrowserPendingAt(int64_t ms) const noexcept {return browser_.pendingAt(ms);}
+    bool djBrowserOwnsBot2() const noexcept {return browser_.pushOwned();}
+    uint32_t browserLoadIntentsForDiagnostic() const noexcept {return browserLoadIntents_;}
+    int lastBrowserLoadDeckForDiagnostic() const noexcept {return lastBrowserLoadDeck_;}
     const GlobalMuteState& globalMute() const noexcept {return muteBridge_.state();}
     unsigned onMusicalGrid(const GridBatch& b) noexcept {
         if(!mutePageEnabled_)return 0;
@@ -90,6 +103,9 @@ public:
             if(!valid) {record(seq,sample,Stage::Decision,Reason::Rejected,cable,data,length);return {};}
             const int physical=l01::SurfaceInput::physicalControl(data[1]);
             const bool wasHeld=physical>=0&&core_.surface().held(physical);
+            // BOT2 is also DJ1 PUSH. Ownership is captured on its true DOWN,
+            // never reconstructed from a deadline at UP.
+            const bool browserBot2Release=physical==1&&wasHeld&&browser_.pushOwned();
             auto muteNext=muteGate_;muteNext.advance(gestureMs);
             const bool baseEvent=(cmd==0x90||cmd==0x80)&&physical>=4&&physical<20;
             const bool muteBaseOwned=mutePageEnabled_&&baseEvent&&
@@ -97,6 +113,21 @@ public:
             const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs,muteBaseOwned);
             record(seq,sample,Stage::Decision,accepted?Reason::Integrated:Reason::ClockRejected,cable,data,length);
             drainCore(seq,sample);
+            if(accepted&&physical==1&&(cmd==0x90||cmd==0x80)){
+                const bool down=cmd==0x90&&data[2]!=0;
+                if(down&&!wasHeld&&core_.s3().physicalOwner(1)==23){
+                    browser_.beginPush(gestureMs);
+                }else if(!down&&browserBot2Release){
+                    if(browser_.finishPush(gestureMs)){
+                        // Source kind19 LOAD is a service intent, not a MIDI
+                        // backend binding. Never fabricate a sent LOAD or ACK.
+                        ++browserLoadIntents_;
+                        lastBrowserLoadDeck_=browser_.deck();
+                        record(seq,sample,Stage::Decision,Reason::BrowserLoadIntent,0,data,3,lastBrowserLoadDeck_);
+                    }
+                    core_.observeBrowserGuardForDiagnostic(false,0,0);
+                }
+            }
             if(mutePageEnabled_&&accepted&&(cmd==0x90||cmd==0x80)&&physical>=0){
                 muteGate_=muteNext; // commit time qualification only after accepted input
                 const bool down=cmd==0x90&&data[2]!=0;
@@ -131,6 +162,7 @@ public:
                     if(!staged.apply({16,api,data[2],127})||staged.emitted()!=1)return {};
                     const auto p=staged.packet(0);
                     Result out{true,{p.status,p.number,p.value},seq,sample,true,api,data[2],16};
+                    out.gestureMs=gestureMs;
                     record(seq,sample,Stage::Decision,Reason::Musical,0,out.bytes,3);
                     return out;
                 }
@@ -181,7 +213,7 @@ public:
     // Called immediately before each callback; dependent FLASH ON is suppressed
     // unless its nominal OFF succeeded. Its own OFF still follows a failed ON.
     bool canSend(const Result& r) const noexcept {
-        if(r.musical&&((r.type==11&&r.value==1)||r.type==12||r.type==14)&&r.sequence!=sequence_)return false;
+        if(r.musical&&((r.type==11&&r.value==1)||r.type==12||r.type==14||r.type==16)&&r.sequence!=sequence_)return false;
         if(r.type==12||r.type==14){
             if(r.requiresOff&&(confirmedOffSequence_!=r.sequence||confirmedOffApi_!=r.api))return false;
             auto draft=core_.output();return draft.apply({r.type,r.api,1,r.key});
@@ -215,6 +247,12 @@ public:
                 --stopPendingCount_;
             }
         }
+        // Do not arm Browser on a failed or unsent relative rotation:
+        // there is no verified track selection for DJ1 PUSH to confirm.
+        if(status==0&&r.musical&&r.type==16&&r.api==947&&r.sequence==sequence_&&
+           browser_.observeTurn(decodeDjTurn(20,static_cast<unsigned>(r.value)).delta,r.gestureMs)){
+            core_.observeBrowserGuardForDiagnostic(true,browser_.deck(),browser_.deadlineMs());
+        }
         record(r.sequence,r.sample,Stage::TxOut,status==0?Reason::Sent:Reason::SendFailed,0,r.bytes,3,status);
     }
     void noOutput(const Result& r) noexcept {
@@ -238,7 +276,8 @@ public:
             stopAwaiting_[static_cast<std::size_t>(a)]=true;
             ++stopPendingCount_;
         }
-        muteGate_.stop();muteBridge_.stop();
+        muteGate_.stop();muteBridge_.stop();browser_.stop();
+        core_.observeBrowserGuardForDiagnostic(false,0,0);
         core_.onHostStop(); // must not fabricate UP or clear held keys
         core_.output()=output;
         for(auto& held:spots_){
@@ -424,6 +463,8 @@ private:
     }
     l01::CoreCoordinatorV3 core_{};
     ContinuousPickup pickup_{};
+    DjBrowserWindow browser_{};
+    uint32_t browserLoadIntents_{};int lastBrowserLoadDeck_{};
     std::array<SpotHold,12> spots_{};
     std::array<int,702> stopAddresses_{};
     std::array<bool,702> stopAwaiting_{};

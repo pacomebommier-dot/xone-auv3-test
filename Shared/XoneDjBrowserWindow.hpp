@@ -43,6 +43,7 @@ public:
     }
     bool pushOwned() const noexcept {return pushOwned_;}
     int deck() const noexcept {return deck_;}
+    std::int64_t deadlineMs() const noexcept {return active_?deadline_:0;}
     void stop() noexcept {active_=false;pushOwned_=false;deadline_=0;}
     void clear() noexcept {stop();deck_=0;clockKnown_=false;lastMs_=0;}
 private:
