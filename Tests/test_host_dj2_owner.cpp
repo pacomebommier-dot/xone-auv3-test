@@ -57,5 +57,26 @@ int main(){
         auto r=turn(e,1,300);assert(r.emit);e.sent(r,0);
         assert(e.dj2QualifiedTurnsForDiagnostic()==0);
     }
+    // A qualified packet whose callback arrives after the true BOT3 UP
+    // cannot revive an expired owner, even if delivery reports success.
+    {
+        HostEngine e;input(e,14,true,100);
+        auto r=turn(e,1,110);assert(r.emit&&r.dj2Qualified);
+        input(e,14,false,120);
+        assert(!e.canSend(r));
+        e.sent(r,0);
+        assert(e.dj2QualifiedTurnsForDiagnostic()==0);
+    }
+    // A transport STOP must cancel a prepared qualified DJ2 packet.
+    {
+        HostEngine e;input(e,14,true,100);
+        auto r=turn(e,127,110);assert(r.emit&&r.dj2Qualified);
+        e.stop(111*48);
+        assert(!e.canSend(r));
+        e.sent(r,0);
+        assert(e.dj2QualifiedTurnsForDiagnostic()==0);
+        input(e,14,false,120);
+        assert(!e.dj2PushRotationCapturedForDiagnostic());
+    }
     std::cout<<"PASS DJ2 owner40 qualification, signed delta, callback failure, expiry and STOP\n";
 }
