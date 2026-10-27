@@ -76,12 +76,18 @@ public:
     bool dj2LoopStartRequestedForDiagnostic() const noexcept {return dj2LoopStartRequested_;}
     uint32_t dj2LoopRequestsForDiagnostic() const noexcept {return dj2LoopRequests_;}
     uint32_t dj2LoopStopRequestsForDiagnostic() const noexcept {return dj2LoopStopRequests_;}
+    // A backend adapter must capture a generation before asynchronous work.
+    // In particular a late ON after transport STOP is stale, not authoritative.
+    uint32_t dj2BackendGenerationForDiagnostic() const noexcept {return dj2BackendGeneration_;}
     // A requested activation is not proof of audio playback. A verified
     // backend can later report ON/OFF through this explicitly gated seam.
     enum class Dj2LoopObserved : uint8_t { Unknown, Off, On };
     Dj2LoopObserved dj2LoopObservedForDiagnostic() const noexcept {return dj2LoopObserved_;}
     bool observeDj2LoopBackendForDiagnostic(Dj2LoopObserved observed) noexcept {
-        if(observed==Dj2LoopObserved::Unknown)return false;
+        return observeDj2LoopBackendForDiagnostic(observed,dj2BackendGeneration_);
+    }
+    bool observeDj2LoopBackendForDiagnostic(Dj2LoopObserved observed,uint32_t generation) noexcept {
+        if(observed==Dj2LoopObserved::Unknown||generation!=dj2BackendGeneration_)return false;
         dj2LoopObserved_=observed;
         if(observed==Dj2LoopObserved::Off)dj2LoopStartRequested_=false;
         return true;
@@ -375,6 +381,7 @@ public:
             ++dj2LoopStopRequests_;
         dj2LoopStartRequested_=false;
         dj2LoopObserved_=Dj2LoopObserved::Unknown;
+        ++dj2BackendGeneration_;
         for(auto& target:topHold_)target={};
         topIntentValid_.fill(false);
         core_.observeBrowserGuardForDiagnostic(false,0,0);
@@ -572,7 +579,7 @@ private:
     uint32_t dj2QualifiedTurns_{};int dj2LastQualifiedDelta_{};
     bool dj2PushRotCaptured_{},dj2LoopStartRequested_{};
     Dj2LoopObserved dj2LoopObserved_{Dj2LoopObserved::Unknown};
-    uint32_t dj2LoopRequests_{},dj2LoopStopRequests_{};
+    uint32_t dj2LoopRequests_{},dj2LoopStopRequests_{},dj2BackendGeneration_{};
     std::array<SpotHold,12> spots_{};
     std::array<int,702> stopAddresses_{};
     std::array<bool,702> stopAwaiting_{};
