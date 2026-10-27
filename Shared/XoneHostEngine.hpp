@@ -124,6 +124,17 @@ public:
         topIntentValid_[index]=false;
         return true;
     }
+    // A selection command is not proof of file selection or completed LOAD.
+    struct BrowserLoadRequest {int deck{};uint32_t selectionSequence{},sequence{};};
+    bool pendingBrowserLoad(BrowserLoadRequest& request) const noexcept {
+        if(!browserLoadPending_)return false;
+        request=browserLoadRequest_;return true;
+    }
+    bool consumeBrowserLoad(uint32_t expectedSequence,BrowserLoadRequest& request) noexcept {
+        if(!browserLoadPending_ || expectedSequence==0 || expectedSequence!=browserLoadRequest_.sequence ||
+           browserLoadRequest_.selectionSequence!=browserSelectionSequence_)return false;
+        request=browserLoadRequest_;browserLoadPending_=false;return true;
+    }
     int lastBrowserLoadDeckForDiagnostic() const noexcept {return lastBrowserLoadDeck_;}
     const GlobalMuteState& globalMute() const noexcept {return muteBridge_.state();}
     unsigned onMusicalGrid(const GridBatch& b) noexcept {
@@ -186,6 +197,8 @@ public:
                         // backend binding. Never fabricate a sent LOAD or ACK.
                         ++browserLoadIntents_;
                         lastBrowserLoadDeck_=browser_.deck();
+                        browserLoadRequest_={browser_.deck(),browserSelectionSequence_,seq};
+                        browserLoadPending_=true;
                         record(seq,sample,Stage::Decision,Reason::BrowserLoadIntent,0,data,3,lastBrowserLoadDeck_);
                     }
                     core_.observeBrowserGuardForDiagnostic(false,0,0);
@@ -371,6 +384,8 @@ public:
         }
         if(status==0&&r.musical&&r.type==16&&r.api==947&&r.sequence==sequence_&&
            browser_.observeTurn(decodeDjTurn(20,static_cast<unsigned>(r.value)).delta,r.gestureMs)){
+            browserSelectionSequence_=r.sequence;
+            browserLoadPending_=false; // old LOAD cannot target a newer selection
             core_.observeBrowserGuardForDiagnostic(true,browser_.deck(),browser_.deadlineMs());
         }
         record(r.sequence,r.sample,Stage::TxOut,status==0?Reason::Sent:Reason::SendFailed,0,r.bytes,3,status);
@@ -401,6 +416,7 @@ public:
         requestDjLoopStop(false,true);
         for(auto& target:topHold_)target={};
         topIntentValid_.fill(false);
+        browserLoadPending_=false;browserSelectionSequence_=0;
         core_.observeBrowserGuardForDiagnostic(false,0,0);
         core_.onHostStop(); // must not fabricate UP or clear held keys
         core_.output()=output;
@@ -614,6 +630,8 @@ private:
     std::array<TopIntent,4> topIntents_{};
     std::array<bool,4> topIntentValid_{};
     unsigned topResetsDeferred_{},topPatchRecallsDeferred_{};
+    BrowserLoadRequest browserLoadRequest_{};
+    uint32_t browserSelectionSequence_{};bool browserLoadPending_{};
     uint32_t browserLoadIntents_{};int lastBrowserLoadDeck_{};
     uint32_t dj2QualifiedTurns_{};int dj2LastQualifiedDelta_{};
     bool dj2PushRotCaptured_{},dj2LoopStartRequested_{};

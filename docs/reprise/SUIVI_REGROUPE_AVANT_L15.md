@@ -10,7 +10,7 @@ Ce suivi organise le travail restant dans les lots natifs existants ; il ne remp
 
 - Tâches de développement validées automatiquement : **0/6** dans ce nouveau suivi.
 - Tâches de développement restantes : **6**, tâche courante comprise lorsqu’elle démarre.
-- Tâche suivante : **1/6 — Actions et sorties musicales restantes**. Statut : EN COURS. Lot 1A : transitions DJ2/GLOBAL/LOOP et conservation des métadonnées dans le vrai chemin AU en validation. Lots 1B/1C ouverts ; aucune clôture sur de seules intentions.
+- Tâche suivante : **1/6 — Actions et sorties musicales restantes**. Statut : EN COURS. Lot 1A : transitions et chemin AU validés automatiquement sur `1c9ba37` (CI 40576338105). Lot 1B : remise LOAD à usage unique ; lot 1C : routes TOP vérifiées, defaults FILTER et rappel PATCH restent non exécutables. Voir les deux notes de lots ; aucune clôture sur de seules intentions.
 - Travail déjà acquis avant ce compteur : surface/S2/NAV, CC/pickup/LIVE, LOOP, SPOT SMART/MIX/TOUCH/FLASH, horloge et MUTE/SOLO/BAR, LED MUTE et restitution des sélecteurs BASE NAV, état AU du dernier LIVE. Les réserves et preuves restent dans leurs reprises spécialisées.
 - L15 = campagne de validation AUM après ces six regroupements. L16 = essais matériels ensuite. Aucun PASS AUM ou matériel à ce stade.
 
@@ -47,7 +47,7 @@ Si une dépendance bloquante démontrée impose de modifier ce découpage, l’i
 
 | Tâche | Commit(s) fonctionnel(s) | CI | Réserves avant L15 |
 |---|---|---|---|
-| 1/6 | Voir `LOT_1A_DJ_LOOP_2026-10-27.md` | Validation en cours | START/STOP audio externe, LOAD et defaults FILTER non reliés ; tâche non clôturée |
+| 1/6 | Voir `LOT_1A_DJ_LOOP_2026-10-27.md` et `LOT_1B_1C_FRONTIERES_2026-10-27.md` | 1A PASS : [40576338105](https://github.com/pacomebommier-dot/xone-auv3-test/actions/runs/40576338105) ; 1B/1C en validation | START/STOP audio externe, LOAD et defaults FILTER non reliés ; tâche non clôturée |
 | 2/6 | — | — | Non commencée |
 | 3/6 | — | — | Non commencée |
 | 4/6 | — | — | Non commencée |
