@@ -43,7 +43,7 @@ int main() {
     assert(sent==0);
     AVAudioPCMBuffer *audio=[[AVAudioPCMBuffer alloc] initWithPCMFormat:format frameCapacity:8192];
     assert(audio && audio.floatChannelData);
-    __block AUEventSampleTime cursor=0; // musicalContextBlock must read live render cursor
+    AUEventSampleTime cursor=0;
     auto pump=[&](AVAudioFrameCount frames,int command=-1,int number=0,int value=0,AVAudioFrameCount offset=0) {
         AudioTimeStamp timestamp{};timestamp.mFlags=kAudioTimeStampSampleTimeValid;timestamp.mSampleTime=static_cast<Float64>(cursor);
         AURenderEvent event{};event.MIDI.eventType=AURenderEventMIDI;event.MIDI.eventSampleTime=cursor+offset;
@@ -149,15 +149,18 @@ int main() {
         return YES;
     };
     cursor=0;
+    // C++ lambda updates cursor; the ObjC block captures a POINTER, not a
+    // frozen value. Cursor stays alive until the unit is deallocated.
+    const AUEventSampleTime *musicalCursor=&cursor;
     muteUnit.musicalContextBlock=^BOOL(double *tempo,double *numerator,NSInteger *denominator,
                                         double *beatPosition,NSInteger *sampleOffsetToNextBeat,
                                         double *currentMeasureDownbeatPosition){
         if(tempo)*tempo=120;
         if(numerator)*numerator=4;
         if(denominator)*denominator=4;
-        if(beatPosition)*beatPosition=static_cast<double>(cursor)/24000.0;
+        if(beatPosition)*beatPosition=static_cast<double>(*musicalCursor)/24000.0;
         if(sampleOffsetToNextBeat)*sampleOffsetToNextBeat=static_cast<NSInteger>(
-            ((cursor+23999)/24000)*24000-cursor);
+            ((*musicalCursor+23999)/24000)*24000-*musicalCursor);
         if(currentMeasureDownbeatPosition)*currentMeasureDownbeatPosition=0;
         return YES;
     };
