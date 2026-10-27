@@ -160,7 +160,7 @@ public:
         // Keep output debts until the real callback confirms each OFF.
         const auto output=core_.output();
         stopCount_=stopRead_=0;stopSample_=sample;
-        for(int a=0;a<544;++a)if(output.debt(a))stopAddresses_[stopCount_++]=a;
+        for(int a=0;a<702;++a)if(output.debt(a))stopAddresses_[stopCount_++]=a;
         core_.onHostStop(); // must not fabricate UP or clear held keys
         core_.output()=output;
         for(auto& held:spots_){
@@ -332,7 +332,7 @@ private:
     l01::CoreCoordinator core_{};
     ContinuousPickup pickup_{};
     std::array<SpotHold,12> spots_{};
-    std::array<int,544> stopAddresses_{};
+    std::array<int,702> stopAddresses_{};
     unsigned stopCount_{},stopRead_{};int64_t stopSample_{};
     bool started_{};
     SessionMailbox restores_{},snapshots_{};
