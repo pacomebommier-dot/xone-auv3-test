@@ -1,6 +1,6 @@
 #pragma once
 // Native V3: K2/gestures/NAV, known-session CC/LOOP and SMART/MIX/TOUCH/FLASH; specialized S8 remains pending.
-#include "../Core/CoreCoordinator.hpp"
+#include "../CoreV3/CoreCoordinatorV3.hpp"
 #include "XoneContinuousInput.hpp"
 #include "XoneSession.hpp"
 #include "../Core/MutePhysicalGate.hpp"
@@ -353,7 +353,7 @@ private:
         if(bytes)for(size_t i=0;i<3 && i<length;++i)t.bytes[i]=bytes[i];
         trace_[w%TraceCapacity]=t;write_.store(w+1,std::memory_order_release);
     }
-    l01::CoreCoordinator core_{};
+    l01::CoreCoordinatorV3 core_{};
     ContinuousPickup pickup_{};
     std::array<SpotHold,12> spots_{};
     std::array<int,702> stopAddresses_{};
