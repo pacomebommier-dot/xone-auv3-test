@@ -56,5 +56,19 @@ int main(){
  e.ackMuteLedPacket(failed,false);tx=flush(e,631);bool retried=false;
  for(auto p:tx)if(p.target==failed.target){assert(!p.on);retried=true;break;}
  assert(retried&&flush(e,632).empty());
+ // Match the real AU sequence: selected red BASE2, three BAR changes,
+ // cancelled BASE2 at STOP, BASE3 applied at a BAR/STOP tie, then exit.
+ HostEngine au;au.enableNativeMutePage(true);
+ key(au,37,true,0);key(au,37,false,1);
+ key(au,13,true,2);key(au,13,false,3);flush(au,3);
+ GridBatch edge{};edge.valid=true;edge.count=1;edge.events[0]={GridKind::Bar,0,4};
+ for(int n=0;n<3;++n){key(au,36,true,4+2000*n);key(au,36,false,5+2000*n);au.onMusicalGrid(edge);flush(au,2000+2000*n);}
+ key(au,37,true,7998);au.onMusicalGrid(edge);key(au,37,false,8000);
+ au.stop(9999*48);au.onMusicalGrid(edge);flush(au,10000);
+ key(au,38,true,10001);key(au,38,false,10002);au.onMusicalGrid(edge);au.stop(12000*48);flush(au,12000);
+ key(au,13,true,12001);key(au,13,false,12002);tx=flush(au,12002);
+ bool redRestored=false;
+ for(auto p:tx)if(p.on){assert(p.bytes[1]==37);redRestored=true;}
+ assert(redRestored);
  std::cout<<"PASS S7 BASE context selection, UNKNOWN, MUTE restoration and source ownership\n";
 }

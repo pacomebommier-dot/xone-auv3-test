@@ -1,7 +1,7 @@
 # Reprise active — intégration XONE native V3
 27 octobre 2026. Branche de reprise ciblée : feature/native-e3-bar-beat-reprise. Aucun merge main.
 
-Reprise MUTE/SOLO/BAR et LED : voir [INTEGRATION_V3_MUTE.md](INTEGRATION_V3_MUTE.md), qui complète les checkpoints historiques ci-dessous. Les LED MUTE sont raccordées au callback AU ; le renderer du contexte sous-jacent reste ouvert.
+Reprise MUTE/SOLO/BAR et LED : voir [INTEGRATION_V3_MUTE.md](INTEGRATION_V3_MUTE.md), qui complète les checkpoints historiques ci-dessous. Les LED MUTE sont raccordées au callback AU ; les sélecteurs BASE connus du contexte NAV sont aussi restitués ; les vues BASE FX/MEMORY restent ouvertes.
 
 ## Code et preuves
 - e2dcfec : surface K2, gestes S2 et NAV S3 raccordés au callback AUv3 ; DEF-L02-TRACE-01 corrigé. K2_SIM unique préparé en source Mozaic.
