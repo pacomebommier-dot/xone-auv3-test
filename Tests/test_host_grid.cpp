@@ -25,5 +25,14 @@ int main(){
   three.beatPosition=1;assert(g.scan(three,48000).count==2);
   three.beatPosition=3;
   b=g.scan(three,24000);assert(b.count==1&&b.events[0].kind==GridKind::Bar);
-  std::cout<<"PASS host grid boundaries, meter, STOP, missing context, duplicate and rearm\n";
+  // Backward seek and meter switch cannot replay old scheduled boundaries.
+  g.reset();assert(g.scan(context(8),24000).count==0);
+  assert(g.scan(context(9),24000).count==1);
+  assert(g.scan(context(2),24000).count==0); // seek: re-arm
+  assert(g.scan(context(3),24000).count==1);
+  auto meter=context(4);meter.numerator=3;
+  assert(g.scan(meter,24000).count==0); // meter changed: re-arm
+  meter.beatPosition=6;
+  assert(g.scan(meter,24000).count==1);
+  std::cout<<"PASS host grid boundaries, meter, seek, STOP, missing context, duplicate and rearm\n";
 }
