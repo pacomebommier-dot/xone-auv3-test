@@ -17,12 +17,18 @@ int main() {
     assert([unit.inputBusses[0] setFormat:format error:&error]);
     assert([unit.outputBusses[0] setFormat:format error:&error]);
     unit.maximumFramesToRender=8192;
+    __block bool running=false;
+    unit.transportStateBlock=^BOOL(AUHostTransportStateFlags *flags,double *position,double *cycleStart,double *cycleEnd) {
+        (void)position;(void)cycleStart;(void)cycleEnd;
+        if (flags) *flags=running?AUHostTransportStateMoving:static_cast<AUHostTransportStateFlags>(0);
+        return YES;
+    };
     __block NSUInteger sent=0;
     __block uint8_t lastStatus=0,lastNumber=0,lastValue=0;
     unit.MIDIOutputEventBlock=^OSStatus(AUEventSampleTime time,uint8_t cable,NSInteger length,const uint8_t *data) {
         (void)time;assert(cable==0&&length==3);++sent;lastStatus=data[0];lastNumber=data[1];lastValue=data[2];return noErr;
     };
-    xone::host::SessionImage image{};image.schema=1;image.config=1;image.revision=1;image.desired.fill(-2);image.desired[1328]=64;
+    xone::host::SessionImage image{};image.schema=1;image.config=1;image.revision=1;image.desired.fill(-2);image.desired[1328]=64;image.desired[1768]=0;
     xone::host::SessionBytes bytes{};assert(xone::host::encodeSession(image,bytes));
     unit.fullStateForDocument=@{@"XONE_LAST_LIVE_V1":[NSData dataWithBytes:bytes.data() length:bytes.size()]};
     assert(sent==0);
@@ -69,6 +75,14 @@ int main() {
     pump(48);
     NSData *after=unit.fullStateForDocument[@"XONE_LAST_LIVE_V1"];
     assert(xone::host::decodeSession(static_cast<const uint8_t *>(after.bytes),after.length,decoded)&&decoded.desired[1328]==100);
+    // Real wrapper: FX selection -> SMART ON -> explicit STOP OFF, true UP stays inert.
+    pump(48,0x9E,36,127);pump(48,0x8E,36,0);
+    pump(48,0x9E,48,127);assert(sent==3&&lastStatus==0x99&&lastNumber==0&&lastValue==127);
+    pump(48,0xFC);assert(sent==4&&lastStatus==0x89&&lastNumber==0&&lastValue==0);
+    pump(48,0x8E,48,0);assert(sent==4);
+    running=true;pump(48);pump(48,0x9E,48,127);assert(sent==5&&lastStatus==0x99);
+    running=false;pump(48);assert(sent==6&&lastStatus==0x89&&lastValue==0);
+    pump(48,0x8E,48,0);assert(sent==6);
     [unit deallocateRenderResources];
     // A new real AU subclass instance receives the saved document, not the old engine.
     XoneMidiAudioUnit *reopened=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
@@ -79,7 +93,7 @@ int main() {
     assert([reopened allocateRenderResourcesAndReturnError:&error]);
     auto reopenedRender=reopened.internalRenderBlock;
     AudioTimeStamp timestamp{};timestamp.mFlags=kAudioTimeStampSampleTimeValid;AudioUnitRenderActionFlags flags=0;
-    assert(reopenedRender(&flags,&timestamp,48,0,audio.mutableAudioBufferList,nullptr,nil)==noErr && sent==2);
+    assert(reopenedRender(&flags,&timestamp,48,0,audio.mutableAudioBufferList,nullptr,nil)==noErr && sent==6);
     NSData *reloaded=reopened.fullStateForDocument[@"XONE_LAST_LIVE_V1"];
     assert(xone::host::decodeSession(static_cast<const uint8_t *>(reloaded.bytes),reloaded.length,decoded)&&decoded.desired[1328]==100);
     [reopened deallocateRenderResources];

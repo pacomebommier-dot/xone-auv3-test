@@ -104,12 +104,20 @@
         const double rate = *sampleRate > 0 ? *sampleRate : 44100;
         AUMIDIOutputEventBlock __unsafe_unretained sendMIDI = *slot;
         AUHostTransportStateBlock __unsafe_unretained transport = *transportSlot;
+        const auto flushStop = [&]() {
+            for (unsigned n=0; n<544; ++n) {
+                const auto packet=engine->nextStopPacket();
+                if (!packet.emit) break;
+                if (sendMIDI) engine->sent(packet,sendMIDI(packet.sample,0,3,packet.bytes));
+                else engine->noOutput(packet);
+            }
+        };
         const auto bufferStart = static_cast<AUEventSampleTime>(timestamp->mSampleTime);
         if (transport) {
             AUHostTransportStateFlags flags = static_cast<AUHostTransportStateFlags>(0);
             if (transport(&flags, nullptr, nullptr, nullptr)) {
                 const bool nowMoving = (flags & AUHostTransportStateMoving) != 0;
-                if (*known && *moving && !nowMoving) engine->stop(bufferStart);
+                if (*known && *moving && !nowMoving) { engine->stop(bufferStart); flushStop(); }
                 *known = true; *moving = nowMoving;
             } else { *known = false; }
         }
@@ -119,13 +127,13 @@
              event != nullptr && processed < 256; event = event->head.next, ++processed) {
             if (event->head.eventType != AURenderEventMIDI) continue;
             const auto &m = event->MIDI;
-            if (m.length == 1 && m.data[0] == 0xFC && m.cable == 0) {
-                engine->stop(m.eventSampleTime); continue;
-            }
             // Preserve host sample timeline; clamp late/out-of-buffer events.
             AUEventSampleTime sample = m.eventSampleTime;
             if (sample < bufferStart) sample = bufferStart;
             if (frameCount && sample >= bufferStart + frameCount) sample = bufferStart + frameCount - 1;
+            if (m.length == 1 && m.data[0] == 0xFC && m.cable == 0) {
+                engine->stop(sample); flushStop(); continue;
+            }
             const auto ms = static_cast<int64_t>(*elapsedMs + 1000.0 * (sample-bufferStart) / rate);
             const auto result = engine->receive(m.cable, m.data, m.length, sample, ms);
             for (unsigned n=0; n<result.packetCount(); ++n) {

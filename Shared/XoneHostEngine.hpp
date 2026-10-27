@@ -62,9 +62,16 @@ public:
             const bool valid=((cmd==0x90||cmd==0x80)&&l01::SurfaceInput::physicalControl(data[1])>=0)
                 ||(cmd==0xB0&&data[1]<=21);
             if(!valid) {record(seq,sample,Stage::Decision,Reason::Rejected,cable,data,length);return {};}
+            const int physical=l01::SurfaceInput::physicalControl(data[1]);
+            const bool wasHeld=physical>=0&&core_.surface().held(physical);
+            const auto captured=physical>=4?core_.nativeNav().active().route(physical):l01::NavRoute{};
             const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs);
             record(seq,sample,Stage::Decision,accepted?Reason::Integrated:Reason::ClockRejected,cable,data,length);
             drainCore(seq,sample);
+            if(accepted&&(cmd==0x90||cmd==0x80)&&physical>=20&&physical<32){
+                const bool down=cmd==0x90&&data[2]!=0;
+                if(wasHeld!=down)return spot(physical,down,captured,gestureMs,seq,sample);
+            }
             if(accepted&&cmd==0xB0&&data[1]<20)return continuous(data[1],data[2],gestureMs,seq,sample);
             return {};
         }
@@ -109,7 +116,7 @@ public:
     }
     l01::LiveRead desiredLive(int cell) const noexcept {return core_.nativeLive().desired(cell);}
     void sent(const Result& r,int32_t status) noexcept {
-        if(r.musical&&status==0){core_.output().apply({r.type,r.api,r.value,127});core_.output().drain();}
+        if(r.musical&&(status==0||(r.type==11&&r.value==1))){core_.output().apply({r.type,r.api,r.value,127});core_.output().drain();}
         record(r.sequence,r.sample,Stage::TxOut,status==0?Reason::Sent:Reason::SendFailed,0,r.bytes,3,status);
     }
     void noOutput(const Result& r) noexcept {
@@ -117,8 +124,23 @@ public:
     }
     void stop(int64_t sample) noexcept {
         started_=true;
+        // Keep output debts until the real callback confirms each OFF.
+        const auto output=core_.output();
+        stopCount_=stopRead_=0;stopSample_=sample;
+        for(int a=0;a<544;++a)if(output.debt(a))stopAddresses_[stopCount_++]=a;
         core_.onHostStop(); // must not fabricate UP or clear held keys
-        record(++sequence_,sample,Stage::Stop,Reason::SurfaceOnly,0,nullptr,0);
+        core_.output()=output;
+        for(auto& held:spots_){
+            if(held.cell>=0&&held.mode==1&&held.previous==0)
+                core_.commitNativeLive(held.cell,0,core_.nativeLive().revision());
+            held.cell=-1;
+        }
+        record(++sequence_,sample,Stage::Stop,stopCount_?Reason::Musical:Reason::SurfaceOnly,0,nullptr,0);
+    }
+    Result nextStopPacket() noexcept {
+        if(stopRead_>=stopCount_)return {};
+        const int a=stopAddresses_[stopRead_++];
+        return {true,{static_cast<uint8_t>(0x86+a/128),static_cast<uint8_t>(a%128),0},sequence_,stopSample_,true,a,0,11};
     }
     int observed() const noexcept {return -2;} // no authenticated backend profile in L02
     bool surfaceHeld(size_t i) const noexcept {return core_.surface().held(i);}
@@ -145,6 +167,44 @@ public:
     }
     uint32_t overflows() const noexcept {return overflows_.load(std::memory_order_relaxed);}
 private:
+    struct SpotHold {int cell{-1},api{-1},mode{},previous{};int64_t downMs{};};
+    static int spotApi(int cell) noexcept {
+        if(cell<320&&cell%40>=16&&cell%40<28)return 12*(cell/40)+cell%40-16;
+        if(cell>=320&&cell<1328&&(cell-320)%42>=18&&(cell-320)%42<30)
+            return 96+12*((cell-320)/42)+(cell-320)%42-18;
+        if(cell>=1477&&cell<1513)return cell-985;
+        if(cell>=1768&&cell<1864)return cell-1384;
+        return -1;
+    }
+    Result spot(int physical,bool down,l01::NavRoute route,int64_t ms,uint32_t seq,int64_t sample) noexcept {
+        auto& held=spots_[static_cast<std::size_t>(physical-20)];
+        int cell=-1,api=-1,value=-1;
+        if(down){
+            held={};int preset=-1;
+            // Source @w0 excludes d6=24; other owners are not guessed.
+            if(route.address<0||route.address/1024!=3||
+               !l01::LiveState::spotAddresses(route.address,route.position,cell,preset))return {};
+            const auto previous=core_.nativeLive().desired(cell);
+            const auto mode=preset>=0?core_.nativeLive().desired(preset):l01::LiveRead{true,1};
+            api=spotApi(cell);
+            if(!previous.known||previous.value>1||!mode.known||mode.value<1||mode.value>2||api<0)return {};
+            held={cell,api,mode.value,previous.value,ms};value=1;
+        }else{
+            const auto capture=held;held={};
+            if(capture.cell<0)return {};
+            cell=capture.cell;api=capture.api;
+            value=(capture.previous==1||(capture.mode==1&&ms-capture.downMs>199))?0:1;
+        }
+        auto projection=core_.output();
+        if(!projection.apply({11,api,value,127})||!core_.commitNativeLive(cell,value,core_.nativeLive().revision())){
+            if(down)held={};
+            return {};
+        }
+        if(!projection.emitted())return {};
+        const auto p=projection.packet(0);
+        Result r{true,{p.status,p.number,p.value},seq,sample,true,api,value,11};
+        record(seq,sample,Stage::Decision,Reason::Musical,0,r.bytes,3);return r;
+    }
     Result continuous(int cc,int raw,int64_t ms,uint32_t seq,int64_t sample) noexcept {
         const auto target=continuousTarget(core_.nativeNav().active().route(36+cc));
         if(!target.valid()||target.api==572)return {};
@@ -208,6 +268,9 @@ private:
     }
     l01::CoreCoordinator core_{};
     ContinuousPickup pickup_{};
+    std::array<SpotHold,12> spots_{};
+    std::array<int,544> stopAddresses_{};
+    unsigned stopCount_{},stopRead_{};int64_t stopSample_{};
     bool started_{};
     SessionMailbox restores_{},snapshots_{};
     SessionFrame uiSession_{}; // UI owns cache and request generation.

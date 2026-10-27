@@ -1,5 +1,5 @@
 # Reprise active — intégration XONE native V3
-26 octobre 2026. Branche de travail : feature/native-integration-v3. Aucun merge main.
+27 octobre 2026. Branche de travail : feature/native-integration-v3. Aucun merge main.
 
 ## Code et preuves
 - e2dcfec : surface K2, gestes S2 et NAV S3 raccordés au callback AUv3 ; DEF-L02-TRACE-01 corrigé. K2_SIM unique préparé en source Mozaic.
@@ -10,12 +10,14 @@
 - e7aefbce369ddbdcc95547be3c82b3baf8c60e2e : état commun fullState/fullStateForDocument, harness de la vraie classe AU et profil SH-01A SOURCE préparé. CI complète PASS : https://github.com/pacomebommier-dot/xone-auv3-test/actions/runs/40400931566
 - Les commits de tests RED 15a7a243 et fc7fcd65 échouent volontairement avant les implémentations correspondantes. Ne pas les prendre pour des releases.
 
+- Raccordement SPOT SMART/MIX : voir INTEGRATION_V3_SPOTS.md ; validation automatique du nouveau commit à consigner après CI. TOUCH/FLASH et actions restent ouverts.
+
 ## État technique des 8 étapes / 16 lots
 | Étape | Lots | Raccordements et réserves |
 |---|---|---|
 | E1 | L01/L02 | L01 clos documentairement ; correctif de traces et CI L02 acquis ; parcours iPhone nominal historique conservé, compléments manuels différés |
 | E2 | L03/L04 | Surface et gestes BOT/combos/NAV raccordés ; K2_SIM source préparée, pas de compilation Mozaic ni essai physique nouveau ; SPOT TOUCH/FLASH restent à intégrer |
-| E3 | L05/L06 | NAV, sélection physique, pickup/CC/LIVE/S4, LOOP et horloge gestuelle de rendu raccordés ; BAR/BEAT, actions et releases musicales complètes encore ouverts |
+| E3 | L05/L06 | NAV, sélection physique, pickup/CC/LIVE/S4, LOOP, SPOT SMART/MIX et OFF au STOP raccordés ; BAR/BEAT, actions et releases musicales complètes encore ouverts |
 | E4 | L07/L08 | PATCH/MEMORY et CUE/LOAD/BASE : modules et contrats conservés, pas encore une chaîne musicale intégrée |
 | E5 | L09/L10 | PRESET/RED et propriétaires/alternatives S8 : non raccordés ; les modes SPOT MACHINE ne doivent pas être capturés/restaurés par PATCH/PRESET/RED |
 | E6 | L11/L12 | UNKNOWN conservé ; feedback authentifié et sortie LED séparée non raccordés |
@@ -27,8 +29,8 @@ La session native connue du harness ne vaut pas une image instrument observée. 
 Les 12 headers Core, 14 suites historiques, GOLDEN/S7/S8 et preuves V0.1/V0.2 restent préservés. Vérification distante du26/10 : main=5874ae2f29a2543d9df7cda4814803d04dd36257 ; feature/native-l02-v02=8fff66b4ed97acaf1b65f37028700319ed2e935e.
 
 ## Reprise pratique
-Lire INTEGRATION_V3.md, INTEGRATION_V3_CC.md, INTEGRATION_V3_SESSION.md et INTEGRATION_V3_SELECTION_LOOP.md avec les documents actifs Drive00/40..44/37 et C-NAT-05/06.
-Le checkout local E:/Mon Drive/MOZAIC SCRIPTS/XONE K2/XONE_ENGINE_NATIVE est resté sur03be998 : le service de revue automatique des commandes locales a atteint son quota. Les modifications suivantes sont publiées via le connecteur GitHub autorisé. Resynchroniser proprement ce checkout quand l'exécution locale est disponible, en vérifiant d'abord son état ; ne pas écraser un travail utilisateur.
+Lire INTEGRATION_V3.md, INTEGRATION_V3_CC.md, INTEGRATION_V3_SESSION.md et INTEGRATION_V3_SELECTION_LOOP.md et INTEGRATION_V3_SPOTS.md avec les documents actifs Drive00/40..44/37 et C-NAT-05/06.
+Le checkout local E:/Mon Drive/MOZAIC SCRIPTS/XONE K2/XONE_ENGINE_NATIVE a été resynchronisé proprement le27/10 (fast-forward03be998 ->9fbc48d, checkout initial propre). Exécution locale de nouveau disponible. La branche principale reste préservée.
 Prochain raccordement : sorties SPOT/actions avec destinations capturées et dettes OFF, horloge BAR/BEAT réelle, puis banques et propriétaires S8. Ne pas réduire cette suite aux remappings CH1 du banc L02. Les essais AUM restent groupés au jalon L15.
 
 ## Preuves du dernier code

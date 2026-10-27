@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-27",
+  "base_commit": "9fbc48d99ddad6a715f8a0dbf9b6e8dbf17ef9da",
+  "compiler": "GCC 16.2.0 Windows w64devkit",
+  "flags": "-pthread -std=c++17 -O2 -UNDEBUG -Wall -Wextra -Wpedantic -Werror",
+  "cpp_suites": 21,
+  "cpp_exit": 0,
+  "c_v01_cases": 10,
+  "c_exit": 0,
+  "manifest": "PASS 12 headers, 14 suites, 81 REQ, 382 handlers",
+  "simulator": "SOURCE PASS only, not native compilation",
+  "roland_profile": "SOURCE PASS only, not hardware",
+  "manual_tests": "NOT_RUN_DEFERRED_L15_L16",
+  "sha256": {
+    "Shared/XoneHostEngine.hpp": "0a0bc4552cc1bfa22aece6115135a70695bdf8464f2fd0d10d41716ff3f7dcc8",
+    "Extension/XoneMidiAudioUnit.mm": "809ecd1c443d6fa96db2f803e6081d4af7f4a83f0b69e921e7b1d9c97781213b",
+    "Tests/test_host_spots.cpp": "ba412bd2e5bfa65fd9b4cb59fab486751613f9a5a9e3fca1a1af68db6a6ea2f3",
+    "Tests/test_auv3_document.mm": "93b83ab5f8467389e7cd626c554a2bc6d1bdebba739ff7c4811193f20737ebc9"
+  },
+  "summaries": {
+    "test_bank_s6.run": "PASS 45 L01/11 native BANKS scenarios",
+    "test_engine_existing.run": "PASS structural acceptance: origin, observation, BAR, STOP, bounds, replay",
+    "test_fx_s6.run": "PASS 71 L01/10 FX S6 / LIVE provenance and status scenarios",
+    "test_live_state.run": "PASS 40 L01/09 authenticated LIVE / BROWSER SPOT assertions",
+    "test_memory_recall.run": "PASS 12 L01/11 MEMORY recall scenarios",
+    "test_native_slices.run": "PASS 27 native C++ scenario assertions (partial functional slices + Engine structure)",
+    "test_nav_oracle.run": "PASS 52/52 literal @zd default-page route fixtures (independent formula)",
+    "test_nav_pipeline.run": "PASS 19 NAV integrated S3 pipeline scenarios",
+    "test_nav_s3.run": "PASS 34 NAV S3 stage/validate/commit scenarios",
+    "test_pipeline.run": "PASS 35 new S2/S4/pipeline scenarios",
+    "test_s3_boundary.run": "PASS 38 S3 boundary / integrated pipeline scenarios",
+    "test_s3_long_browser.run": "PASS 28 L01/07 long-gesture/BROWSER/DJ2 guard scenarios",
+    "test_s3_s4_bridge.run": "PASS 12 L01/11 staged S3/S4 bridge diagnostic scenarios",
+    "test_s3_touch_nav.run": "PASS 31 L01/08 source-constrained @zk/@zl TOUCH NAV assertions",
+    "test_host_continuous.run": "PASS host physical CC->source target->pickup->LIVE->S4 MIDI7..14, UNKNOWN, no observed inference",
+    "test_host_engine.run": "PASS L02 CC values, trace order, origin gate, loop rejection, UNKNOWN, STOP/real UP, overflow",
+    "test_host_integration.run": "PASS host K2->S1->S2->S3 NAV SHORT/LONG/STOP, independent clock, bounded trace",
+    "test_host_musical_routes.run": "PASS physical source selection and LOOP same-revision derived gains, batch send failure, UNKNOWN",
+    "test_host_session.run": "PASS session codec CRC/bounds, coherent SPSC snapshots, host LIVE round-trip, held restore, UNKNOWN",
+    "test_host_spots.run": "PASS SMART/MIX musical output, captured destination, 199/200ms, failed ON/OFF debts, multi-note STOP, UNKNOWN",
+    "test_host_surface.run": "PASS host GOLDEN 36 buttons, duplicates, CC domain, unmapped notes, no physical Thru"
+  }
+}
