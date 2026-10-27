@@ -6,13 +6,14 @@
 #include "../Core/MutePhysicalGate.hpp"
 #include "XoneMuteMidiProjection.hpp"
 #include "XoneMuteLedOutput.hpp"
+#include "XoneDjRelative.hpp"
 #include <atomic>
 #include <array>
 #include <cstdint>
 #include <cstddef>
 namespace xone::host {
 enum class Stage : uint8_t { RxIn, Decision, TxOut, RxFeedback, Stop, Overflow, Gesture };
-enum class Reason : uint8_t { Mapped, SurfaceOnly, Rejected, Untrusted, Sent, SendFailed, NoOutput, Received, Integrated, Qualified, ClockRejected, UnknownLive, PickupWait, Musical };
+enum class Reason : uint8_t { Mapped, SurfaceOnly, Rejected, Untrusted, Sent, SendFailed, NoOutput, Received, Integrated, Qualified, ClockRejected, UnknownLive, PickupWait, Musical, DjRelative };
 struct Trace {
     uint32_t sequence{};
     int64_t sample{};
@@ -117,7 +118,13 @@ public:
                 const auto captured=core_.nativeNav().active().route(physical);
                 if(wasHeld!=down)return spot(physical,down,captured,gestureMs,seq,sample);
             }
-            if(accepted&&cmd==0xB0&&data[1]<20)return continuous(data[1],data[2],gestureMs,seq,sample);
+            if(accepted&&cmd==0xB0){
+                if(data[1]<20)return continuous(data[1],data[2],gestureMs,seq,sample);
+                const auto turn=decodeDjTurn(data[1],data[2]);
+                // Relative input is observed but never sent as an absolute
+                // CC or guessed browser/Loopy command without verified S7 binding.
+                if(turn.valid())record(seq,sample,Stage::Gesture,Reason::DjRelative,0,data,3,turn.delta);
+            }
             return {};
         }
         // Explicit T01 bench profile: CH1 only, exactly two CC mappings, no Thru.
