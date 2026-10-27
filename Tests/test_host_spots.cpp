@@ -30,6 +30,13 @@ int main(){
  for(int n=0;n<3;++n){auto out=batch.nextStopPacket();assert(out.emit&&out.api==384+n);batch.sent(out,n==1?-1:0);}
  assert(!batch.nextStopPacket().emit);batch.stop(30);auto retry=batch.nextStopPacket();assert(retry.emit&&retry.api==385);batch.sent(retry,0);assert(!batch.nextStopPacket().emit);
  for(int n:buttons)assert(!edge(batch,n,false,40).emit);
+ // Revision exhaustion must never suppress a physically owed NoteOff.
+ HostEngine exhausted;auto limit=image();limit.revision=xone::l01::LiveState::MaxRevision-1;
+ assert(exhausted.restoreSessionBeforeRendering(limit));edge(exhausted,36,true,0);edge(exhausted,36,false,1);
+ auto last=edge(exhausted,48,true,10);assert(last.emit);exhausted.sent(last,0);
+ auto close=edge(exhausted,48,false,210);assert(close.emit&&close.value==0);exhausted.sent(close,0);
+ assert(exhausted.desiredLive(1768).value==1); // failed LIVE write is not claimed committed
+ exhausted.stop(220);assert(!exhausted.nextStopPacket().emit);
  // MACHINE NAV uses the genuine BOT2+BOT4 combo, with explicit known session fields.
  for(int mode:{-2,0,1,2,3,4,5,127}){
   HostEngine m;auto i=image();i.desired[380]=0;i.desired[392]=mode;assert(m.restoreSessionBeforeRendering(i));

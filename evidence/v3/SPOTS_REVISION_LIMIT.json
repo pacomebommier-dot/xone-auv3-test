@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-27",
+  "base_commit": "23e75cef9ea6c090acfbc2a6321059b2bddba1a2",
+  "red": "Assertion failed: close.emit&&close.value==0 at test_host_spots.cpp:37; owed release suppressed at LIVE MaxRevision",
+  "green": "PASS test_host_spots under GCC16.2.0 -std=c++17 -O2 -UNDEBUG -Wall -Wextra -Wpedantic -Werror",
+  "sha256": {
+    "Shared/XoneHostEngine.hpp": "c119a3c8241ce7734542a51025627b0fe4312e1f1d7f5edf67b058e04b7ad75a",
+    "Tests/test_host_spots.cpp": "03ffe58fe369c799a6a5089c46c54507396d5bc2e7bae5aae3b0783f88123ee7"
+  },
+  "scope": "A physically owed OFF is emitted despite refused LIVE write; desired LIVE is not falsely marked committed. Full CI required on new commit."
+}

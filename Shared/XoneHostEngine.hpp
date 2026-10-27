@@ -196,9 +196,13 @@ private:
             value=(capture.previous==1||(capture.mode==1&&ms-capture.downMs>199))?0:1;
         }
         auto projection=core_.output();
-        if(!projection.apply({11,api,value,127})||!core_.commitNativeLive(cell,value,core_.nativeLive().revision())){
+        if(!projection.apply({11,api,value,127}))return {};
+        const bool committed=core_.commitNativeLive(cell,value,core_.nativeLive().revision());
+        if(!committed){
             if(down)held={};
-            return {};
+            // A bounded LIVE counter must not suppress an already owed release.
+            // Leave desired LIVE unchanged and acknowledge only the real OFF.
+            if(down||value!=0||!core_.output().debt(api))return {};
         }
         if(!projection.emitted())return {};
         const auto p=projection.packet(0);

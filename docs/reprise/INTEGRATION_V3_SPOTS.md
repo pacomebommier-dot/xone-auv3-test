@@ -21,3 +21,5 @@ Ce raccordement ne clôt L04/L06. TOUCH/FLASH (modes3/4), actions/ordonnanceur B
 Aucun essai Mozaic natif, AUM/iPhone, K2 ou SH-01A nouveau ; recette groupée L15 maintenue. Aucune IPA intermédiaire demandée.
 
 Validation locale : 21 suites C++ GCC16.2 et10 cas C V0.1 PASS ; manifest12/14, K2_SIM SOURCE et profil SH-01A SOURCE PASS. Preuve : evidence/v3/SPOTS_LOCAL_GCC.json. Validation Apple/Clang/sanitizers/iOS à confirmer par la CI du commit.
+
+Cas limite corrigé après test RED : à épuisement du compteur LIVE, un UP qui doit fermer une note déjà envoyée émet tout de même son OFF. La mutation LIVE refusée ne devient pas un faux commit ; la valeur désirée précédente reste conservée. Ce cas de borne n’est pas assimilé à une réconciliation matériel/LIVE.
