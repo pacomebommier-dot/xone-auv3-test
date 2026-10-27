@@ -72,6 +72,9 @@ public:
     uint32_t dj2QualifiedTurnsForDiagnostic() const noexcept {return dj2QualifiedTurns_;}
     int dj2LastQualifiedDeltaForDiagnostic() const noexcept {return dj2LastQualifiedDelta_;}
     bool dj2PushRotationCapturedForDiagnostic() const noexcept {return dj2PushRotCaptured_;}
+    // Requested state only; no backend status or audio-loop activation asserted.
+    bool dj2LoopStartRequestedForDiagnostic() const noexcept {return dj2LoopStartRequested_;}
+    uint32_t dj2LoopRequestsForDiagnostic() const noexcept {return dj2LoopRequests_;}
     unsigned topResetsDeferred() const noexcept {return topResetsDeferred_;}
     unsigned topPatchRecallsDeferred() const noexcept {return topPatchRecallsDeferred_;}
     enum class TopAction : uint8_t { FilterReset, PatchRecall };
@@ -320,6 +323,12 @@ public:
             if(r.dj2Qualified){
                 ++dj2QualifiedTurns_;
                 dj2LastQualifiedDelta_=decodeDjTurn(21,static_cast<unsigned>(r.value)).delta;
+                // Q6: an admitted BOT3+DJ2 ROT requests activation if
+                // currently OFF. This is *requested*, never an audio ACK.
+                if(!dj2LoopStartRequested_){
+                    dj2LoopStartRequested_=true;
+                    ++dj2LoopRequests_;
+                }
             }
         }
         if(status==0&&r.musical&&r.type==16&&r.api==947&&r.sequence==sequence_&&
@@ -350,6 +359,7 @@ public:
             ++stopPendingCount_;
         }
         muteGate_.stop();muteBridge_.stop();browser_.stop();dj2PushRotCaptured_=false;
+        dj2LoopStartRequested_=false;
         for(auto& target:topHold_)target={};
         topIntentValid_.fill(false);
         core_.observeBrowserGuardForDiagnostic(false,0,0);
@@ -545,7 +555,8 @@ private:
     unsigned topResetsDeferred_{},topPatchRecallsDeferred_{};
     uint32_t browserLoadIntents_{};int lastBrowserLoadDeck_{};
     uint32_t dj2QualifiedTurns_{};int dj2LastQualifiedDelta_{};
-    bool dj2PushRotCaptured_{};
+    bool dj2PushRotCaptured_{},dj2LoopStartRequested_{};
+    uint32_t dj2LoopRequests_{};
     std::array<SpotHold,12> spots_{};
     std::array<int,702> stopAddresses_{};
     std::array<bool,702> stopAwaiting_{};
