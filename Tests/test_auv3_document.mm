@@ -25,9 +25,17 @@ int main() {
     };
     __block NSUInteger sent=0,failAt=0;
     uint8_t bytesSent[64][3]{};auto *recorded=bytesSent;
+    __block NSUInteger ledSent=0;
+    uint8_t ledBytes[4096][3]{};auto *ledRecorded=ledBytes;
     __block uint8_t lastStatus=0,lastNumber=0,lastValue=0;
     AUMIDIOutputEventBlock testOutput=^OSStatus(AUEventSampleTime time,uint8_t cable,NSInteger length,const uint8_t *data) {
-        (void)time;assert(cable==0&&length==3&&sent<64);
+        (void)time;assert(cable==0&&length==3);
+        if((data[0]&15)==14){
+            assert(ledSent<4096&&(data[0]==0x8E||data[0]==0x9E));
+            for(unsigned i=0;i<3;++i)ledRecorded[ledSent][i]=data[i];
+            ++ledSent;return noErr;
+        }
+        assert(sent<64);
         for(unsigned i=0;i<3;++i)recorded[sent][i]=data[i];
         ++sent;lastStatus=data[0];lastNumber=data[1];lastValue=data[2];return sent==failAt?static_cast<OSStatus>(-1):noErr;
     };
@@ -168,11 +176,13 @@ int main() {
     };
     assert([muteUnit allocateRenderResourcesAndReturnError:&error]);
     render=muteUnit.internalRenderBlock;
-    const NSUInteger beforeMute=sent;
+    const NSUInteger beforeMute=sent;ledSent=0;
     pump(48,0x9E,13,127);
     pump(48,0x8E,13,0);
+    assert(ledSent==64&&ledRecorded[3][0]==0x9E&&ledRecorded[3][1]==108);
     pump(48,0x9E,36,127);
     pump(48,0x8E,36,0);
+    assert(ledSent==66&&ledRecorded[64][0]==0x8E&&ledRecorded[64][1]==108&&ledRecorded[65][0]==0x9E&&ledRecorded[65][1]==36);
     assert(sent==beforeMute); // no immediate note output on K2 gesture
     for(unsigned n=0;n<12;++n)pump(8192);
     if(sent!=beforeMute+1||lastStatus!=0x9A||lastNumber!=16||lastValue!=127)
@@ -193,6 +203,30 @@ int main() {
     pump(48); // pending failed OFF retransmits at render start
     assert(sent==beforeMute+3&&lastStatus==0x8A&&lastNumber==16&&lastValue==0);
     pump(48);assert(sent==beforeMute+3); // successful ACK clears debt
+    // A failed ON retries once in the following buffer and stays deduplicated.
+    pump(48,0x9E,36,127);pump(48,0x8E,36,0);
+    failAt=beforeMute+4;
+    for(unsigned n=0;n<12;++n)pump(8192);
+    assert(sent==beforeMute+4&&lastStatus==0x9A&&lastNumber==16);
+    failAt=0;pump(48);assert(sent==beforeMute+5&&lastStatus==0x9A);
+    pump(48);assert(sent==beforeMute+5);
+    // BAR wins an exact timestamp tie: an UP at BAR arms the following BAR.
+    const auto until=[&](AUEventSampleTime target){
+        while(cursor<target){const auto left=target-cursor;pump(static_cast<AVAudioFrameCount>(left>8192?8192:left));}
+    };
+    auto nextBar=((cursor/96000)+1)*96000;
+    until(nextBar-96);pump(48,0x9E,37,127);
+    const NSUInteger beforeTie=sent;
+    pump(96,0x8E,37,0,48);assert(sent==beforeTie);
+    // STOP one sample before the next BAR cancels this pending BASE2.
+    nextBar+=96000;until(nextBar-48);
+    pump(96,0xFC,0,0,47);assert(sent==beforeTie);
+    // A pending BASE3 at a BAR/STOP tie applies BAR first, then STOP.
+    pump(48,0x9E,38,127);pump(48,0x8E,38,0);
+    nextBar+=96000;until(nextBar-48);
+    pump(96,0xFC,0,0,48);
+    assert(sent==beforeTie+1&&lastStatus==0x9A&&lastNumber==18);
+    pump(48);assert(sent==beforeTie+1);
     [muteUnit deallocateRenderResources];
 
     std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)\n";

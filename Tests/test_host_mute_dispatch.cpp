@@ -45,5 +45,12 @@ int main(){
  assert(!multi.muteGesturePending()&&multi.surfaceHeld(6));
  multi.stop(110*48);input(multi,38,false,120);
  assert(!multi.muteGesturePending()&&multi.onMusicalGrid(bar())==0);
+ // In-buffer input can itself cross BOT2 LONG before the end-buffer timer.
+ HostEngine sameEvent;sameEvent.enableNativeMutePage(true);
+ input(sameEvent,13,true,0);input(sameEvent,36,true,200);
+ assert(sameEvent.mutePageVisible());
+ input(sameEvent,36,false,250);assert(sameEvent.muteGesturePending());
+ input(sameEvent,13,false,260);assert(!sameEvent.mutePageVisible());
+ assert(sameEvent.onMusicalGrid(bar())==1&&sameEvent.globalMute().explicitlyMuted(0));
  std::cout<<"PASS K2 BOT2 BASE host MUTE, BAR, S2 combo, STOP\n";
 }

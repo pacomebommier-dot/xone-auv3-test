@@ -142,6 +142,19 @@
                 }
             }
         };
+        const auto flushMuteLeds = [&](AUEventSampleTime sample,int64_t ms) {
+            engine->prepareMuteLeds(ms);
+            if(!sendMIDI)return;
+            unsigned cursor=0;
+            for(unsigned n=0;n<64;++n){
+                const auto packet=engine->nextMuteLedPacket(cursor);
+                if(!packet.valid)break;
+                const bool success=sendMIDI(sample,0,3,packet.bytes)==noErr;
+                engine->ackMuteLedPacket(packet,success);
+                // A failed target retries next render; do not spin or block peers.
+                if(!success)cursor=packet.target+1;
+            }
+        };
         flushMute(bufferStart); // old failed writes, no fabricated BAR
         if (transport) {
             AUHostTransportStateFlags flags = static_cast<AUHostTransportStateFlags>(0);
@@ -151,7 +164,8 @@
                 *known = true; *moving = nowMoving;
             } else { *known = false; }
         }
-        // Host-derived grid is observation only, not yet a scheduler.
+        flushMuteLeds(bufferStart,static_cast<int64_t>(*elapsedMs));
+        // Host-derived grid supplies authenticated musical edges.
         xone::host::MusicalContext context{};
         context.sampleRate=rate;
         context.moving=(*known && *moving);
@@ -178,6 +192,7 @@
                 scheduler->consume(one, [](xone::host::DueAction) noexcept {});
                 engine->onMusicalGrid(one);
                 flushMute(bufferStart+one.events[0].offset);
+                flushMuteLeds(bufferStart+one.events[0].offset,static_cast<int64_t>(*elapsedMs+1000.0*one.events[0].offset/rate));
             }
         };
         AUEventSampleTime lastEventSample=bufferStart;
@@ -195,7 +210,7 @@
             lastEventSample=sample;
             deliverGridThrough(sample);
             if (m.length == 1 && m.data[0] == 0xFC && m.cable == 0) {
-                scheduler->stop(); engine->stop(sample); flushStop(); continue;
+                scheduler->stop(); engine->stop(sample); flushStop(); flushMuteLeds(sample,static_cast<int64_t>(*elapsedMs+1000.0*(sample-bufferStart)/rate)); continue;
             }
             const auto ms = static_cast<int64_t>(*elapsedMs + 1000.0 * (sample-bufferStart) / rate);
             const auto result = engine->receive(m.cable, m.data, m.length, sample, ms);
@@ -205,12 +220,14 @@
                 if (sendMIDI) engine->sent(packet, sendMIDI(sample, 0, 3, packet.bytes));
                 else engine->noOutput(packet);
             }
+            flushMuteLeds(sample,ms);
         }
         if (event != nullptr) engine->renderOverflow(bufferStart);
         else if(frameCount)deliverGridThrough(bufferStart+frameCount-1);
         // Rendering progresses while transport is stopped; seeking cannot rewind gestures.
         *elapsedMs += 1000.0 * frameCount / rate;
         engine->advance(static_cast<int64_t>(*elapsedMs), bufferStart+frameCount);
+        flushMuteLeds(bufferStart+(frameCount?frameCount-1:0),static_cast<int64_t>(*elapsedMs));
         engine->endRenderBuffer();
         // Aucune production audio. Rendre un tampon silencieux si fourni.
         if (outputData) {

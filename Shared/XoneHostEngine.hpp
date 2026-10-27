@@ -5,6 +5,7 @@
 #include "XoneSession.hpp"
 #include "../Core/MutePhysicalGate.hpp"
 #include "XoneMuteMidiProjection.hpp"
+#include "XoneMuteLedOutput.hpp"
 #include <atomic>
 #include <array>
 #include <cstdint>
@@ -66,6 +67,9 @@ public:
     void ackMutePacket(unsigned target,bool callbackSucceeded) noexcept {
         muteMidi_.confirm(target,callbackSucceeded);
     }
+    void prepareMuteLeds(int64_t ms) noexcept {muteLeds_.observe(globalMute(),mutePageVisible(),ms);}
+    MuteLedOutput::Packet nextMuteLedPacket(unsigned& cursor) const noexcept {return muteLeds_.next(cursor);}
+    void ackMuteLedPacket(const MuteLedOutput::Packet& packet,bool success) noexcept {muteLeds_.confirm(packet,success);}
     static constexpr uint32_t TraceCapacity=256;
     static_assert(std::atomic<uint32_t>::is_always_lock_free,"RT trace requires lock-free indices");
     // Called only by render thread. Host cable is NOT an authenticated device ID.
@@ -89,6 +93,7 @@ public:
             record(seq,sample,Stage::Decision,accepted?Reason::Integrated:Reason::ClockRejected,cable,data,length);
             drainCore(seq,sample);
             if(mutePageEnabled_&&accepted&&(cmd==0x90||cmd==0x80)&&physical>=0){
+                muteGate_.advance(gestureMs); // qualify LONG before this physical event
                 const bool down=cmd==0x90&&data[2]!=0;
                 if(physical==1){
                     if(down)muteGate_.beginBot2(gestureMs,core_.s3().physicalOwner(1)==1);
@@ -135,6 +140,7 @@ public:
     }
     // Render boundaries are the sole application/publication points.
     void beginRenderBuffer() noexcept {
+        muteLeds_.beginBuffer();
         started_=true;
         if(!restores_.hasUpdate()||core_.output().outstanding()!=0)return;
         for(std::size_t i=0;i<36;++i)if(core_.surface().held(i))return;
@@ -241,6 +247,7 @@ private:
     l01::MutePhysicalGate muteGate_{};
     MuteBarBridge muteBridge_{};
     MuteMidiProjection muteMidi_{};
+    MuteLedOutput muteLeds_{};
     struct SpotHold {int cell{-1},api{-1},mode{},previous{};int64_t downMs{};};
     static int spotApi(int cell) noexcept {
         if(cell<320&&cell%40>=16&&cell%40<28)return 12*(cell/40)+cell%40-16;
