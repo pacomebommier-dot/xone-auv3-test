@@ -1,7 +1,7 @@
 name: L02 native V0.2 build and tests
 on:
   push:
-    branches: [feature/native-l02-v02, feature/native-integration-v3]
+    branches: [feature/native-l02-v02, feature/native-integration-v3, feature/native-e3-bar-beat-reprise]
   pull_request:
   workflow_dispatch:
 permissions:
