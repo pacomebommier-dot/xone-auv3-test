@@ -81,6 +81,16 @@ public:
         if(index>=4||!topIntentValid_[index])return false;
         out=topIntents_[index];return true;
     }
+    // One-shot transfer to the later PATCH/RESET resolver. Old commands
+    // cannot be consumed after a newer physical gesture replaced the slot.
+    // No LIVE mutation or MIDI output occurs during this handoff.
+    bool consumeTopIntent(unsigned index,uint32_t expectedSequence,TopIntent& out) noexcept {
+        if(index>=4||!topIntentValid_[index]||expectedSequence==0||
+           topIntents_[index].sequence!=expectedSequence)return false;
+        out=topIntents_[index];
+        topIntentValid_[index]=false;
+        return true;
+    }
     int lastBrowserLoadDeckForDiagnostic() const noexcept {return lastBrowserLoadDeck_;}
     const GlobalMuteState& globalMute() const noexcept {return muteBridge_.state();}
     unsigned onMusicalGrid(const GridBatch& b) noexcept {
