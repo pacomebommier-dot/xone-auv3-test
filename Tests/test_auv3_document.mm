@@ -23,12 +23,18 @@ int main() {
         if (flags) *flags=running?AUHostTransportStateMoving:static_cast<AUHostTransportStateFlags>(0);
         return YES;
     };
-    __block NSUInteger sent=0;
+    __block NSUInteger sent=0,failAt=0;
+    uint8_t bytesSent[64][3]{};auto *recorded=bytesSent;
     __block uint8_t lastStatus=0,lastNumber=0,lastValue=0;
     unit.MIDIOutputEventBlock=^OSStatus(AUEventSampleTime time,uint8_t cable,NSInteger length,const uint8_t *data) {
-        (void)time;assert(cable==0&&length==3);++sent;lastStatus=data[0];lastNumber=data[1];lastValue=data[2];return noErr;
+        (void)time;assert(cable==0&&length==3&&sent<64);
+        for(unsigned i=0;i<3;++i)recorded[sent][i]=data[i];
+        ++sent;lastStatus=data[0];lastNumber=data[1];lastValue=data[2];return sent==failAt?static_cast<OSStatus>(-1):noErr;
     };
     xone::host::SessionImage image{};image.schema=1;image.config=1;image.revision=1;image.desired.fill(-2);image.desired[1328]=64;image.desired[1768]=0;
+    image.desired[380]=0;image.desired[392]=3;
+    image.desired[381]=0;image.desired[393]=4;
+    image.desired[382]=1;image.desired[394]=4;
     xone::host::SessionBytes bytes{};assert(xone::host::encodeSession(image,bytes));
     unit.fullStateForDocument=@{@"XONE_LAST_LIVE_V1":[NSData dataWithBytes:bytes.data() length:bytes.size()]};
     assert(sent==0);
@@ -83,6 +89,21 @@ int main() {
     running=true;pump(48);pump(48,0x9E,48,127);assert(sent==5&&lastStatus==0x99);
     running=false;pump(48);assert(sent==6&&lastStatus==0x89&&lastValue==0);
     pump(48,0x8E,48,0);assert(sent==6);
+    // Genuine MACHINE NAV -> TOUCH -> FLASH through the real callback.
+    pump(48,0x9E,13,127);pump(48,0x9E,15,127);pump(48,0x8E,15,0);pump(48,0x8E,13,0);
+    pump(48,0x9E,48,127);assert(sent==7&&lastStatus==0x96&&lastNumber==108&&lastValue==127);
+    pump(48,0x8E,48,0);assert(sent==8&&lastStatus==0x86&&lastNumber==108&&lastValue==0);
+    pump(48,0x9E,44,127);assert(sent==11);
+    const uint8_t pulseStatus[]{0x86,0x96,0x86};const uint8_t pulseValue[]{0,127,0};
+    for(unsigned n=0;n<3;++n)assert(recorded[8+n][0]==pulseStatus[n]&&recorded[8+n][1]==109&&recorded[8+n][2]==pulseValue[n]);
+    pump(48,0x8E,44,0);assert(sent==11);
+    failAt=12;pump(48,0x9E,40,127);assert(sent==12&&lastStatus==0x86&&lastNumber==110);
+    pump(48,0x8E,40,0);assert(sent==12); // failed prerequisite OFF suppresses the pulse
+    failAt=0;pump(48,0x9E,40,127);assert(sent==15&&lastStatus==0x86&&lastNumber==110);
+    pump(48,0x8E,40,0);assert(sent==15);
+    pump(48,0x9E,48,127);assert(sent==16&&lastStatus==0x96&&lastNumber==108);
+    failAt=17;pump(48,0x8E,48,0);assert(sent==17&&lastStatus==0x86);
+    failAt=0;pump(48,0xFC);assert(sent==18&&lastStatus==0x86&&lastNumber==108); // failed TOUCH OFF is still due
     [unit deallocateRenderResources];
     // A new real AU subclass instance receives the saved document, not the old engine.
     XoneMidiAudioUnit *reopened=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
@@ -93,10 +114,10 @@ int main() {
     assert([reopened allocateRenderResourcesAndReturnError:&error]);
     auto reopenedRender=reopened.internalRenderBlock;
     AudioTimeStamp timestamp{};timestamp.mFlags=kAudioTimeStampSampleTimeValid;AudioUnitRenderActionFlags flags=0;
-    assert(reopenedRender(&flags,&timestamp,48,0,audio.mutableAudioBufferList,nullptr,nil)==noErr && sent==6);
+    assert(reopenedRender(&flags,&timestamp,48,0,audio.mutableAudioBufferList,nullptr,nil)==noErr && sent==18);
     NSData *reloaded=reopened.fullStateForDocument[@"XONE_LAST_LIVE_V1"];
     assert(xone::host::decodeSession(static_cast<const uint8_t *>(reloaded.bytes),reloaded.length,decoded)&&decoded.desired[1328]==100);
     [reopened deallocateRenderResources];
-    std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, corruption, no load TX (macOS harness)\n";
+    std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, corruption, no load TX (macOS harness)\n";
  }
 }

@@ -18,7 +18,7 @@ struct Trace {
     uint8_t cable{},length{},bytes[3]{};
     int32_t result{};
 };
-struct PendingPacket {uint8_t bytes[3]{};int api{-1},value{},type{10};};
+struct PendingPacket {uint8_t bytes[3]{};int api{-1},value{},type{10},key{127};bool requiresOff{};};
 struct Result {
     bool emit{};
     uint8_t bytes[3]{};
@@ -28,12 +28,14 @@ struct Result {
     int api{-1},value{},type{10};
     std::array<PendingPacket,2> extra{};
     unsigned extraCount{};
+    int key{127};bool requiresOff{};
     unsigned packetCount() const noexcept {return emit?1+extraCount:0;}
     Result packet(unsigned i) const noexcept {
         if(!emit||i>extraCount)return {};
-        if(i==0)return {true,{bytes[0],bytes[1],bytes[2]},sequence,sample,musical,api,value,type};
-        const auto& p=extra[i-1];
-        return {true,{p.bytes[0],p.bytes[1],p.bytes[2]},sequence,sample,true,p.api,p.value,p.type};
+        Result r{};
+        if(i==0){r={true,{bytes[0],bytes[1],bytes[2]},sequence,sample,musical,api,value,type};r.key=key;r.requiresOff=requiresOff;}
+        else{const auto& p=extra[i-1];r={true,{p.bytes[0],p.bytes[1],p.bytes[2]},sequence,sample,true,p.api,p.value,p.type};r.key=p.key;r.requiresOff=p.requiresOff;}
+        return r;
     }
 };
 class HostEngine {
@@ -115,11 +117,41 @@ public:
         publishedRevision_=revision;publishedToken_=appliedToken_;
     }
     l01::LiveRead desiredLive(int cell) const noexcept {return core_.nativeLive().desired(cell);}
+    // Called immediately before each callback; dependent FLASH ON is suppressed
+    // unless its nominal OFF succeeded. Its own OFF still follows a failed ON.
+    bool canSend(const Result& r) const noexcept {
+        if(r.musical&&((r.type==11&&r.value==1)||r.type==12||r.type==14)&&r.sequence!=sequence_)return false;
+        if(r.type==12||r.type==14){
+            if(r.requiresOff&&(confirmedOffSequence_!=r.sequence||confirmedOffApi_!=r.api))return false;
+            auto draft=core_.output();return draft.apply({r.type,r.api,1,r.key});
+        }
+        if(r.type==13)return core_.output().owner(r.key)==r.api&&core_.output().debt(r.api);
+        return true;
+    }
     void sent(const Result& r,int32_t status) noexcept {
-        if(r.musical&&(status==0||(r.type==11&&r.value==1))){core_.output().apply({r.type,r.api,r.value,127});core_.output().drain();}
+        auto& output=core_.output();
+        if(r.musical){
+            if(r.type==12||r.type==14){
+                // The callback may have partly delivered a failing ON.
+                if(canSend(r)){
+                    output.apply({12,r.api,1,r.key});
+                    if(r.type==12)output.apply({11,r.api,1,127});
+                }
+            }else if(r.type==13){
+                if(output.owner(r.key)==r.api){
+                    output.apply({11,r.api,0,127});
+                    if(status==0)output.apply({13,r.api,0,r.key});
+                }
+            }else if(status==0||(r.type==11&&r.value==1))output.apply({r.type,r.api,r.value,127});
+            output.drain();
+            if(status==0&&r.type==11&&r.value==0){confirmedOffSequence_=r.sequence;confirmedOffApi_=r.api;}
+        }
         record(r.sequence,r.sample,Stage::TxOut,status==0?Reason::Sent:Reason::SendFailed,0,r.bytes,3,status);
     }
     void noOutput(const Result& r) noexcept {
+        if(r.type==13&&core_.output().owner(r.key)==r.api){
+            core_.output().apply({11,r.api,0,127});core_.output().drain();
+        }
         record(r.sequence,r.sample,Stage::Decision,Reason::NoOutput,0,r.bytes,3);
     }
     void stop(int64_t sample) noexcept {
@@ -131,7 +163,7 @@ public:
         core_.onHostStop(); // must not fabricate UP or clear held keys
         core_.output()=output;
         for(auto& held:spots_){
-            if(held.cell>=0&&held.mode==1&&held.previous==0)
+            if(held.cell>=0&&(held.mode==3||(held.mode==1&&held.previous==0)))
                 core_.commitNativeLive(held.cell,0,core_.nativeLive().revision());
             held.cell=-1;
         }
@@ -140,7 +172,9 @@ public:
     Result nextStopPacket() noexcept {
         if(stopRead_>=stopCount_)return {};
         const int a=stopAddresses_[stopRead_++];
-        return {true,{static_cast<uint8_t>(0x86+a/128),static_cast<uint8_t>(a%128),0},sequence_,stopSample_,true,a,0,11};
+        Result r{true,{static_cast<uint8_t>(0x86+a/128),static_cast<uint8_t>(a%128),0},sequence_,stopSample_,true,a,0,11};
+        for(int key=0;key<36;++key)if(core_.output().owner(key)==a){r.type=13;r.key=key;break;}
+        return r;
     }
     int observed() const noexcept {return -2;} // no authenticated backend profile in L02
     bool surfaceHeld(size_t i) const noexcept {return core_.surface().held(i);}
@@ -178,35 +212,59 @@ private:
     }
     Result spot(int physical,bool down,l01::NavRoute route,int64_t ms,uint32_t seq,int64_t sample) noexcept {
         auto& held=spots_[static_cast<std::size_t>(physical-20)];
-        int cell=-1,api=-1,value=-1;
+        int cell=-1,api=-1,value=-1,mode=0,previous=0;
         if(down){
             held={};int preset=-1;
             // Source @w0 excludes d6=24; other owners are not guessed.
             if(route.address<0||route.address/1024!=3||
                !l01::LiveState::spotAddresses(route.address,route.position,cell,preset))return {};
-            const auto previous=core_.nativeLive().desired(cell);
-            const auto mode=preset>=0?core_.nativeLive().desired(preset):l01::LiveRead{true,1};
+            const auto live=core_.nativeLive().desired(cell);
+            const auto selected=preset>=0?core_.nativeLive().desired(preset):l01::LiveRead{true,1};
             api=spotApi(cell);
-            if(!previous.known||previous.value>1||!mode.known||mode.value<1||mode.value>2||api<0)return {};
-            held={cell,api,mode.value,previous.value,ms};value=1;
+            if(!live.known||live.value>1||!selected.known||selected.value<1||selected.value>4||api<0)return {};
+            mode=selected.value;previous=live.value;
+            held={cell,api,mode,previous,ms};value=mode==4?0:1;
         }else{
             const auto capture=held;held={};
-            if(capture.cell<0)return {};
-            cell=capture.cell;api=capture.api;
-            value=(capture.previous==1||(capture.mode==1&&ms-capture.downMs>199))?0:1;
+            if(capture.cell<0||capture.mode==4)return {};
+            cell=capture.cell;api=capture.api;mode=capture.mode;previous=capture.previous;
+            value=(mode==3||previous==1||(mode==1&&ms-capture.downMs>199))?0:1;
         }
         auto projection=core_.output();
-        if(!projection.apply({11,api,value,127}))return {};
+        int kind=11;std::size_t nominalPackets=0;
+        if(mode==3&&previous==0&&down){
+            kind=12;
+            if(!projection.apply({12,api,1,physical})){held={};return {};}
+        }else if(mode==3&&previous==0&&!down&&projection.owner(physical)==api){
+            // Nominal OFF cannot steal the TOUCH; its owed physical OFF follows.
+            kind=13;
+            if(!projection.apply({11,api,0,127})||!projection.apply({13,api,0,physical}))return {};
+        }else{
+            if(!projection.apply({11,api,value,127})){if(down)held={};return {};}
+            nominalPackets=projection.emitted();
+            if(mode==4)projection.apply({14,api,1,physical});
+        }
         const bool committed=core_.commitNativeLive(cell,value,core_.nativeLive().revision());
         if(!committed){
             if(down)held={};
             // A bounded LIVE counter must not suppress an already owed release.
-            // Leave desired LIVE unchanged and acknowledge only the real OFF.
             if(down||value!=0||!core_.output().debt(api))return {};
         }
-        if(!projection.emitted())return {};
-        const auto p=projection.packet(0);
-        Result r{true,{p.status,p.number,p.value},seq,sample,true,api,value,11};
+        if(!projection.emitted()){
+            core_.output()=projection; // state-only nominal change, no MIDI debt erased
+            return {};
+        }
+        Result r{};
+        for(std::size_t n=0;n<projection.emitted();++n){
+            const auto p=projection.packet(n);
+            int effect=kind,logical=value,key=kind==11?127:physical;bool needsOff=false;
+            if(mode==4&&n>=nominalPackets){
+                effect=n==nominalPackets?14:13;logical=effect==14?1:0;key=physical;
+                needsOff=effect==14&&nominalPackets>0;
+            }
+            if(n==0){r={true,{p.status,p.number,p.value},seq,sample,true,api,logical,effect};r.key=key;r.requiresOff=needsOff;}
+            else{r.extra[n-1]={{p.status,p.number,p.value},api,logical,effect,key,needsOff};++r.extraCount;}
+        }
         record(seq,sample,Stage::Decision,Reason::Musical,0,r.bytes,3);return r;
     }
     Result continuous(int cc,int raw,int64_t ms,uint32_t seq,int64_t sample) noexcept {
@@ -283,5 +341,6 @@ private:
     std::array<Trace,TraceCapacity> trace_{};
     std::atomic<uint32_t> read_{0},write_{0},dropped_{0},overflows_{0};
     uint32_t sequence_{};
+    uint32_t confirmedOffSequence_{};int confirmedOffApi_{-1};
 };
 }

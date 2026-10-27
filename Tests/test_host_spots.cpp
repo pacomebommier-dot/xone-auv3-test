@@ -38,7 +38,7 @@ int main(){
  assert(exhausted.desiredLive(1768).value==1); // failed LIVE write is not claimed committed
  exhausted.stop(220);assert(!exhausted.nextStopPacket().emit);
  // MACHINE NAV uses the genuine BOT2+BOT4 combo, with explicit known session fields.
- for(int mode:{-2,0,1,2,3,4,5,127}){
+ for(int mode:{-2,0,1,2,5,127}){
   HostEngine m;auto i=image();i.desired[380]=0;i.desired[392]=mode;assert(m.restoreSessionBeforeRendering(i));
   edge(m,13,true,0);edge(m,15,true,10);edge(m,15,false,20);edge(m,13,false,30);assert(m.navMode()==7);
   auto on=edge(m,48,true,40);

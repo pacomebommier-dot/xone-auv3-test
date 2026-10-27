@@ -108,6 +108,7 @@
             for (unsigned n=0; n<544; ++n) {
                 const auto packet=engine->nextStopPacket();
                 if (!packet.emit) break;
+                if (!engine->canSend(packet)) continue;
                 if (sendMIDI) engine->sent(packet,sendMIDI(packet.sample,0,3,packet.bytes));
                 else engine->noOutput(packet);
             }
@@ -138,6 +139,7 @@
             const auto result = engine->receive(m.cable, m.data, m.length, sample, ms);
             for (unsigned n=0; n<result.packetCount(); ++n) {
                 const auto packet = result.packet(n);
+                if (!engine->canSend(packet)) continue;
                 if (sendMIDI) engine->sent(packet, sendMIDI(sample, 0, 3, packet.bytes));
                 else engine->noOutput(packet);
             }
