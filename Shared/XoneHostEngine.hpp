@@ -3,6 +3,7 @@
 #include "../Core/CoreCoordinator.hpp"
 #include "XoneContinuousInput.hpp"
 #include "XoneSession.hpp"
+#include "../Core/MutePhysicalGate.hpp"
 #include <atomic>
 #include <array>
 #include <cstdint>
@@ -47,6 +48,10 @@ public:
         core_.enableDiagnosticTouchNav(true); // source @zk/@zl selection, not SPOT TOUCH output
         core_.enableDiagnosticQualifiedNav(true); // source-qualified SHORT/LONG NAV only
     }
+    bool mutePageVisible() const noexcept {return muteGate_.visible();}
+    bool muteGesturePending() const noexcept {return muteBridge_.state().pendingCount()!=0;}
+    const GlobalMuteState& globalMute() const noexcept {return muteBridge_.state();}
+    unsigned onMusicalGrid(const GridBatch& b) noexcept {return muteBridge_.observe(b);}
     static constexpr uint32_t TraceCapacity=256;
     static_assert(std::atomic<uint32_t>::is_always_lock_free,"RT trace requires lock-free indices");
     // Called only by render thread. Host cable is NOT an authenticated device ID.
@@ -69,6 +74,20 @@ public:
             const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs);
             record(seq,sample,Stage::Decision,accepted?Reason::Integrated:Reason::ClockRejected,cable,data,length);
             drainCore(seq,sample);
+            if(accepted&&(cmd==0x90||cmd==0x80)&&physical>=0){
+                const bool down=cmd==0x90&&data[2]!=0;
+                if(physical==1){
+                    if(down)muteGate_.beginBot2(gestureMs,true);
+                    else muteGate_.releaseBot2(gestureMs);
+                }else if(physical>=4&&physical<20){
+                    const unsigned base=static_cast<unsigned>(physical-4);
+                    if(down)muteGate_.beginBase(base,gestureMs,true);
+                    else muteGate_.releaseBase(base,gestureMs,muteBridge_);
+                }
+                // Any second BOT starts an S2 combo or concurrent BOT gesture.
+                // In that case BOT2 is no longer entitled to a solo MUTE short/long.
+                if(down&&physical<4&&physical!=1&&muteGate_.botHeld())muteGate_.cancelBot2();
+            }
             if(accepted&&(cmd==0x90||cmd==0x80)&&physical>=20&&physical<32){
                 const bool down=cmd==0x90&&data[2]!=0;
                 // S2 advances before input: a LONG in this packet must qualify NAV first.
@@ -161,6 +180,7 @@ public:
         const auto output=core_.output();
         stopCount_=stopRead_=0;stopSample_=sample;
         for(int a=0;a<702;++a)if(output.debt(a))stopAddresses_[stopCount_++]=a;
+        muteGate_.stop();muteBridge_.stop();
         core_.onHostStop(); // must not fabricate UP or clear held keys
         core_.output()=output;
         for(auto& held:spots_){
@@ -184,6 +204,7 @@ public:
     bool longNavPending() const noexcept {return core_.longNavPending();}
     void advance(int64_t ms,int64_t sample) noexcept {
         started_=true;
+        muteGate_.advance(ms);
         if(!core_.gesture().timerNeeded())return;
         const auto seq=++sequence_;
         if(!core_.onTimer(ms))record(seq,sample,Stage::Decision,Reason::ClockRejected,0,nullptr,0);
@@ -202,6 +223,8 @@ public:
     }
     uint32_t overflows() const noexcept {return overflows_.load(std::memory_order_relaxed);}
 private:
+    l01::MutePhysicalGate muteGate_{};
+    MuteBarBridge muteBridge_{};
     struct SpotHold {int cell{-1},api{-1},mode{},previous{};int64_t downMs{};};
     static int spotApi(int cell) noexcept {
         if(cell<320&&cell%40>=16&&cell%40<28)return 12*(cell/40)+cell%40-16;
