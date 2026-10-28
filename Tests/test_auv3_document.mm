@@ -249,26 +249,28 @@ int main() {
     assert(lifecycle.fullState[@"XONE_LAST_LIVE_V1"]==nil); // no valid configured session yet
     const NSUInteger beforeFixture=sent;
     assert([lifecycle allocateRenderResourcesAndReturnError:&error]);render=lifecycle.internalRenderBlock;
-    pump(48,0xBE,16,64);assert(sent==beforeFixture); // unknown LIVE refuses locally
-    assert([lifecycle loadAumValidationFixture]);assert(sent==beforeFixture);
-    pump(48,0xBE,16,0);assert(sent==beforeFixture); // pickup waits for known simulated 64
+    // Real AU, no saved fixture and no synth: physical CC is first DESIRED.
+    pump(48,0xBE,16,64);
+    assert(sent==beforeFixture+1&&lastStatus==0xBA&&lastNumber==48&&lastValue==64);
+    assert([lifecycle loadAumValidationFixture]);assert(sent==beforeFixture+1);
+    pump(48,0xBE,16,0);assert(sent==beforeFixture+1); // restored 64 requires pickup
     pump(4800);pump(4800);
-    pump(48,0xBE,16,64);assert(sent==beforeFixture+1&&lastStatus==0xBA&&lastNumber==48&&lastValue==64);
+    pump(48,0xBE,16,64);assert(sent==beforeFixture+2&&lastStatus==0xBA&&lastNumber==48&&lastValue==64);
     pump(48,0x9E,36,127);pump(48,0x8E,36,0);
-    pump(48,0x9E,48,127);assert(sent==beforeFixture+2&&lastStatus==0x99);
+    pump(48,0x9E,48,127);assert(sent==beforeFixture+3&&lastStatus==0x99);
     [lifecycle deallocateRenderResources];
-    assert(sent==beforeFixture+2); // no callback outside the host render cycle
+    assert(sent==beforeFixture+3); // no callback outside the host render cycle
     assert([lifecycle allocateRenderResourcesAndReturnError:&error]);
-    pump(48);assert(sent==beforeFixture+2); // superclass cleared output; debt stays due
+    pump(48);assert(sent==beforeFixture+3); // superclass cleared output; debt stays due
     [lifecycle deallocateRenderResources];
     lifecycle.MIDIOutputEventBlock=testOutput; // host reconnects the output before allocation
     assert([lifecycle allocateRenderResourcesAndReturnError:&error]);
-    pump(48);assert(sent==beforeFixture+3&&lastStatus==0x89&&lastNumber==0&&lastValue==0);
-    pump(48,0x8E,48,0);assert(sent==beforeFixture+3); // real UP after shutdown stays inert
+    pump(48);assert(sent==beforeFixture+4&&lastStatus==0x89&&lastNumber==0&&lastValue==0);
+    pump(48,0x8E,48,0);assert(sent==beforeFixture+4); // real UP after shutdown stays inert
     [lifecycle deallocateRenderResources];
     lifecycle.MIDIOutputEventBlock=testOutput;
     assert([lifecycle allocateRenderResourcesAndReturnError:&error]);
-    pump(48);assert(sent==beforeFixture+3); // confirmed OFF is never duplicated
+    pump(48);assert(sent==beforeFixture+4); // confirmed OFF is never duplicated
     [lifecycle deallocateRenderResources];
 
     std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)\n";
