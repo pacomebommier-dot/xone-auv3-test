@@ -3,6 +3,7 @@
 #include "../CoreV3/CoreCoordinatorV3.hpp"
 #include "XoneContinuousInput.hpp"
 #include "XoneSoftMidiBridge.hpp"
+#include "XoneTopPulseBus.hpp"
 #include "XoneSession.hpp"
 #include "../Core/MutePhysicalGate.hpp"
 #include "XoneMuteMidiProjection.hpp"
@@ -117,6 +118,12 @@ public:
         djLoopCommand_=DjLoopCommand::None;return true;
     }
     unsigned topResetsDeferred() const noexcept {return topResetsDeferred_;}
+    unsigned pendingTopPulses() const noexcept {return topPulse_.pending();}
+    TopPulsePacket nextTopPulse() const noexcept {return topPulse_.next();}
+    void ackTopPulse(TopPulsePacket packet,bool success,int64_t sample) noexcept {
+        if(topPulse_.acknowledge(packet,success))
+            record(++sequence_,sample,Stage::TxOut,success?Reason::Sent:Reason::SendFailed,0,packet.bytes,3);
+    }
     unsigned topPatchRecallsDeferred() const noexcept {return topPatchRecallsDeferred_;}
     enum class TopAction : uint8_t { FilterReset, PatchRecall };
     struct TopIntent {int physical{-1};l01::NavRoute route{};uint32_t sequence{};TopAction action{TopAction::FilterReset};};
@@ -267,6 +274,21 @@ public:
                     if(captured.route.address>=0&&captured.route==current&&
                        captured.context==core_.nativeNav().active().contextMode){
                         const auto index=static_cast<std::size_t>(physical-32);
+                        // Unambiguous GOLDEN INIT TOP1..3 on the bare/default
+                        // page: these are ACTION pulses, not RESET requests.
+                        // TOP4 remains FILTER GLOBAL and cannot acquire a
+                        // fabricated RESET_DEFAULT; selected/overlay pages keep
+                        // their source-specific PATCH/RESET resolver unchanged.
+                        const auto& nav=core_.nativeNav().active();
+                        const bool plainInit=index<3 && nav.at(291)==0 &&
+                            nav.at(292)==0 && nav.contextMode==0 && nav.presetFlag==0 &&
+                            nav.at(293)==0 && nav.at(294)==0 &&
+                            nav.at(295)==0 && nav.at(296)==0 &&
+                            !mutePageVisible() && !core_.longNavPending();
+                        if(plainInit){
+                            if(topPulse_.queue(TopPulseFamily::Init,index))
+                                record(seq,sample,Stage::Decision,Reason::Musical,0,data,3,680+static_cast<int>(index));
+                        }else{
                         // Source ownership: SAMPLE(mode3) and MACHINE(mode7)
                         // TOP1..3 are PATCH recalls, not FILTER RESET.
                         // TOP4 is invariant FILTER GLOBAL RESET.
@@ -277,6 +299,7 @@ public:
                         if(patch)++topPatchRecallsDeferred_;
                         else ++topResetsDeferred_;
                         record(seq,sample,Stage::Decision,Reason::TopResetDeferred,0,data,3,captured.route.address);
+                        }
                     }
                 }
             }
@@ -393,7 +416,7 @@ public:
         started_=true;
         // A session must not replace an active SOFT owner while its MIDI
         // NoteOff may still be due (this debt is outside OutputS4).
-        if(!restores_.hasUpdate()||core_.output().outstanding()!=0||soft_.hasOutstandingNotes())return;
+        if(!restores_.hasUpdate()||core_.output().outstanding()!=0||soft_.hasOutstandingNotes()||topPulse_.hasOwedOff())return;
         for(std::size_t i=0;i<36;++i)if(core_.surface().held(i))return;
         SessionFrame next{};
         if(restores_.take(next)&&core_.restoreNativeSessionForDiagnostic(next.image)){
@@ -502,6 +525,7 @@ public:
         topIntentValid_.fill(false);
         samplePatch_={};lastSamplePatchBar_=-1;
         soft_.stop(); // cancels only uncommitted SOFT; applied pages persist
+        topPulse_.stop(); // cancels unattempted pulses; retains every attempted OFF
         browserLoadPending_=false;browserSelectionSequence_=0;
         core_.observeBrowserGuardForDiagnostic(false,0,0);
         core_.onHostStop(); // must not fabricate UP or clear held keys
@@ -730,6 +754,7 @@ private:
     l01::CoreCoordinatorV3 core_{};
     ContinuousPickup pickup_{};
     SoftMidiBridge soft_{};
+    TopPulseBus topPulse_{};
     DjBrowserWindow browser_{};
     std::array<TopCapture,4> topHold_{};
     std::array<TopIntent,4> topIntents_{};
