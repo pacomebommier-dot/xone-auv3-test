@@ -9,26 +9,24 @@ static Result edge(HostEngine& e,int n,bool down,int ms){
 }
 int main(){
     HostEngine e;
-    // TOP1..4 are buttons distinct from DJ1/DJ2 rotations. They are
-    // source-bound RESET intents, NOT unknown default values.
+    // TOP1..3 are INIT action pulses. Invariant TOP4 is a source-bound
+    // FILTER GLOBAL request; UNKNOWN default cannot manufacture a CC.
     for(int n=52;n<=55;++n){
         const int t=10*(n-52);
         assert(!edge(e,n,true,t).emit);
         assert(!edge(e,n,false,t+1).emit);
     }
-    assert(e.topResetsDeferred()==4);
-    for(unsigned i=0;i<4;++i){
-        HostEngine::TopIntent intent{};
-        assert(e.lastTopIntent(i,intent));
-        assert(intent.physical==static_cast<int>(32+i)&&intent.route.address>=0);
-        assert(intent.sequence>0);
-    }
+    assert(e.topResetsDeferred()==1 && e.pendingTopPulses()==3);
+    for(unsigned i=0;i<3;++i){HostEngine::TopIntent intent{};assert(!e.lastTopIntent(i,intent));}
+    HostEngine::TopIntent filter{};
+    assert(e.lastTopIntent(3,filter));
+    assert(filter.physical==35&&filter.route.address>=0&&filter.sequence>0);
     assert(!edge(e,52,false,100).emit);
-    assert(e.topResetsDeferred()==4); // orphan UP cannot reset
+    assert(e.topResetsDeferred()==1); // orphan UP cannot reset
     edge(e,52,true,110);
     e.stop(111*48);
     edge(e,52,false,120);
-    assert(e.topResetsDeferred()==4); // STOP cancels ownership
+    assert(e.topResetsDeferred()==1); // STOP cancels ownership
     for(unsigned i=0;i<4;++i){
         HostEngine::TopIntent intent{};
         assert(!e.lastTopIntent(i,intent));
