@@ -118,6 +118,9 @@ public:
            service.generation!=dj2BackendGeneration_)return false;
         djLoopCommand_=DjLoopCommand::None;return true;
     }
+    bool samplePatchForDiagnostic(int owner,int slot,l01::BankS6::PatchRecord& out)const noexcept {
+        return core_.nativeBank().readPatch(owner,slot,out);
+    }
     unsigned sampleSavesAccepted()const noexcept {return sampleSavesAccepted_;}
     unsigned sampleSavesRefused()const noexcept {return sampleSavesRefused_;}
     unsigned topResetsDeferred() const noexcept {return topResetsDeferred_;}
