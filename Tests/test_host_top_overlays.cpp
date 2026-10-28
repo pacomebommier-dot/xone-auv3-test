@@ -12,7 +12,10 @@ int main(){
  HostEngine::TopIntent none{};assert(!e.lastTopIntent(0,none));
  const auto global=top(e,3,3).route;
  edge(e,15,true,10);edge(e,15,false,20);
- auto yellow=top(e,0,30);assert(yellow.action==HostEngine::TopAction::FilterReset&&yellow.route.position==2);
+ // Root1 TOP1 is YELLOW INIT, never FILTER RESET.
+ edge(e,52,true,30);edge(e,52,false,31);
+ assert(e.pendingTopPulses()==2);
+ auto yellow=e.nextTopPulse();assert(yellow.valid&&yellow.api==680);
  assert(top(e,3,32).route==global);
  edge(e,13,true,40);edge(e,14,true,50);edge(e,14,false,60);edge(e,13,false,70);assert(e.navMode()==3);
  auto sample=top(e,0,80);assert(sample.action==HostEngine::TopAction::PatchRecall&&sample.route.position==0);
