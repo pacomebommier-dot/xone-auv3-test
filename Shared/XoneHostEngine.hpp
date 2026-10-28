@@ -4,6 +4,7 @@
 #include "XoneContinuousInput.hpp"
 #include "XoneSoftMidiBridge.hpp"
 #include "XoneTopPulseBus.hpp"
+#include "XoneGroupActionGate.hpp"
 #include "XoneSession.hpp"
 #include "../Core/MutePhysicalGate.hpp"
 #include "XoneMuteMidiProjection.hpp"
@@ -118,7 +119,17 @@ public:
         djLoopCommand_=DjLoopCommand::None;return true;
     }
     unsigned topResetsDeferred() const noexcept {return topResetsDeferred_;}
+    // Unified S7 ACTION FIFO. The S2/S3 caller MUST provide a qualified
+    // captured owner; an arbitrary held button is not a musical GROUP.
+    bool acceptQualifiedGroupAction(const QualifiedGroupAction& action) noexcept {
+        if(!GroupActionGate::authorize(core_.nativeNav(),action,
+               core_.surface().held(action.physical),core_.longNavPending()))
+            return false;
+        return topPulse_.queueGroup(action.fill,action.page,action.action);
+    }
+    unsigned pendingActionPulses() const noexcept {return topPulse_.pending();}
     unsigned pendingTopPulses() const noexcept {return topPulse_.pending();}
+    TopPulsePacket nextActionPulse() const noexcept {return topPulse_.next();}
     TopPulsePacket nextTopPulse() const noexcept {return topPulse_.next();}
     void ackTopPulse(TopPulsePacket packet,bool success,int64_t sample) noexcept {
         if(topPulse_.acknowledge(packet,success))
