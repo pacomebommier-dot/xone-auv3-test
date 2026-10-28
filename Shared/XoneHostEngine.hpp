@@ -118,6 +118,8 @@ public:
            service.generation!=dj2BackendGeneration_)return false;
         djLoopCommand_=DjLoopCommand::None;return true;
     }
+    unsigned sampleSavesAccepted()const noexcept {return sampleSavesAccepted_;}
+    unsigned sampleSavesRefused()const noexcept {return sampleSavesRefused_;}
     unsigned topResetsDeferred() const noexcept {return topResetsDeferred_;}
     // Unified S7 ACTION FIFO. The S2/S3 caller MUST provide a qualified
     // captured owner; an arbitrary held button is not a musical GROUP.
@@ -221,6 +223,9 @@ public:
             // BOT2 is also DJ1 PUSH. Ownership is captured on its true DOWN,
             // never reconstructed from a deadline at UP.
             const bool browserBot2Release=physical==1&&wasHeld&&browser_.pushOwned();
+            const bool localSampleBot2Release=physical==1&&wasHeld&&
+                !(cmd==0x90&&data[2]!=0)&&core_.localSaveCandidateMode()==3;
+            const bool localSampleBot2Consumed=core_.localSaveCandidateConsumed();
             const bool wasMuteVisible=mutePageVisible();
             auto muteNext=muteGate_;muteNext.advance(gestureMs);
             const bool baseEvent=(cmd==0x90||cmd==0x80)&&physical>=4&&physical<20;
@@ -303,17 +308,49 @@ public:
                 // In that case BOT2 is no longer entitled to a solo MUTE short/long.
                 if(down&&physical<4&&physical!=1&&muteGate_.botHeld()&&core_.s3().physicalOwner(1)==30)muteGate_.cancelBot2();
             }
+            if(accepted && localSampleBot2Release && !localSampleBot2Consumed &&
+               mutePageEnabled_ && !muteGate_.botHeld()) {
+                // An unconsumed BOT2 candidate opens MUTE on physical UP,
+                // never by a premature 200ms LONG. It is an explicit SHORT.
+                muteGate_.beginBot2(gestureMs,true);
+                muteGate_.releaseBot2(gestureMs);
+            }
             if(accepted && !wasMuteVisible && mutePageVisible() && (navMode()==2 || navMode()==4))
                 requestDjLoopStop(true);
             if(accepted&&(cmd==0x90||cmd==0x80)&&physical>=32&&physical<36&&wasHeld!=(cmd==0x90&&data[2]!=0)){
                 const bool down=cmd==0x90&&data[2]!=0;
+                const auto topIndex=static_cast<std::size_t>(physical-32);
                 if(down){
-                    topHold_[static_cast<std::size_t>(physical-32)]={
+                    topSaveSuppress_[topIndex]=false;
+                    if(topIndex<3){
+                        const int candidateMode=core_.localSaveCandidateMode();
+                        if((candidateMode==3||candidateMode==7)&&
+                           core_.consumeLocalSaveCandidate(candidateMode)){
+                            // BOT2+TOP in SAMPLE / BOT3+TOP in MACHINE.
+                            // A consumed/rejected SAVE must NEVER fall through
+                            // to TOP RECALL or a BOT NAV on release.
+                            topSaveSuppress_[topIndex]=true;
+                            const bool saved=candidateMode==3&&
+                                saveSamplePatchFromLive(static_cast<int>(topIndex));
+                            if(saved)++sampleSavesAccepted_;
+                            else ++sampleSavesRefused_; // MACHINE S8 adapter still unavailable
+                            if(candidateMode==3)muteGate_.cancelBot2();
+                            record(seq,sample,Stage::Decision,
+                                   saved?Reason::Musical:Reason::UnknownLive,
+                                   0,data,3,saved?static_cast<int>(topIndex):-1);
+                        }
+                    }
+                    topHold_[topIndex]=topSaveSuppress_[topIndex]?TopCapture{}:TopCapture{
                         core_.nativeNav().active().route(physical),
                         core_.nativeNav().active().contextMode,
                         core_.nativeNav().revision()
                     };
                 }else{
+                    if(topSaveSuppress_[topIndex]){
+                        topSaveSuppress_[topIndex]=false;
+                        topHold_[topIndex]={};
+                        return {};
+                    }
                     const auto captured=topHold_[static_cast<std::size_t>(physical-32)];
                     topHold_[static_cast<std::size_t>(physical-32)]={};
                     // TOP is a RESET request. Without authenticated RESET_DEFAULT
@@ -597,6 +634,7 @@ public:
         for(auto& hold:groupHolds_)hold={}; // no ghost long on later UP
         soft_.stop(); // cancels only uncommitted SOFT; applied pages persist
         topPulse_.stop(); // cancels unattempted pulses; retains every attempted OFF
+        topSaveSuppress_.fill(false);
         browserLoadPending_=false;browserSelectionSequence_=0;
         core_.observeBrowserGuardForDiagnostic(false,0,0);
         core_.onHostStop(); // must not fabricate UP or clear held keys
@@ -660,6 +698,34 @@ public:
     }
     uint32_t overflows() const noexcept {return overflows_.load(std::memory_order_relaxed);}
 private:
+    // Snapshot the exact SOURCE SAMPLE40 image with no fabricated zero and no
+    // outgoing MIDI. An UNKNOWN or invalid mode rejects before a bank write.
+    bool saveSamplePatchFromLive(int slot) noexcept {
+        const auto& nav=core_.nativeNav();
+        if(slot<0||slot>=3||!nav.stable()||nav.hasStage()||nav.active().at(292)!=3 ||
+           nav.active().contextMode!=3||core_.longNavPending()||samplePatchPending())
+            return false;
+        const int owner=nav.active().at(313)-1;
+        const int config=core_.nativeLive().sessionConfig();
+        if(owner<0||owner>=8||config<1||config>127)return false;
+        for(const auto& spot:spots_)if(spot.cell>=40*owner&&spot.cell<40*(owner+1))return false;
+        l01::BankS6::PatchImage image{};image.fill(l01::BankS6::Unknown);
+        for(int field=0;field<40;++field){
+            const auto value=core_.nativeLive().desired(40*owner+field);
+            if(!value.known)return false;
+            image[static_cast<std::size_t>(field)]=value.value;
+        }
+        if(!l01::BankS6::validatePatch(owner,image))return false;
+        auto bank=core_.nativeBank();
+        if(!bank.initialized() && !bank.initializeEmpty())return false;
+        l01::BankS6::PatchRecord previous{};
+        if(!bank.readPatch(owner,slot,previous)|| (previous.valid&&previous.config!=config))
+            return false;
+        return core_.nativeBank().initialized()?
+            core_.saveNativePatchForDiagnostic(owner,slot,config,image,previous.revision):
+            (core_.initializeEmptyNativeBanksForDiagnostic()&&
+             core_.saveNativePatchForDiagnostic(owner,slot,config,image,0));
+    }
     struct GroupHold {
         QualifiedGroupAction action{};
         std::int64_t downMs{};
@@ -861,6 +927,8 @@ private:
     ContinuousPickup pickup_{};
     SoftMidiBridge soft_{};
     TopPulseBus topPulse_{};
+    std::array<bool,4> topSaveSuppress_{};
+    unsigned sampleSavesAccepted_{},sampleSavesRefused_{};
     std::array<std::uint32_t,36> groupDownEpoch_{};
     std::uint32_t groupEpochCounter_{1};
     DjBrowserWindow browser_{};
