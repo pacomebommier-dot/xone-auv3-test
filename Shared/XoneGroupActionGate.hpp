@@ -38,7 +38,38 @@ public:
             else if(n.at(302)==1 && n.at(301)==0)selected=n.at(296);
             else return false;
         }
-        return selected==static_cast<int>(q.page+1);
+        if(selected!=static_cast<int>(q.page+1))return false;
+        // The S3 route itself must own exactly this SPOT position.
+        // For YELLOW: SPOT1 h0..2 => kind3/family4.
+        // For FILL: SPOT3 h6..8 => kind3/family6; SPOT4
+        // h9..11 => kind1/family6. Other root1 positions are NOT group.
+        if(q.physical<20||q.physical>=32)return false;
+        const auto r=n.route(static_cast<int>(q.physical));
+        if(r.address<0||r.position!=static_cast<int>(q.action))return false;
+        const int kind=r.address/1024;
+        const int family=(r.address%1024)/32;
+        const int page=r.address%32;
+        return family==(q.fill?6:4) && page==selected &&
+            kind==(q.fill && q.action>=3?1:3);
+    }
+    // Derive a candidate solely from a verified S3 route and true K2 SPOT
+    // position. This does not assert source ownership: it is still checked
+    // against the captured physical DOWN epoch and the current S3 NAV.
+    static bool derive(const l01::NavS3& nav,unsigned physical,
+                       std::uint32_t downEpoch,QualifiedGroupAction& out) noexcept {
+        if(!nav.stable()||nav.hasStage()||physical<20||physical>=32||downEpoch==0)return false;
+        const auto& n=nav.active();
+        const auto r=n.route(static_cast<int>(physical));
+        if(r.address<0||r.position<0)return false;
+        const int kind=r.address/1024, family=(r.address%1024)/32, page=r.address%32;
+        const bool fill=family==6;
+        if(!fill && !(kind==3&&family==4))return false;
+        if(fill && !((kind==3&&r.position<3)||(kind==1&&r.position>=3&&r.position<6)))return false;
+        if(page<1||page>8)return false;
+        QualifiedGroupAction q{fill,static_cast<unsigned>(page-1),
+            static_cast<unsigned>(r.position),physical,nav.revision(),downEpoch,true};
+        if(!authorize(nav,q,true,false))return false;
+        out=q;return true;
     }
 };
 } // namespace xone::host
