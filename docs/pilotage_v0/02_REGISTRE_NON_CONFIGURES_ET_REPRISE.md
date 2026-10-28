@@ -53,3 +53,13 @@ Ne pas chercher à « finir 1/6 » au détriment de la V0. Conserver les compteu
 - CIe9a6417 /40668083541 : GCC/Clang PASS ; runner macos-15-intel non attribué après plus de7min. Production basculée vers le pool standard macos-15 Apple Silicon ; mêmes suites/ASan/UBSan/harnais/build/intégrité, harnais placé en premier pour retour ciblé rapide. Aucun contrôle désactivé.
 
 - CIfb3334f /40669262587 : GCC/Clang PASS ; harnais AU compilé puis assertion de réallocation FAIL. Cause observée : le superclass AU efface MIDIOutputEventBlock à la désallocation (déjà visible dans la trace historique). Le harnais doit simuler la reconnexion par l’hôte. Scénario renforcé : premier rendu sans sortie conserve la dette ; réallocation avec callback reconnecté émet l’OFF au timestamp courant, puis aucun doublon. Code moteur inchangé dans cette correction de test ; nouvelle CI complète requise.
+
+## 6. Bilan de livraison candidate — 28 octobre2026
+Branche/HEAD binaire : feature/native-e3-bar-beat-reprise /2cedd1eefe74db4fef4ea44764164391d3118911.
+Objectif V0 traité : candidate iOS AUv3 construite et paquet de recette publié ; voir03_LIVRAISON_CANDIDATE_AUM.md.
+Raccordement réutilisé : restauration LIVE pour fixture explicite ; STOP existant, timestamps courants et dette conservée à réallocation ; aucun moteur nouveau.
+Preuve locale : test STOP FAIL reproduit puis PASS ; intégrité/simulateur/profils PASS ; sauvegarde vérifiée438 fichiers + patch identique.
+CI sur SHA : PASS40671623461 — GCC/Clang, Apple Clang, ASan/UBSan, vraie AU macOS, build iOS et intégrité ; artefact12808951685 téléchargé et vérifié.
+Restant BLOQUANT V0 logiciel : aucun échec constaté dans ces contrôles ; signature/install et AUM restent non réalisés, STOP/OFF avant retrait définitif requis.
+A_CONFIGURER / DIFFERE : tableau du rapport ; MACHINE préservé hors candidate et six tâches inchangées.
+Prochaine action exacte : signer app+extension depuis ce SHA, installer, créer la session minimale AUM et consigner les sept essais réels. NON_TESTE_AUM.
