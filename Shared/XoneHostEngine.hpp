@@ -851,7 +851,11 @@ private:
             if(route.address<0||route.address/1024!=3||
                !l01::LiveState::spotAddresses(route.address,route.position,cell,preset))return {};
             const auto live=core_.nativeLive().desired(cell);
-            const auto selected=preset>=0?core_.nativeLive().desired(preset):l01::LiveRead{true,1};
+            auto selected=preset>=0?core_.nativeLive().desired(preset):l01::LiveRead{true,1};
+            if(cell>=0&&cell<320&&cell%40>=16&&cell%40<28){
+                const int m=s8Sample_.mode(static_cast<unsigned>(cell/40),static_cast<unsigned>(cell%40-16));
+                if(m>=1&&m<=4)selected={true,m};
+            }
             api=spotApi(cell);
             if(!live.known||live.value>1||!selected.known||selected.value<1||selected.value>4||api<0)return {};
             mode=selected.value;previous=live.value;
