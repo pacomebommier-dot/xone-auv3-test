@@ -5,6 +5,7 @@
 #include "XoneSoftMidiBridge.hpp"
 #include "XoneTopPulseBus.hpp"
 #include "XoneS8SamplePatchBank.hpp"
+#include "XoneS8MachinePatchBank.hpp"
 #include "XoneGroupActionGate.hpp"
 #include "XoneSession.hpp"
 #include "../Core/MutePhysicalGate.hpp"
@@ -35,7 +36,7 @@ struct Result {
     int64_t sample{};
     bool musical{};
     int api{-1},value{},type{10};
-    std::array<PendingPacket,27> extra{}; // SAMPLE recall: 16 CC + 12 states
+    std::array<PendingPacket,31> extra{}; // SAMPLE 28 / MACHINE 30 instrument packets
     unsigned extraCount{};
     int key{127};bool requiresOff{};int64_t gestureMs{};bool dj2Qualified{};
     unsigned packetCount() const noexcept {return emit?1+extraCount:0;}
@@ -133,6 +134,18 @@ public:
     }
     bool samplePatchForDiagnostic(int owner,int slot,l01::BankS6::PatchRecord& out)const noexcept {
         return core_.nativeBank().readPatch(owner,slot,out);
+    }
+    bool s8MachinePatchForDiagnostic(int machine,int slot,S8MachinePatchBank::Patch& out)const noexcept {
+        return machine>=0&&slot>=0&&s8Machine_.read(static_cast<unsigned>(machine),
+                                                    static_cast<unsigned>(slot),out);
+    }
+    bool setS8MachineModeBeforeRendering(int machine,int index,int mode) noexcept {
+        return !started_&&machine>=0&&index>=0&&
+            s8Machine_.setMode(static_cast<unsigned>(machine),static_cast<unsigned>(index),mode);
+    }
+    int s8MachineMode(int machine,int index)const noexcept {
+        return machine>=0&&index>=0?s8Machine_.mode(static_cast<unsigned>(machine),
+                                                   static_cast<unsigned>(index)):-2;
     }
     unsigned sampleSavesAccepted()const noexcept {return sampleSavesAccepted_;}
     unsigned sampleSavesRefused()const noexcept {return sampleSavesRefused_;}
@@ -347,10 +360,11 @@ public:
                             topSaveSuppress_[topIndex]=true;
                             const bool admitted=core_.consumeLocalSaveCandidate(candidateMode);
                             if(!admitted)core_.declineLocalSaveCandidate();
-                            const bool saved=admitted&&candidateMode==3&&
-                                saveSamplePatchFromLive(static_cast<int>(topIndex));
+                            const bool saved=admitted&&
+                                (candidateMode==3?saveSamplePatchFromLive(static_cast<int>(topIndex)):
+                                 saveMachinePatchFromLive(static_cast<int>(topIndex)));
                             if(saved)++sampleSavesAccepted_;
-                            else ++sampleSavesRefused_; // MACHINE S8 adapter still unavailable
+                            else ++sampleSavesRefused_;
                             if(candidateMode==3)muteGate_.cancelBot2();
                             record(seq,sample,Stage::Decision,
                                    saved?Reason::Musical:Reason::UnknownLive,
@@ -419,6 +433,7 @@ public:
                         topIntents_[index]={physical,captured.route,seq,patch?TopAction::PatchRecall:TopAction::FilterReset};
                         topIntentValid_[index]=true;
                         if(patch && captured.context==3)armSamplePatch(index);
+                        else if(patch && captured.context==7)armMachinePatch(index);
                         if(patch)++topPatchRecallsDeferred_;
                         else ++topResetsDeferred_;
                         record(seq,sample,Stage::Decision,Reason::TopResetDeferred,0,data,3,captured.route.address);
@@ -758,6 +773,31 @@ private:
         return s8Sample_.save(static_cast<unsigned>(owner),static_cast<unsigned>(slot),
                               config,image,prior.revision);
     }
+    // Native S8 MACHINE capture: 18 CC + 12 SPOT states. The 12
+    // behavior modes at offset 30..41 are immutable to PATCH operations.
+    bool saveMachinePatchFromLive(int slot) noexcept {
+        const auto& nav=core_.nativeNav();
+        if(slot<0||slot>=3||!nav.stable()||nav.hasStage()||nav.active().at(292)!=7||
+           nav.active().contextMode!=7||nav.active().presetFlag!=0||
+           core_.longNavPending()||samplePatchPending())return false;
+        const int selected=nav.active().at(314);
+        const int config=core_.nativeLive().sessionConfig();
+        if(selected<1||selected>24||config<1||config>127)return false;
+        const int owner=selected-1,base=320+42*owner;
+        for(const auto& hold:spots_)if(hold.cell>=base&&hold.cell<base+42)return false;
+        S8MachinePatchBank::Values values{};values.fill(S8MachinePatchBank::Unknown);
+        for(unsigned i=0;i<S8MachinePatchBank::ParamCount;++i){
+            const auto value=core_.nativeLive().desired(base+static_cast<int>(i));
+            if(!value.known)return false;
+            values[i]=value.value;
+        }
+        if(!S8MachinePatchBank::validate(values))return false;
+        S8MachinePatchBank::Patch prior{};
+        if(!s8Machine_.read(static_cast<unsigned>(owner),static_cast<unsigned>(slot),prior)||
+           (prior.valid&&prior.config!=config))return false;
+        return s8Machine_.save(static_cast<unsigned>(owner),static_cast<unsigned>(slot),
+                               config,values,prior.revision);
+    }
     struct GroupHold {
         QualifiedGroupAction action{};
         std::int64_t downMs{};
@@ -788,7 +828,7 @@ private:
         }
     }
     std::array<GroupHold,12> groupHolds_{};
-    struct SamplePatchRequest {int owner{-1},slot{-1};uint32_t revision{};bool s8{};};
+    struct SamplePatchRequest {int owner{-1},slot{-1};uint32_t revision{};bool s8{},machine{};};
     SamplePatchRequest samplePatch_{};int64_t lastSamplePatchBar_{-1};
     void armSamplePatch(unsigned index) noexcept {
         if(samplePatchPending() || index>=3 || !topIntentValid_[index])return;
@@ -810,6 +850,24 @@ private:
             samplePatch_={owner,slot,historical.revision,false};
         }
         topIntentValid_[index]=false; // command accepted once; BAR still has not applied it
+    }
+    void armMachinePatch(unsigned index) noexcept {
+        if(samplePatchPending()||index>=3||!topIntentValid_[index])return;
+        const auto& intent=topIntents_[index];
+        const int packed=intent.route.address;
+        if(packed<0||packed/1024!=11)return;
+        // MACHINE TOP records use the S3 selected target captured at DOWN;
+        // never infer a Roland program number from a TOP button.
+        const auto& nav=core_.nativeNav().active();
+        if(nav.at(292)!=7||nav.contextMode!=7||nav.presetFlag!=0)return;
+        const int selected=nav.at(314);
+        const int slot=intent.route.position;
+        if(selected<1||selected>24||slot<0||slot>=3)return;
+        S8MachinePatchBank::Patch patch{};
+        if(!s8Machine_.read(static_cast<unsigned>(selected-1),static_cast<unsigned>(slot),patch)||
+           !patch.valid||patch.config!=core_.nativeLive().sessionConfig())return;
+        samplePatch_={selected-1,slot,patch.revision,true,true};
+        topIntentValid_[index]=false;
     }
     void requestDjLoopStop(bool reset,bool invalidate=false) noexcept {
         if(dj2LoopStartRequested_ || dj2LoopObserved_==Dj2LoopObserved::On){
@@ -972,6 +1030,7 @@ private:
     SoftMidiBridge soft_{};
     TopPulseBus topPulse_{};
     S8SamplePatchBank s8Sample_{};
+    S8MachinePatchBank s8Machine_{};
     std::array<bool,4> topSaveSuppress_{};
     unsigned sampleSavesAccepted_{},sampleSavesRefused_{};
     std::array<std::uint32_t,36> groupDownEpoch_{};
