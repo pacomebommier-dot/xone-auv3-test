@@ -26,7 +26,7 @@ public:
         if(route.position!=(physical-4)/4)return false;
         int owner=-1;
         if(family==3+root && page>=5&&page<=8 &&
-           (kind==5 || (page==8&&kind==6+root)))
+           kind==(page==8?6+root:5))
             owner=4*root+page-5;
         else if(kind==8&&family==5+root&&page>=1&&page<=8)
             owner=8+page-1;
@@ -43,6 +43,10 @@ public:
     void stop() noexcept {pending_.fill(-1);sounding_.fill(false);lastBar_=-1;}
     // STOP retains the logical choice but disarms its output; all possibly
     // delivered ONs receive an owed OFF, without replaying ON at reopen.
+    bool hasOutstandingNotes()const noexcept {
+        for(unsigned i=0;i<64;++i)if(possiblyOn_[i]||needsOff_[i])return true;
+        return false;
+    }
     unsigned pendingCount()const noexcept {
         unsigned n=0;for(int x:pending_)if(x>=0)++n;return n;
     }
@@ -64,7 +68,7 @@ public:
                     const unsigned previous=4*page+static_cast<unsigned>(active_[page]);
                     // Even a repeated active/valid choice is a BAR rearm:
                     // release its old selection before a new ON.
-                    needsOff_[previous]=true;
+                    if(possiblyOn_[previous])needsOff_[previous]=true;
                 }
                 active_[page]=static_cast<int>(choice);
                 sounding_[page]=true;
