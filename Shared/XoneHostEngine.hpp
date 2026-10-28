@@ -452,7 +452,7 @@ public:
     }
     // Re-arm the scan once per render buffer. A callback failure or absent
     // MIDI output must never consume a pending STOP NoteOff permanently.
-    void beginStopRetryPass() noexcept {stopRead_=0;}
+    void beginStopRetryPass(int64_t sample) noexcept {stopRead_=0;stopSample_=sample;}
     unsigned pendingStopOffs() const noexcept {return stopPendingCount_;}
     void stop(int64_t sample) noexcept {
         started_=true;

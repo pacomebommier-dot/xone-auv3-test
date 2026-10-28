@@ -2,7 +2,7 @@
 
 Une seule instance Mozaic, route exclusive Mozaic -> XONE. Ne pas activer simultanément le K2 physique. Le retour API/LED du moteur ne doit pas être routé vers son entrée. La sortie L02 CH1 est seulement un banc historique.
 
-Charger K2_SIM_V3.txt dans l'éditeur Mozaic à la recette groupée L15. Aucun essai iPhone demandé maintenant. SOURCE contrôlée ; compilation Mozaic/AUM non réalisée.
+Charger K2_SIM_V3.txt dans l’éditeur Mozaic pour la recette V0 décrite dans docs/reprise/RECETTE_AUM_V02.md. SOURCE contrôlée ; compilation Mozaic/AUM non réalisée.
 
 - Pads0..3 : BOT1..4, toujours accessibles.
 - Knob7 : page boutons 0..2. Pads4..15 : 12 boutons de cette page (dernière page : 8 actifs).

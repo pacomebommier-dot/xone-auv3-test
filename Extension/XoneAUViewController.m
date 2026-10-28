@@ -32,12 +32,20 @@
     info.textColor = UIColor.whiteColor;
     info.font = [UIFont monospacedSystemFontOfSize:14 weight:UIFontWeightRegular];
     self.traceLabel = info;
-    self.traceHistory = [NSMutableString stringWithString:@"XONE ENGINE V0.2 · C++ L02\nCH1: CC4→74 / CC8→71, valeurs conservées.\nCH15: SurfaceInput diagnostic seul, aucune sortie.\nRX_FEEDBACK=UNKNOWN (aucun binding authentifié).\nSource virtuelle → XONE V0.2 → moniteur, aucune boucle.\n\n"];
+    self.traceHistory = [NSMutableString stringWithString:@"XONE V0 · candidate AUM\nK2 CH15 → S1/S2/S3 → sorties MIDI API.\nLIVE inconnu : action refusée localement.\nRecette simulée : session isolée, moniteur seul.\nLe bouton remplace le LIVE par la fixture de test ; aucun instrument configuré.\nRX_FEEDBACK=UNKNOWN. STOP avant retrait de l’instance.\n\n"];
+    UIButton *fixture = [UIButton buttonWithType:UIButtonTypeSystem];
+    fixture.translatesAutoresizingMaskIntoConstraints = NO;
+    [fixture setTitle:@"Recette simulée : charger l’état test" forState:UIControlStateNormal];
+    [fixture addTarget:self action:@selector(loadValidationFixture) forControlEvents:UIControlEventTouchUpInside];
+    [root addSubview:fixture];
     info.text = self.traceHistory;
     [scroll addSubview:info];
 
     [NSLayoutConstraint activateConstraints:@[
-        [scroll.topAnchor constraintEqualToAnchor:root.safeAreaLayoutGuide.topAnchor],
+        [fixture.topAnchor constraintEqualToAnchor:root.safeAreaLayoutGuide.topAnchor],
+        [fixture.centerXAnchor constraintEqualToAnchor:root.centerXAnchor],
+        [fixture.heightAnchor constraintEqualToConstant:44],
+        [scroll.topAnchor constraintEqualToAnchor:fixture.bottomAnchor],
         [scroll.bottomAnchor constraintEqualToAnchor:root.safeAreaLayoutGuide.bottomAnchor],
         [scroll.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
         [scroll.trailingAnchor constraintEqualToAnchor:root.trailingAnchor],
@@ -48,6 +56,13 @@
         [info.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor constant:-32]
     ]];
     self.view = root;
+}
+- (void)loadValidationFixture {
+    const BOOL accepted = [self.xoneUnit loadAumValidationFixture];
+    [self.traceHistory appendString:accepted
+        ? @"RECETTE SIMULEE demandée ; application au rendu après vrais UP et OFF dus.\n"
+        : @"RECETTE SIMULEE refusée ; aucun état remplacé.\n"];
+    self.traceLabel.text = self.traceHistory;
 }
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];

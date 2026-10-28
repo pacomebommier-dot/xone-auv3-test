@@ -38,3 +38,12 @@ Version 1.0 — 28 octobre 2026 — document vivant, à lire à chaque reprise
 S'arrêter pour décision humaine **seulement** si un choix musical nouveau doit être inventé, si deux contrats gelés se contredisent, si une opération risque de détruire du travail non publié, ou si aucune solution sûre n'existe pour un véritable BLOQUANT V0. Dans les autres cas, coder/tester/commiter et continuer.
 
 Ne pas chercher à « finir 1/6 » au détriment de la V0. Conserver les compteurs des six tâches distincts du statut de livraison V0.
+
+## 5. Production V0 — 28 octobre 2026
+- Point de départ vérifié : local09b30ca, distant5e00032f ; CI09b30ca PASS40583029529. Aucun merge main.
+- MACHINE et preuves non publiés conservés dans XONE_AUV3_REPRISE_20261027 ; copie de sécurité SAUVEGARDES/V0_AVANT_PRODUCTION_20261028. Candidate isolée dans XONE_AUV3_V0_CANDIDATE depuis5e00032f ; MACHINE DIFFERE, non intégré.
+- BLOQUANT V0 traité : reprise STOP réémettait un timestamp ancien. Test reproduit FAIL off.sample==30, puis PASS après rattachement au début du buffer courant.
+- RACCORDABLE V0 : fixture explicite du harnais AU pour tester CC/SPOT, sans default de production ; interface et recette corrigées. Désallocation annule les attentes transitoires et préserve les OFF dus pour réallocation. Le diagnostic TOP_RESET_DEFERRED dispose de son libellé.
+- Preuve locale : contrôles sources/simulateur/profils PASS ; test STOP ciblé PASS. Vrai harnais AU/Apple/iOS : vérifier la CI du SHA COMMIT.txt avant de qualifier la candidate.
+- Reste : CI complète et artefact iOS de ce SHA ; signature et tous essais AUM NON_TESTE_AUM. Retrait définitif : STOP/OFF observés avant destruction, aucun callback hors rendu supposé.
+- Paquet de recette : docs/reprise/RECETTE_AUM_V02.md et Mozaic/K2_SIM_V3.txt joints à l’artefact avec les sources exactes pour signature Xcode. Avancement des six tâches indépendant, inchangé.

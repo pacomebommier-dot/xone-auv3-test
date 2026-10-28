@@ -1,3 +1,10 @@
+# XONE AUv3 V0 — candidate AUM
+
+Le wrapper utilise désormais le moteur natif S1/S2/S3/S4 ; l’ancien remappage CC4→74/CC8→71 décrit plus bas appartient au prototype historique.
+Lire la [recette actuelle](docs/reprise/RECETTE_AUM_V02.md) et les [contrats V0](docs/pilotage_v0/00_CONTRAT_PILOTAGE_V0.md). Le démarrage conserve UNKNOWN ; la fixture simulée se charge uniquement sur demande explicite. Une CI PASS ne vaut pas essai AUM.
+
+---
+
 # Branche native L02 — V0.2 en cours de recette
 
 La V0.2 embarque une tranche C++ bornée : deux CC CH1, SurfaceInput CH15 en diagnostic, traces RX/DECISION/TX. Les 12 modules L01/11 sont préservés et testés ; leur présence ne termine pas les lots musicaux. Voir [clôture L01](docs/reprise/CLOTURE_L01.md) et [recette sans K2](docs/reprise/RECETTE_AUM_V02.md).

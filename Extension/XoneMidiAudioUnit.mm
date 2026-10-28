@@ -3,6 +3,7 @@
 #import <string.h>
 #include "../Shared/XoneHostEngine.hpp"
 #include "../Shared/XoneHostGrid.hpp"
+#include "../Shared/XoneValidationFixture.hpp"
 #include "../Shared/XoneHostScheduler.hpp"
 
 @implementation XoneMidiAudioUnit {
@@ -57,6 +58,11 @@
 }
 
 - (void)deallocateRenderResources {
+    // Host has stopped rendering. Cancel transient work, preserve real OFF debts.
+    // No MIDI callback outside render: reallocation retries at its first buffer.
+    _musicalScheduler.stop();
+    _engine.stop(0);
+    _transportKnown = false;
     _cachedMIDIOutput = nil;
     _cachedTransport = nil;
     _cachedMusicalContext = nil;
@@ -89,6 +95,12 @@
             if (!_engine.requestSessionRestore(image)) return;
         }
         [super setFullState:state];
+    }
+}
+
+- (BOOL)loadAumValidationFixture {
+    @synchronized (self) {
+        return _engine.requestSessionRestore(xone::host::aumValidationFixture());
     }
 }
 
@@ -158,7 +170,7 @@
         flushMute(bufferStart); // old failed writes, no fabricated BAR
         // Retry only genuine outstanding STOP OFF debts. This precedes any
         // fresh physical MIDI in this buffer and cannot invent a note ON.
-        engine->beginStopRetryPass();
+        engine->beginStopRetryPass(bufferStart);
         flushStop();
         if (transport) {
             AUHostTransportStateFlags flags = static_cast<AUHostTransportStateFlags>(0);
@@ -253,7 +265,7 @@
 - (NSString *)drainDiagnosticText {
     // UI main thread only: the sole trace consumer. Formatting stays off render thread.
     static const char *stages[] = {"RX_IN","DECISION","TX_OUT","RX_FEEDBACK","STOP","OVERFLOW","GESTURE"};
-    static const char *reasons[] = {"MAPPED","SURFACE_ONLY","REJECTED","UNTRUSTED","SENT","SEND_FAILED","NO_OUTPUT","RECEIVED","INTEGRATED","QUALIFIED","CLOCK_REJECTED","UNKNOWN_LIVE","PICKUP_WAIT","MUSICAL","DJ_RELATIVE","BROWSER_LOAD_INTENT"};
+    static const char *reasons[] = {"MAPPED","SURFACE_ONLY","REJECTED","UNTRUSTED","SENT","SEND_FAILED","NO_OUTPUT","RECEIVED","INTEGRATED","QUALIFIED","CLOCK_REJECTED","UNKNOWN_LIVE","PICKUP_WAIT","MUSICAL","DJ_RELATIVE","BROWSER_LOAD_INTENT","TOP_RESET_DEFERRED"};
     NSMutableString *text = [NSMutableString stringWithFormat:@"V3 dev | K2/S2/NAV | RX_FEEDBACK=UNKNOWN | dropped=%u | overflowBuffers=%u\n", _engine.dropped(), _engine.overflows()];
     xone::host::Trace t{};
     for (unsigned n=0; n<256 && _engine.pop(t); ++n) {

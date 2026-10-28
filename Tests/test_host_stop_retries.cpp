@@ -30,10 +30,10 @@ int main(){
         auto off=e.nextStopPacket();assert(off.emit&&off.api==384&&off.value==0);
         send(e,off,-1);assert(e.pendingStopOffs()==1);
         assert(!e.nextStopPacket().emit);
-        e.beginStopRetryPass();
-        off=e.nextStopPacket();assert(off.emit&&off.api==384);
+        e.beginStopRetryPass(30);
+        off=e.nextStopPacket();assert(off.emit&&off.api==384);assert(off.sample==30);
         send(e,off,0);assert(e.pendingStopOffs()==0);
-        e.beginStopRetryPass();assert(!e.nextStopPacket().emit);
+        e.beginStopRetryPass(30);assert(!e.nextStopPacket().emit);
     }
     // Missing output also retains the OFF; no fabricated acknowledgement.
     {
@@ -41,7 +41,7 @@ int main(){
         send(e,edge(e,48,true,10),0);
         e.stop(20);auto off=e.nextStopPacket();assert(off.emit);
         e.noOutput(off);assert(e.pendingStopOffs()==1);
-        e.beginStopRetryPass();off=e.nextStopPacket();assert(off.emit);
+        e.beginStopRetryPass(30);off=e.nextStopPacket();assert(off.emit);
         send(e,off,0);assert(e.pendingStopOffs()==0);
     }
     // A failure on the middle address must not block peers or resend a
@@ -55,13 +55,13 @@ int main(){
             send(e,off,n==1?-1:0);
         }
         assert(e.pendingStopOffs()==1);
-        e.beginStopRetryPass();
+        e.beginStopRetryPass(30);
         auto retry=e.nextStopPacket();assert(retry.emit&&retry.api==385);
         assert(!e.nextStopPacket().emit);
         e.stop(30);assert(e.pendingStopOffs()==1);
         retry=e.nextStopPacket();assert(retry.emit&&retry.api==385);
         send(e,retry,0);assert(e.pendingStopOffs()==0);
-        e.beginStopRetryPass();assert(!e.nextStopPacket().emit);
+        e.beginStopRetryPass(30);assert(!e.nextStopPacket().emit);
     }
     // Successful STOP OFF is permanently retired; no stale OFF may
     // accidentally close the next note on the same address.
@@ -71,7 +71,7 @@ int main(){
         e.stop(20);send(e,e.nextStopPacket(),0);
         assert(!edge(e,48,false,21).emit);
         auto next=edge(e,48,true,30);assert(next.emit&&next.api==384);
-        send(e,next,0);e.beginStopRetryPass();
+        send(e,next,0);e.beginStopRetryPass(30);
         assert(!e.nextStopPacket().emit&&e.pendingStopOffs()==0);
     }
     std::cout<<"PASS STOP OFF retry on failed/absent callback, independent peers, resnapshot, no stale resend\n";

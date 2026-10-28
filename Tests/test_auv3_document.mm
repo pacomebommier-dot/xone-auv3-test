@@ -1,7 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
 #import "../Extension/XoneMidiAudioUnit.h"
-#include "../Shared/XoneSession.hpp"
+#include "../Shared/XoneValidationFixture.hpp"
 #include <cassert>
 #include <iostream>
 int main() {
@@ -24,12 +24,13 @@ int main() {
         return YES;
     };
     __block NSUInteger sent=0,failAt=0;
+    __block AUEventSampleTime expectedStart=0,expectedEnd=8192;
     uint8_t bytesSent[64][3]{};auto *recorded=bytesSent;
     __block NSUInteger ledSent=0,failLedAt=0;
     uint8_t ledBytes[4096][3]{};auto *ledRecorded=ledBytes;
     __block uint8_t lastStatus=0,lastNumber=0,lastValue=0;
     AUMIDIOutputEventBlock testOutput=^OSStatus(AUEventSampleTime time,uint8_t cable,NSInteger length,const uint8_t *data) {
-        (void)time;assert(cable==0&&length==3);
+        assert(time>=expectedStart&&time<expectedEnd);assert(cable==0&&length==3);
         if((data[0]&15)==14){
             assert(ledSent<4096&&(data[0]==0x8E||data[0]==0x9E));
             for(unsigned i=0;i<3;++i)ledRecorded[ledSent][i]=data[i];
@@ -40,10 +41,7 @@ int main() {
         ++sent;lastStatus=data[0];lastNumber=data[1];lastValue=data[2];return sent==failAt?static_cast<OSStatus>(-1):noErr;
     };
     unit.MIDIOutputEventBlock=testOutput;
-    xone::host::SessionImage image{};image.schema=1;image.config=1;image.revision=1;image.desired.fill(-2);image.desired[1328]=64;image.desired[1768]=0;
-    image.desired[380]=0;image.desired[392]=3;
-    image.desired[381]=0;image.desired[393]=4;
-    image.desired[382]=1;image.desired[394]=4;
+    const auto image=xone::host::aumValidationFixture();
     xone::host::SessionBytes bytes{};assert(xone::host::encodeSession(image,bytes));
     unit.fullStateForDocument=@{@"XONE_LAST_LIVE_V1":[NSData dataWithBytes:bytes.data() length:bytes.size()]};
     assert(sent==0);
@@ -53,6 +51,7 @@ int main() {
     assert(audio && audio.floatChannelData);
     AUEventSampleTime cursor=0;
     auto pump=[&](AVAudioFrameCount frames,int command=-1,int number=0,int value=0,AUEventSampleTime offset=0) {
+        expectedStart=cursor;expectedEnd=cursor+frames;
         AudioTimeStamp timestamp{};timestamp.mFlags=kAudioTimeStampSampleTimeValid;timestamp.mSampleTime=static_cast<Float64>(cursor);
         AURenderEvent event{};event.MIDI.eventType=AURenderEventMIDI;event.MIDI.eventSampleTime=cursor+offset;
         event.MIDI.cable=0;event.MIDI.length=static_cast<uint16_t>(command==0xFC?1:3);
@@ -240,6 +239,32 @@ int main() {
     assert(restoredBase2&&sent==beforeTie+1); // known context restored, music untouched
     const NSUInteger afterRestore=ledSent;pump(48);assert(ledSent==afterRestore);
     [muteUnit deallocateRenderResources];
+
+    // Fresh AU starts UNKNOWN. Loading an explicit simulated recipe uses
+    // the same session mailbox as document restore, and never transmits on load.
+    XoneMidiAudioUnit *lifecycle=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
+    assert(lifecycle&&!error);lifecycle.MIDIOutputEventBlock=testOutput;lifecycle.maximumFramesToRender=8192;
+    assert([lifecycle.inputBusses[0] setFormat:format error:&error]);
+    assert([lifecycle.outputBusses[0] setFormat:format error:&error]);
+    assert(lifecycle.fullState[@"XONE_LAST_LIVE_V1"]==nil); // no valid configured session yet
+    const NSUInteger beforeFixture=sent;
+    assert([lifecycle allocateRenderResourcesAndReturnError:&error]);render=lifecycle.internalRenderBlock;
+    pump(48,0xBE,16,64);assert(sent==beforeFixture); // unknown LIVE refuses locally
+    assert([lifecycle loadAumValidationFixture]);assert(sent==beforeFixture);
+    pump(48,0xBE,16,0);assert(sent==beforeFixture); // pickup waits for known simulated 64
+    pump(4800);pump(4800);
+    pump(48,0xBE,16,64);assert(sent==beforeFixture+1&&lastStatus==0xBA&&lastNumber==48&&lastValue==64);
+    pump(48,0x9E,36,127);pump(48,0x8E,36,0);
+    pump(48,0x9E,48,127);assert(sent==beforeFixture+2&&lastStatus==0x99);
+    [lifecycle deallocateRenderResources];
+    assert(sent==beforeFixture+2); // no callback outside the host render cycle
+    assert([lifecycle allocateRenderResourcesAndReturnError:&error]);
+    pump(48);assert(sent==beforeFixture+3&&lastStatus==0x89&&lastNumber==0&&lastValue==0);
+    pump(48,0x8E,48,0);assert(sent==beforeFixture+3); // real UP after shutdown stays inert
+    [lifecycle deallocateRenderResources];
+    assert([lifecycle allocateRenderResourcesAndReturnError:&error]);
+    pump(48);assert(sent==beforeFixture+3); // confirmed OFF is never duplicated
+    [lifecycle deallocateRenderResources];
 
     std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)\n";
  }

@@ -79,6 +79,9 @@ jobs:
           mkdir -p output/Payload
           ditto "$APP" output/Payload/XoneEngineTest.app
           (cd output && /usr/bin/zip -q -r -y XoneEngineNative_V0_2_UNSIGNED.ipa Payload)
+          git archive --format=zip --output=output/XONE_V0_SOURCES.zip HEAD
+          mkdir -p output/recette
+          cp docs/reprise/RECETTE_AUM_V02.md Mozaic/K2_SIM_V3.txt Mozaic/README.md output/recette/
           echo "$GITHUB_SHA" > output/COMMIT.txt
           shasum -a 256 output/XoneEngineNative_V0_2_UNSIGNED.ipa > output/IPA_SHA256.txt
       - uses: actions/upload-artifact@v4
@@ -87,6 +90,8 @@ jobs:
           name: XoneEngineNative-V0.2-${{ github.sha }}
           path: |
             output/*.ipa
+            output/*.zip
+            output/recette/
             output/*.txt
             output/*.log
             evidence/ci/*.log
