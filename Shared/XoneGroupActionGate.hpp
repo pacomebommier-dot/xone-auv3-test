@@ -23,14 +23,21 @@ public:
         // Only the committed root-1/YELLOW surface may produce these S7
         // actions; overlays, PRESET and RESET own the same physical keys.
         if(n.at(291)!=1 || n.at(292)!=0 || n.contextMode!=0 || n.presetFlag!=0)return false;
-        // The two instruments have separate, captured selected pages.
-        const int selected=n.at(q.fill?298:294);
-        if(selected!=static_cast<int>(q.page+1))return false;
+        // Root1 YELLOW has two mutually exclusive selection flags:
+        // 301=>low YELLOW1..4 (field295), 302=>high YELLOW5..8 (field296).
+        // Root1 FILL uses field298 + active flag304. A hidden selection is
+        // not an owner and must not produce a GROUP action.
+        int selected=-1;
         if(q.fill){
-            // FILL page must be active, not a hidden selection under YELLOW.
-            if(n.at(304)!=1)return false;
-        }else if(n.at(304)!=0)return false;
-        return true;
+            if(n.at(304)!=1 || n.at(301)!=0 || n.at(302)!=0)return false;
+            selected=n.at(298);
+        }else{
+            if(n.at(304)!=0)return false;
+            if(n.at(301)==1 && n.at(302)==0)selected=n.at(295);
+            else if(n.at(302)==1 && n.at(301)==0)selected=n.at(296);
+            else return false;
+        }
+        return selected==static_cast<int>(q.page+1);
     }
 };
 } // namespace xone::host
