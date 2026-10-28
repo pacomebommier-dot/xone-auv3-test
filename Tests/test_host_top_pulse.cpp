@@ -110,8 +110,11 @@ int main(){
         const std::uint8_t down[]{0x9E,52,127};
         const std::uint8_t up[]{0x8E,52,0};
         assert(!changed.receive(0,down,3,0,0).emit);
-        press(changed,3,5); // physical BOT4 changes root (note15)
-        assert(!changed.receive(0,up,3,6*48,6).emit);
+        const std::uint8_t rootDown[]{0x9E,15,127};
+        const std::uint8_t rootUp[]{0x8E,15,0};
+        assert(!changed.receive(0,rootDown,3,5*48,5).emit);
+        assert(!changed.receive(0,rootUp,3,6*48,6).emit); // BOT4 changes root
+        assert(!changed.receive(0,up,3,7*48,7).emit);
         assert(changed.pendingTopPulses()==0);
     }
     std::cout<<"PASS S7 TOP 22-address pulse bus, physical INIT, FIFO, callback failure and STOP OFF debt\n";
