@@ -24,13 +24,13 @@ int main() {
         return YES;
     };
     __block NSUInteger sent=0,failAt=0;
-    __block AUEventSampleTime expectedStart=0,expectedEnd=8192;
+    AUEventSampleTime expectedRange[]{0,8192};auto *expected=expectedRange;
     uint8_t bytesSent[64][3]{};auto *recorded=bytesSent;
     __block NSUInteger ledSent=0,failLedAt=0;
     uint8_t ledBytes[4096][3]{};auto *ledRecorded=ledBytes;
     __block uint8_t lastStatus=0,lastNumber=0,lastValue=0;
     AUMIDIOutputEventBlock testOutput=^OSStatus(AUEventSampleTime time,uint8_t cable,NSInteger length,const uint8_t *data) {
-        assert(time>=expectedStart&&time<expectedEnd);assert(cable==0&&length==3);
+        assert(time>=expected[0]&&time<expected[1]);assert(cable==0&&length==3);
         if((data[0]&15)==14){
             assert(ledSent<4096&&(data[0]==0x8E||data[0]==0x9E));
             for(unsigned i=0;i<3;++i)ledRecorded[ledSent][i]=data[i];
@@ -51,7 +51,7 @@ int main() {
     assert(audio && audio.floatChannelData);
     AUEventSampleTime cursor=0;
     auto pump=[&](AVAudioFrameCount frames,int command=-1,int number=0,int value=0,AUEventSampleTime offset=0) {
-        expectedStart=cursor;expectedEnd=cursor+frames;
+        expected[0]=cursor;expected[1]=cursor+frames;
         AudioTimeStamp timestamp{};timestamp.mFlags=kAudioTimeStampSampleTimeValid;timestamp.mSampleTime=static_cast<Float64>(cursor);
         AURenderEvent event{};event.MIDI.eventType=AURenderEventMIDI;event.MIDI.eventSampleTime=cursor+offset;
         event.MIDI.cable=0;event.MIDI.length=static_cast<uint16_t>(command==0xFC?1:3);

@@ -47,3 +47,5 @@ Ne pas chercher à « finir 1/6 » au détriment de la V0. Conserver les compteu
 - Preuve locale : contrôles sources/simulateur/profils PASS ; test STOP ciblé PASS. Vrai harnais AU/Apple/iOS : vérifier la CI du SHA COMMIT.txt avant de qualifier la candidate.
 - Reste : CI complète et artefact iOS de ce SHA ; signature et tous essais AUM NON_TESTE_AUM. Retrait définitif : STOP/OFF observés avant destruction, aucun callback hors rendu supposé.
 - Paquet de recette : docs/reprise/RECETTE_AUM_V02.md et Mozaic/K2_SIM_V3.txt joints à l’artefact avec les sources exactes pour signature Xcode. Avancement des six tâches indépendant, inchangé.
+
+- CI1e49ecc /40667162494 : GCC, Clang, Apple Clang et ASan/UBSan PASS ; harnais AU refusé à la compilation car une lambda C++ ne peut capturer une variable ObjC __block. Correction limitée au test : tableau de timestamps à durée de vie du harnais, pointeur capturé comme la fixture de grille existante. Aucun test retiré ; relancer toute la CI sur le SHA corrigé. Pas d’IPA sur ce premier essai.
