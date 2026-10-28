@@ -240,8 +240,27 @@ public:
                     ++groupEpochCounter_;
                     if(groupEpochCounter_==0)++groupEpochCounter_;
                     groupDownEpoch_[static_cast<unsigned>(physical)]=groupEpochCounter_;
-                }else if(!down&&wasHeld)
+                    if(physical>=20&&physical<32){
+                        auto& hold=groupHolds_[static_cast<unsigned>(physical-20)];
+                        hold={};
+                        QualifiedGroupAction action{};
+                        if(GroupActionGate::derive(core_.nativeNav(),
+                            static_cast<unsigned>(physical),
+                            groupDownEpoch_[static_cast<unsigned>(physical)],action) &&
+                            !core_.longNavPending() && !mutePageVisible()){
+                            hold={action,gestureMs,true,false};
+                        }
+                    }
+                }else if(!down&&wasHeld){
+                    if(physical>=20&&physical<32){
+                        auto& hold=groupHolds_[static_cast<unsigned>(physical-20)];
+                        // Qualify the long physical release while its original
+                        // DOWN still owns the key; not an orphan UP or new page.
+                        fireGroupLong(hold,gestureMs);
+                        hold={};
+                    }
                     groupDownEpoch_[static_cast<unsigned>(physical)]=0;
+                }
             }
             // Only real, non-duplicate physical DOWN can arm the 4 choices on
             // a source-qualified DRUMS/FILL page. No synthetic selection.
@@ -575,6 +594,7 @@ public:
         topIntentValid_.fill(false);
         samplePatch_={};lastSamplePatchBar_=-1;
         groupDownEpoch_.fill(0); // STOP invalidates stale GROUP proof
+        for(auto& hold:groupHolds_)hold={}; // no ghost long on later UP
         soft_.stop(); // cancels only uncommitted SOFT; applied pages persist
         topPulse_.stop(); // cancels unattempted pulses; retains every attempted OFF
         browserLoadPending_=false;browserSelectionSequence_=0;
@@ -614,6 +634,11 @@ public:
         const bool wasMuteVisible=mutePageVisible();
         muteGate_.advance(ms);
         if(!wasMuteVisible && mutePageVisible() && (navMode()==2 || navMode()==4))requestDjLoopStop(true);
+        // Source GOLDEN long SPOT threshold: 120ms. The host owns this
+        // qualification, not a second BAR/BEAT scheduler. First valid
+        // opportunity emits once, at/after 120ms; an UP at the threshold
+        // uses the exact same source proof.
+        for(auto& hold:groupHolds_)fireGroupLong(hold,ms);
         if(!core_.gesture().timerNeeded())return;
         const auto seq=++sequence_;
         const int previousNav=navMode();
@@ -635,6 +660,27 @@ public:
     }
     uint32_t overflows() const noexcept {return overflows_.load(std::memory_order_relaxed);}
 private:
+    struct GroupHold {
+        QualifiedGroupAction action{};
+        std::int64_t downMs{};
+        bool active{},fired{};
+    };
+    static constexpr std::int64_t GroupLongMs=120;
+    void fireGroupLong(GroupHold& hold,std::int64_t now) noexcept {
+        if(!hold.active||hold.fired||now<hold.downMs ||
+           now-hold.downMs<GroupLongMs)return;
+        // Explicit owner, original NAV epoch, currently held key, and
+        // no competing MUTE/overlays are required on every attempt.
+        if(mutePageVisible())return;
+        if(acceptQualifiedGroupAction(hold.action)){
+            hold.fired=true;
+            record(++sequence_,now,Stage::Gesture,Reason::Musical,0,nullptr,0,
+                (hold.action.fill?632:608)+
+                (hold.action.fill?6:3)*static_cast<int>(hold.action.page)+
+                static_cast<int>(hold.action.action));
+        }
+    }
+    std::array<GroupHold,12> groupHolds_{};
     struct SamplePatchRequest {int owner{-1},slot{-1};uint32_t revision{};};
     SamplePatchRequest samplePatch_{};int64_t lastSamplePatchBar_{-1};
     void armSamplePatch(unsigned index) noexcept {
