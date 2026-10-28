@@ -154,6 +154,21 @@
                 }
             }
         };
+        // SOFT choices are applied at the host BAR. Callback failure keeps
+        // that logical NOTE dirty; retry is bounded once per render pass.
+        const auto flushSoft = [&](AUEventSampleTime sample) {
+            if(!sendMIDI)return;
+            unsigned cursor=0;
+            for(unsigned n=0;n<128;++n){
+                const auto packet=engine->nextSoftPacket(cursor);
+                if(!packet.valid)break;
+                const bool ok=sendMIDI(sample,0,3,packet.bytes)==noErr;
+                engine->ackSoftPacket(packet,ok);
+                // Success can unlock same-page OFF -> ON at this sample.
+                // Failure must not spin and must block the dependent ON.
+                cursor=ok?0:packet.index+1;
+            }
+        };
         const auto flushMuteLeds = [&](AUEventSampleTime sample,int64_t ms) {
             engine->prepareMuteLeds(ms);
             if(!sendMIDI)return;
@@ -168,6 +183,7 @@
             }
         };
         flushMute(bufferStart); // old failed writes, no fabricated BAR
+        flushSoft(bufferStart); // retry only previously applied SOFT notes
         // Retry only genuine outstanding STOP OFF debts. This precedes any
         // fresh physical MIDI in this buffer and cannot invent a note ON.
         engine->beginStopRetryPass(bufferStart);
@@ -207,6 +223,7 @@
                 one.valid=true;one.count=1;one.events[0]=gridObservation.events[gridRead++];
                 scheduler->consume(one, [](xone::host::DueAction) noexcept {});
                 engine->onMusicalGrid(one);
+                flushSoft(bufferStart+one.events[0].offset);
                 const auto patch=engine->samplePatchOnGrid(one,bufferStart);
                 for(unsigned n=0;n<patch.packetCount();++n){
                     const auto packet=patch.packet(n);
