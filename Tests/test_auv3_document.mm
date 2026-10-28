@@ -273,6 +273,35 @@ int main() {
     pump(48);assert(sent==beforeFixture+4); // confirmed OFF is never duplicated
     [lifecycle deallocateRenderResources];
 
+    // Real AU without fixture or plugin: K2 TOP1 physical UP produces
+    // Note680 ON+OFF at the same sample offset in MIDI12. Callback failure
+    // on ON still incurs an OFF; a failed OFF must retry next render.
+    XoneMidiAudioUnit *topUnit=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
+    assert(topUnit&&!error);topUnit.MIDIOutputEventBlock=testOutput;
+    assert([topUnit.inputBusses[0] setFormat:format error:&error]);
+    assert([topUnit.outputBusses[0] setFormat:format error:&error]);
+    topUnit.maximumFramesToRender=8192;
+    assert([topUnit allocateRenderResourcesAndReturnError:&error]);render=topUnit.internalRenderBlock;
+    const NSUInteger beforeTop=sent;
+    pump(48,0x9E,52,127);assert(sent==beforeTop);
+    failAt=beforeTop+1;
+    pump(48,0x8E,52,0,24); // failed ON cannot erase the required OFF
+    assert(sent==beforeTop+2 && recorded[beforeTop][0]==0x9B &&
+           recorded[beforeTop][1]==40 && recorded[beforeTop][2]==127 &&
+           recorded[beforeTop+1][0]==0x8B && recorded[beforeTop+1][1]==40 &&
+           recorded[beforeTop+1][2]==0);
+    failAt=0;
+    pump(48);assert(sent==beforeTop+2); // no duplicate after successful OFF
+    pump(48,0x9E,53,127);
+    failAt=beforeTop+4;
+    pump(48,0x8E,53,0,12);
+    assert(sent==beforeTop+4&&recorded[beforeTop+2][0]==0x9B&&
+           recorded[beforeTop+2][1]==41&&recorded[beforeTop+3][0]==0x8B);
+    failAt=0;
+    pump(48);assert(sent==beforeTop+5&&lastStatus==0x8B&&lastNumber==41&&lastValue==0);
+    pump(48);assert(sent==beforeTop+5);
+    [topUnit deallocateRenderResources];
+
     std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)\n";
  }
 }
