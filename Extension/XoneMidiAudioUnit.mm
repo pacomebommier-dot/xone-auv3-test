@@ -284,6 +284,10 @@
         // Rendering progresses while transport is stopped; seeking cannot rewind gestures.
         *elapsedMs += 1000.0 * frameCount / rate;
         engine->advance(static_cast<int64_t>(*elapsedMs), bufferStart+frameCount);
+        // The 120 ms GROUP/LONG threshold can become due on this render's
+        // timer advance. Emit at its final valid sample, not one full render
+        // buffer later. Never send an event at bufferStart+frameCount (outside).
+        if(frameCount)flushTop(bufferStart+frameCount-1);
         flushMuteLeds(bufferStart+(frameCount?frameCount-1:0),static_cast<int64_t>(*elapsedMs));
         engine->endRenderBuffer();
         // Aucune production audio. Rendre un tampon silencieux si fourni.
