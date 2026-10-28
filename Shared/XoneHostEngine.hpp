@@ -256,7 +256,7 @@ public:
                         auto& hold=groupHolds_[static_cast<unsigned>(physical-20)];
                         // Qualify the long physical release while its original
                         // DOWN still owns the key; not an orphan UP or new page.
-                        fireGroupLong(hold,gestureMs);
+                        fireGroupLong(hold,gestureMs,true);
                         hold={};
                     }
                     groupDownEpoch_[static_cast<unsigned>(physical)]=0;
@@ -666,13 +666,22 @@ private:
         bool active{},fired{};
     };
     static constexpr std::int64_t GroupLongMs=120;
-    void fireGroupLong(GroupHold& hold,std::int64_t now) noexcept {
+    void fireGroupLong(GroupHold& hold,std::int64_t now,bool acceptedPhysicalRelease=false) noexcept {
         if(!hold.active||hold.fired||now<hold.downMs ||
            now-hold.downMs<GroupLongMs)return;
         // Explicit owner, original NAV epoch, currently held key, and
         // no competing MUTE/overlays are required on every attempt.
         if(mutePageVisible())return;
-        if(acceptQualifiedGroupAction(hold.action)){
+        const bool allowed=acceptedPhysicalRelease ?
+            (hold.action.physical<groupDownEpoch_.size() &&
+             groupDownEpoch_[hold.action.physical]==hold.action.physicalDownEpoch &&
+             GroupActionGate::authorize(core_.nativeNav(),hold.action,true,
+                                       core_.longNavPending())) :
+            (hold.action.physical<groupDownEpoch_.size() &&
+             groupDownEpoch_[hold.action.physical]==hold.action.physicalDownEpoch &&
+             acceptQualifiedGroupAction(hold.action));
+        if(allowed && (acceptedPhysicalRelease?
+                       topPulse_.queueGroup(hold.action.fill,hold.action.page,hold.action.action):true)){
             hold.fired=true;
             record(++sequence_,now,Stage::Gesture,Reason::Musical,0,nullptr,0,
                 (hold.action.fill?632:608)+
