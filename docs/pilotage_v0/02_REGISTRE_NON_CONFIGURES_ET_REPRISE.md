@@ -49,3 +49,5 @@ Ne pas chercher à « finir 1/6 » au détriment de la V0. Conserver les compteu
 - Paquet de recette : docs/reprise/RECETTE_AUM_V02.md et Mozaic/K2_SIM_V3.txt joints à l’artefact avec les sources exactes pour signature Xcode. Avancement des six tâches indépendant, inchangé.
 
 - CI1e49ecc /40667162494 : GCC, Clang, Apple Clang et ASan/UBSan PASS ; harnais AU refusé à la compilation car une lambda C++ ne peut capturer une variable ObjC __block. Correction limitée au test : tableau de timestamps à durée de vie du harnais, pointeur capturé comme la fixture de grille existante. Aucun test retiré ; relancer toute la CI sur le SHA corrigé. Pas d’IPA sur ce premier essai.
+
+- CIe9a6417 /40668083541 : GCC/Clang PASS ; runner macos-15-intel non attribué après plus de7min. Production basculée vers le pool standard macos-15 Apple Silicon ; mêmes suites/ASan/UBSan/harnais/build/intégrité, harnais placé en premier pour retour ciblé rapide. Aucun contrôle désactivé.
