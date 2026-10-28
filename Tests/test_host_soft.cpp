@@ -80,6 +80,14 @@ int main(){
     assert(!host.receive(0,down,3,3,3).emit);
     assert(host.pendingSoftCount()==1);host.stop(4);
     assert(host.pendingSoftCount()==0&&host.appliedSoftChoice(1,2)==0);
+    // STOP owes an OFF for every possibly delivered ON, at the captured note.
+    cursor=0;p=host.nextSoftPacket(cursor);
+    assert(p.valid&&!p.on&&p.index==40&&p.bytes[0]==0x8A&&p.bytes[1]==72);
+    host.ackSoftPacket(p,false); // failed STOP OFF is retried, not forgotten
+    cursor=0;p=host.nextSoftPacket(cursor);assert(p.valid&&!p.on&&p.index==40);
+    host.ackSoftPacket(p,true);
+    cursor=0;assert(!host.nextSoftPacket(cursor).valid);
     assert(host.onMusicalGrid(edge(GridKind::Bar,3))==0);
+    cursor=0;assert(!host.nextSoftPacket(cursor).valid); // no historical ON replay
     std::cout<<"PASS S7 SOFT 16x4 physical S3 route, BAR commit, OFF-before-ON, callback retry, STOP\n";
 }
