@@ -9,7 +9,7 @@ flags=(-pthread -std=c++17 -O2 -UNDEBUG -Wall -Wextra -Wpedantic -Werror)
 if [[ "${SANITIZE:-0}" == 1 ]]; then
   flags+=(-O0 -g -fsanitize=address,undefined -fno-omit-frame-pointer)
 fi
-for src in NativeTests/test_*.cpp Tests/test_host_*.cpp; do
+for src in NativeTests/test_*.cpp Tests/test_host_*.cpp Tests/test_s8_*.cpp; do
   name=$(basename "$src" .cpp)
   "$compiler" "${flags[@]}" "$src" -o "$out/$name" >"$out/$name.compile.log" 2>&1
   "$out/$name" >"$out/$name.run.log" 2>&1
