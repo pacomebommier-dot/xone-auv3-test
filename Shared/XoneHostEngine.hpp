@@ -10,6 +10,8 @@
 #include "XoneSourcePatchBank.hpp"
 #include "XoneHostScheduler.hpp"
 #include "XoneGlobalSnapshot.hpp"
+#include "XoneAlternativeArbiter.hpp"
+#include "XoneAlternativeBank.hpp"
 #include "XoneGroupActionGate.hpp"
 #include "XoneSession.hpp"
 #include "../Core/MutePhysicalGate.hpp"
@@ -153,6 +155,8 @@ public:
             s8Machine_.setMode(static_cast<unsigned>(machine),static_cast<unsigned>(index),mode);
     }
     int s8MachineMode(int machine,int index)const noexcept {
+        if(machine>=0&&machine<8&&index>=0&&index<12){const int instrument=activeAlternative(static_cast<unsigned>(machine/2));
+            if(instrument>=0)return alternativeBank_.mode(static_cast<unsigned>(machine/4),static_cast<unsigned>(instrument),static_cast<unsigned>(12*(machine%2)+index));}
         return machine>=0&&index>=0?s8Machine_.mode(static_cast<unsigned>(machine),
                                                    static_cast<unsigned>(index)):-2;
     }
@@ -227,14 +231,47 @@ public:
         slot=route.position;return l01::BankS6::memoryIndex(owner,slot)>=0;
     }
     enum class SourceRecallStatus : uint8_t { None, Pending, AppliedLocal, EmptyPatch, UnknownConfig, Busy };
+    int activeAlternative(unsigned source)const noexcept {return source<4?alternatives_.active()[source]:-1;}
+    int pendingAlternative(unsigned source)const noexcept {return source<4?alternatives_.pending()[source]:-1;}
+    int presetInstrumentGroup()const noexcept {return presetInstrumentGroup_;}
+    bool consultPresetInstrumentGroup(unsigned source) noexcept {
+        if(source>=4)return false;
+        presetInstrumentGroup_=lastInstrumentGroup_=static_cast<int>(source);return true;
+    }
+    bool configureAlternativeBase(unsigned pool,unsigned instrument,const SourcePatchBank::Values& values,int config) noexcept {
+        return alternativeBank_.configureBase(pool,instrument,config,values);
+    }
+    bool bindAlternativeSlot(unsigned source,unsigned slot,int instrument) noexcept {return alternativeBank_.bind(source,slot,instrument);}
+    bool configureAlternativeMode(unsigned pool,unsigned instrument,unsigned index,int mode) noexcept {return alternativeBank_.setMode(pool,instrument,index,mode);}
+    AlternativeArbiter::Request requestAlternative(unsigned source,unsigned slot,std::uint64_t arbitration=0) noexcept {
+        using Request=AlternativeArbiter::Request;
+        if(source>=4||slot>=4||alternativeFlight_.valid)return Request::Rejected;
+        const int instrument=alternativeBank_.binding(source,slot);SourcePatchBank::Values values{};
+        if(instrument<0||!alternativeBank_.base(source/2,static_cast<unsigned>(instrument),core_.nativeLive().sessionConfig(),values))return Request::Rejected;
+        if(arbitration==0){if(alternativeArbitration_==UINT64_MAX)return Request::Rejected;arbitration=alternativeArbitration_+1;}
+        if(arbitration<alternativeArbitration_)return Request::Rejected;
+        auto draft=alternatives_;const auto result=draft.request(source,instrument,arbitration);
+        if(result==Request::Accepted&&!transportStopped_&&!musicalScheduler_.replace(5,0,ScheduleWhen::NextBar))return Request::Rejected;
+        if(result==Request::Rejected)return result;
+        alternatives_=draft;alternativeArbitration_=arbitration;
+        if(result==Request::Accepted){alternativeBases_[source]=values;alternativeBaseValid_[source]=true;alternativePendingOrder_[source]=transportStopped_?0:musicalScheduler_.orderOf(5,0);}
+        if(result==Request::Cancelled)alternativeBaseValid_[source]=false;
+        if(transportStopped_&&result==Request::Accepted)beginAlternativeChange();
+        return result;
+    }
+    void requestPresetPage(bool show) noexcept {presetFaceRequest_.store(show?1:0,std::memory_order_release);}
+    bool presetPageVisibleForHost()const noexcept {return publishedPresetFace_.load(std::memory_order_acquire);}
     bool showPresetPage() noexcept {
-        auto n=core_.nativeNav().active();n.at(292)=1;n.presetFlag=1;
+        if(core_.nativeNav().active().at(292)==1&&core_.nativeNav().active().presetFlag==1&&!mutePageVisible())return true;
+        const auto before=presetSignature();auto n=core_.nativeNav().active();n.at(292)=1;n.presetFlag=1;
         if(!l01::NavS3::regenerate(n)||!core_.stageNativeNav(n)||!core_.commitNativeNav())return false;
-        muteGate_.restoreVisible(false);return true;
+        muteGate_.restoreVisible(false);presetInstrumentGroup_=lastInstrumentGroup_;invalidatePresetsIfChanged(before);return true;
     }
     bool leavePresetPage() noexcept {
-        auto n=core_.nativeNav().active();n.at(292)=n.contextMode;n.presetFlag=0;
-        return l01::NavS3::regenerate(n)&&core_.stageNativeNav(n)&&core_.commitNativeNav();
+        if(core_.nativeNav().active().at(292)!=1||core_.nativeNav().active().presetFlag!=1)return true;
+        const auto before=presetSignature();auto n=core_.nativeNav().active();n.at(292)=n.contextMode;n.presetFlag=0;
+        if(!l01::NavS3::regenerate(n)||!core_.stageNativeNav(n)||!core_.commitNativeNav())return false;
+        invalidatePresetsIfChanged(before);return true;
     }
     // INIT uses a separately supplied local reference, never a fabricated RESET zero.
     bool configureGlobalInit(const GlobalSnapshot& reference) noexcept {
@@ -249,8 +286,9 @@ public:
     }
     bool presetEngaged(unsigned slot)const noexcept {return slot<4&&presetEngaged_[slot];}
     bool presetMusicallyValid(unsigned slot)const noexcept {return slot<4&&presetValid_[slot];}
-    int pendingPreset()const noexcept {return pendingPresetSlot_;}
+    int pendingPreset()const noexcept {return pendingPresetSlot_>=0?pendingPresetSlot_:(alternativeFlight_.valid&&alternativeFlight_.global?alternativeFlight_.presetSlot:-1);}
     bool redActive()const noexcept {return redActive_;}
+    bool alternativeSwitchPending()const noexcept {return alternativeFlight_.valid;}
     bool capturePreset(unsigned slot) noexcept {
         if(slot>=4||redActive_)return false;
         const bool before=presetEngaged_[slot];presetEngaged_[slot]=true;
@@ -261,7 +299,8 @@ public:
     bool requestPresetRecall(unsigned slot) noexcept {
         if(slot>=4||!presets_[slot].admissible(core_.nativeLive().sessionConfig()))return false;
         if(transportStopped_){
-            if(!applyGlobal(presets_[slot],false))return false;
+            applyingPresetSlot_=static_cast<int>(slot);const bool applied=applyGlobal(presets_[slot],false);applyingPresetSlot_=-1;
+            if(!applied)return false;
         }else{
             if(!musicalScheduler_.replace(3,0,ScheduleWhen::NextBar))return false;
             pendingPresetImage_=presets_[slot];pendingPresetSlot_=static_cast<int>(slot);
@@ -285,13 +324,13 @@ public:
     // Native commands use contractual owner IDs, not external destinations.
     bool captureMemory(int owner,int slot) noexcept {
         const int index=l01::BankS6::memoryIndex(owner,slot);
-        if(index<0||!core_.captureNativeMemory(owner,slot))return false;
+        if(index<0||(owner<12&&alternativeSourceBusy(owner/3))||!core_.captureNativeMemory(owner,slot))return false;
         memoryEngaged_[static_cast<unsigned>(index)]=true;return true;
     }
     void observeTransport(bool running) noexcept {transportStopped_=!running;}
     void forgetTransport() noexcept {transportStopped_=false;}
     bool requestMemoryRecall(int owner,int slot) noexcept {
-        if(!memoryEngaged(owner,slot))return false;
+        if(!memoryEngaged(owner,slot)||(owner<12&&alternativeSourceBusy(owner/3)))return false;
         l01::BankS6::MemoryRecord saved{};
         if(!core_.nativeBank().readMemory(owner,slot,saved)||!saved.valid||saved.config!=core_.nativeLive().sessionConfig())return false;
         if(!transportStopped_&&!musicalScheduler_.replace(2,static_cast<uint16_t>(owner),ScheduleWhen::NextBeat))return false;
@@ -300,9 +339,9 @@ public:
         return true;
     }
     bool requestSourceRecall(unsigned source,unsigned choice) noexcept {
-        if(source>=4||choice>3)return false;
+        if(source>=4||choice>3||alternativeSourceBusy(static_cast<int>(source)))return false;
         if(!transportStopped_&&!musicalScheduler_.replace(1,static_cast<uint16_t>(source),ScheduleWhen::NextBar))return false;
-        sourcePending_[source]=static_cast<int>(choice);sourceStatus_[source]=SourceRecallStatus::Pending;
+        sourcePending_[source]=static_cast<int>(choice);sourcePendingAlternative_[source]=activeAlternative(source);sourceStatus_[source]=SourceRecallStatus::Pending;
         if(transportStopped_)applySourceRecall(source);
         return true;
     }
@@ -321,15 +360,19 @@ public:
             if(!v.known)return false;
             values[f]=v.value;
         }
+        if(alternativeFlight_.valid&&alternativeFlight_.plan.from[source]!=alternativeFlight_.plan.to[source])return false;
+        const int instrument=activeAlternative(source);
+        if(instrument>=0)return alternativeBank_.save(source/2,static_cast<unsigned>(instrument),slot,core_.nativeLive().sessionConfig(),values);
         return sourcePatches_.save(source,slot,core_.nativeLive().sessionConfig(),values);
     }
     bool readSourcePatch(unsigned source,unsigned slot,SourcePatchBank::Patch& out)const noexcept {
-        return sourcePatches_.read(source,slot,out);
+        const int instrument=activeAlternative(source);
+        return instrument>=0?alternativeBank_.patch(source/2,static_cast<unsigned>(instrument),slot,out):sourcePatches_.read(source,slot,out);
     }
     SourceRecallStatus sourceRecallStatus(unsigned source)const noexcept {
         return source<4?sourceStatus_[source]:SourceRecallStatus::None;
     }
-    struct SourcePacket {bool valid{};unsigned token{};int type{},api{-1},value{};std::array<uint8_t,3> bytes{};int key{127};};
+    struct SourcePacket {bool valid{};unsigned token{};int type{},api{-1},value{};std::array<uint8_t,3> bytes{};int key{127};std::uint64_t closure{};};
     SourcePacket nextSourcePacket()const noexcept {
         if(sourceRead_==sourceWrite_||sourceBlocked_)return {};
         return sourceMidi_[sourceRead_%sourceMidi_.size()];
@@ -340,7 +383,13 @@ public:
         if(!current.valid||packet.token!=current.token)return;
         Result r{true,{current.bytes[0],current.bytes[1],current.bytes[2]},sequence_,sample,true,current.api,current.value,current.type};
         r.key=current.key;sent(r,success?0:-1);
-        if(success)++sourceRead_;else sourceBlocked_=true;
+        if(success){
+            ++sourceRead_;
+            if(current.closure!=0&&alternativeFlight_.valid&&current.closure==alternativeFlight_.serial&&alternativeFlight_.waiting){
+                --alternativeFlight_.waiting;
+                if(alternativeFlight_.waiting==0)finishAlternativeChange();
+            }
+        }else sourceBlocked_=true;
     }
     int cueLoadSent(unsigned group) const noexcept {return cueLoad_.sentSelection(group);}
     int cueLoadPending(unsigned group) const noexcept {return cueLoad_.pendingSelection(group);}
@@ -354,19 +403,24 @@ public:
     }
     const GlobalMuteState& globalMute() const noexcept {return muteBridge_.state();}
     unsigned onMusicalGrid(const GridBatch& b) noexcept {
+        if(b.valid&&!b.overflow&&b.count<=b.events.size())started_=true;
         unsigned committed=soft_.observe(b); // only authenticated BAR, never timer
         if(b.valid&&!b.overflow&&b.count<=b.events.size()){
             musicalScheduler_.consume(b,[this](DueAction due) noexcept -> bool {
-                if(due.action.command==1)applySourceRecall(due.action.destination);
-                else if(due.action.command==2)applyMemoryRecall(due.action.destination);
+                if(due.action.command==1){if(alternativeFlight_.valid&&alternativeFlight_.global)return false;applySourceRecall(due.action.destination);}
+                else if(due.action.command==2){if(alternativeFlight_.valid&&alternativeFlight_.global)return false;applyMemoryRecall(due.action.destination);}
+                else if(due.action.command==5)return beginAlternativeChange();
                 else if(due.action.command==4){
                     if(!initPending_)return true;
-                    if(!applyGlobal(globalInit_,false))return false;
+                    applyingGlobalOrder_=due.action.order;const bool applied=applyGlobal(globalInit_,false);applyingGlobalOrder_=0;
+                    if(!applied)return false;
                     initPending_=false;
                 }else if(due.action.command==3){
                     const int slot=pendingPresetSlot_;
                     if(slot<0)return true;
-                    if(!applyGlobal(pendingPresetImage_,false))return false;
+                    applyingPresetSlot_=slot;applyingGlobalOrder_=due.action.order;
+                    const bool applied=applyGlobal(pendingPresetImage_,false);applyingPresetSlot_=-1;applyingGlobalOrder_=0;
+                    if(!applied)return false;
                     pendingPresetSlot_=-1;presetValid_[static_cast<unsigned>(slot)]=true;
                 }
                 return true;
@@ -450,11 +504,36 @@ private:
             const auto presetRoute=physical>=4&&physical<20?core_.nativeNav().active().route(physical):l01::NavRoute{};
             const bool presetSource=baseEvent&&!muteBaseOwned&&!wasHeld&&cmd==0x90&&data[2]!=0&&
                 core_.nativeNav().active().presetFlag==1&&presetRoute.address==14*1024+17*32&&presetRoute.position>=0&&presetRoute.position<=4;
+            const bool wasPresetFrame=core_.nativeNav().active().at(292)==1&&core_.nativeNav().active().presetFlag==1&&!mutePageVisible();
+            l01::NavRoute inputRoute{};
+            if(physical>=4)inputRoute=core_.nativeNav().active().route(physical);
+            else if(cmd==0xB0&&data[1]<20)inputRoute=core_.nativeNav().active().route(36+data[1]);
+            const int inputSource=sourceForRoute(inputRoute);
+            const bool newSourceCommand=(cmd==0xB0&&data[1]<20)||(cmd==0x90&&data[2]!=0&&!wasHeld);
+            if(newSourceCommand&&alternativeSourceBusy(inputSource)&&
+               (inputSource>=0||(alternativeFlight_.global&&cmd==0xB0&&data[1]<20))){
+                record(seq,sample,Stage::Decision,Reason::Rejected,0,data,3);return {};
+            }
             const int previousNav=navMode();
             core_.retainDjLoopPage(dj2LoopObserved_!=Dj2LoopObserved::Off || dj2LoopStartRequested_);
             const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs,muteBaseOwned);
             record(seq,sample,Stage::Decision,accepted?Reason::Integrated:Reason::ClockRejected,cable,data,length);
             if(accepted)resolveDjLoopNavigation(previousNav);
+            if(accepted&&inputSource>=0&&newSourceCommand)lastInstrumentGroup_=inputSource;
+            if(accepted&&!wasPresetFrame&&core_.nativeNav().active().at(292)==1&&core_.nativeNav().active().presetFlag==1&&!mutePageVisible())
+                presetInstrumentGroup_=lastInstrumentGroup_;
+            if(accepted&&physical>=12&&physical<20){
+                auto& selector=alternativeSelectors_[static_cast<unsigned>(physical-12)];
+                const bool down=cmd==0x90&&data[2]!=0;
+                if(down&&!wasHeld&&wasPresetFrame)selector={true,physical<16?physical-12:presetInstrumentGroup_,physical<16?-1:physical-16,gestureMs,core_.nativeNav().revision()};
+                else if(!down&&wasHeld&&selector.held){
+                    const auto captured=selector;selector={};
+                    if(wasPresetFrame&&gestureMs>=captured.down&&gestureMs-captured.down<200&&captured.navRevision==core_.nativeNav().revision()){
+                        if(captured.slot<0)consultPresetInstrumentGroup(static_cast<unsigned>(captured.source));
+                        else if(captured.source>=0)requestAlternative(static_cast<unsigned>(captured.source),static_cast<unsigned>(captured.slot));
+                    }
+                }
+            }
             // A GROUP source proof lives only between a TRUE DOWN and its
             // TRUE UP; STOP invalidates the epoch even if SurfaceInput keeps
             // the physical Held bit until the real release.
@@ -807,6 +886,13 @@ public:
     void beginRenderBuffer() noexcept {
         muteLeds_.beginBuffer();
         started_=true;
+        const int faceRequest=presetFaceRequest_.exchange(-1,std::memory_order_acq_rel);
+        if(faceRequest==1)showPresetPage();else if(faceRequest==0)leavePresetPage();
+        if(alternativeFlight_.valid&&alternativeFlight_.waiting==0&&!restores_.hasUpdate())finishAlternativeChange();
+        else if(transportStopped_&&!alternativeFlight_.valid&&!restores_.hasUpdate()){
+            bool pending=false;for(int target:alternatives_.pending())if(target>=0)pending=true;
+            if(pending)beginAlternativeChange();
+        }
         // A session must not replace an active SOFT owner while its MIDI
         // NoteOff may still be due (this debt is outside OutputS4).
         if(!restores_.hasUpdate()||core_.output().outstanding()!=0||soft_.hasOutstandingNotes()||topPulse_.hasOwedOff())return;
@@ -819,11 +905,13 @@ public:
             musicalScheduler_.stop();sourcePending_.fill(-1);sourceStatus_.fill(SourceRecallStatus::None);
             for(auto& pending:memoryPending_)pending={};
             memoryEngaged_.fill(false);presetEngaged_.fill(false);presetValid_.fill(false);
+            alternativeFlight_={};alternatives_.stop();alternativeBaseValid_.fill(false);
             pendingPresetSlot_=-1;initPending_=false;redActive_=false;redImage_.valid=false;redHeld_=false;
             sourceRead_=sourceWrite_;sourceBlocked_=false;cueLoad_.stop();
         }
     }
     void endRenderBuffer() noexcept {
+        publishedPresetFace_.store(core_.nativeNav().active().at(292)==1&&core_.nativeNav().active().presetFlag==1&&!mutePageVisible(),std::memory_order_release);
         const auto revision=core_.nativeLive().revision();
         if(revision==publishedRevision_&&appliedToken_==publishedToken_)return;
         snapshots_.publish({core_.nativeLive().snapshot(),appliedToken_});
@@ -906,7 +994,9 @@ public:
     void beginStopRetryPass(int64_t sample) noexcept {stopRead_=0;stopSample_=sample;}
     unsigned pendingStopOffs() const noexcept {return stopPendingCount_;}
     void stop(int64_t sample) noexcept {
-        started_=true;transportStopped_=true;
+        started_=true;transportStopped_=true;presetFaceRequest_.store(-1,std::memory_order_release);
+        alternativeFlight_={};alternatives_.stop();alternativeBaseValid_.fill(false);
+        for(auto& selector:alternativeSelectors_)selector={};
         redActive_=false;redImage_.valid=false;redHeld_=false;pendingPresetSlot_=-1;initPending_=false;
         // Keep output debts until the real callback confirms each OFF.
         const auto output=core_.output();
@@ -1120,7 +1210,7 @@ private:
         if(selected<=8){
             const unsigned source=static_cast<unsigned>((selected-1)/2);
             SourcePatchBank::Patch patch{};
-            if(!sourcePatches_.read(source,static_cast<unsigned>(slot),patch)||patch.config!=core_.nativeLive().sessionConfig())return;
+            if(!readSourcePatch(source,static_cast<unsigned>(slot),patch)||patch.config!=core_.nativeLive().sessionConfig())return;
             if(!requestSourceRecall(source,static_cast<unsigned>(slot)))return;
             pairedTopSource_=transportStopped_?-1:static_cast<int>(source);
             topIntentValid_[index]=false;return;
@@ -1176,9 +1266,10 @@ private:
                 const int m=s8Sample_.mode(static_cast<unsigned>(cell/40),static_cast<unsigned>(cell%40-16));
                 if(m>=1&&m<=4)selected={true,m};
             }else if(cell>=320&&cell<1328&&(cell-320)%42>=18&&(cell-320)%42<30){
-                const int m=s8Machine_.mode(static_cast<unsigned>((cell-320)/42),
-                                            static_cast<unsigned>((cell-320)%42-18));
+                const int machine=(cell-320)/42;
+                const int m=s8MachineMode(machine,(cell-320)%42-18);
                 if(m>=1&&m<=4)selected={true,m};
+                else if(machine<8&&activeAlternative(static_cast<unsigned>(machine/2))>=0)selected={};
             }
             api=spotApi(cell);
             if(!live.known||live.value>1||!selected.known||selected.value<1||selected.value>4||api<0)return {};
@@ -1297,6 +1388,140 @@ private:
     TopPulseBus topPulse_{};
     S8SamplePatchBank s8Sample_{};
     S8MachinePatchBank s8Machine_{};
+    static int sourceForRoute(l01::NavRoute route) noexcept {
+        if(route.address<0)return -1;
+        const int family=(route.address%1024)/32,page=route.address%32;
+        if(family==2&&page>=1&&page<=8)return (page-1)/2;
+        if((family==3||family==4)&&page>=1&&page<=8)return 2*(family-3)+(page>4?1:0);
+        if(family==13&&page==0&&route.position>=0&&route.position<4)return route.position;
+        if(family==0&&page==0&&route.address/1024==0&&route.position>=0&&route.position<4)return route.position;
+        return -1;
+    }
+    static int sourceForPacket(int api,int type) noexcept {
+        if(type==10){
+            if(api>=128&&api<272)return (api-128)/36;
+            if(api>=709&&api<713)return api-709;
+            if(api>=715&&api<811)return (api-715)/24;
+        }else{
+            if(api>=96&&api<192)return (api-96)/24;
+            if(api>=384&&api<432)return (api-384)/12;
+        }
+        return -1;
+    }
+    static int sourceForCell(int cell) noexcept {
+        if(cell>=320&&cell<656)return (cell-320)/84;
+        if(cell>=1546&&cell<1550)return cell-1546;
+        if(cell>=1552&&cell<1648)return (cell-1552)/24;
+        if(cell>=1768&&cell<1816)return (cell-1768)/12;
+        return -1;
+    }
+    bool alternativeSourceBusy(int source)const noexcept {
+        return alternativeFlight_.valid&&(alternativeFlight_.global||(source>=0&&source<4&&alternativeFlight_.plan.from[static_cast<unsigned>(source)]!=alternativeFlight_.plan.to[static_cast<unsigned>(source)]));
+    }
+    bool beginGlobalAlternativeChange(const AlternativeArbiter::Plan& plan,const GlobalSnapshot& image,bool redRestore) noexcept {
+        if(topPulse_.hasOwedOff()||core_.nativeNav().hasStage()||alternativeSerial_==UINT64_MAX)return false;
+        AlternativeFlight flight{};flight.valid=flight.global=true;flight.redRestore=redRestore;flight.plan=plan;flight.image=image;
+        flight.serial=alternativeSerial_+1;flight.presetSlot=applyingPresetSlot_;flight.reserved=2048;
+        flight.acceptedOrder=applyingGlobalOrder_?applyingGlobalOrder_:musicalScheduler_.lastOrder();
+        std::array<SourcePacket,144> offs{};unsigned count=0;std::array<bool,544> seen{};
+        const auto affected=[&](int api) noexcept {const int source=sourceForPacket(api,11);return source>=0&&plan.from[static_cast<unsigned>(source)]!=plan.to[static_cast<unsigned>(source)];};
+        const auto add=[&](int api,int type,int key=127) noexcept {
+            if(count==offs.size())return false;
+            offs[count++]={true,0,type,api,0,{static_cast<uint8_t>(0x86+api/128),static_cast<uint8_t>(api%128),0},key,flight.serial};
+            seen[static_cast<unsigned>(api)]=true;return true;
+        };
+        for(int key=0;key<36;++key){const int api=core_.output().owner(key);if(api>=0&&affected(api)&&!add(api,13,key))return false;}
+        for(int api=0;api<528;++api)if(affected(api)&&core_.output().debt(api)&&!seen[static_cast<unsigned>(api)]&&!add(api,11))return false;
+        flight.waiting=count;alternativeSerial_=flight.serial;alternativeFlight_=flight;sourceRead_=sourceWrite_;
+        for(unsigned i=0;i<count;++i){auto packet=offs[i];packet.token=++sourcePacketToken_;sourceMidi_[sourceWrite_++%sourceMidi_.size()]=packet;}
+        for(auto& hold:spots_){const int source=sourceForCell(hold.cell);if(source>=0&&plan.from[static_cast<unsigned>(source)]!=plan.to[static_cast<unsigned>(source)])hold={};}
+        for(auto& hold:topHold_){const int source=sourceForRoute(hold.route);if(source>=0&&plan.from[static_cast<unsigned>(source)]!=plan.to[static_cast<unsigned>(source)])hold={};}
+        return count?true:finishAlternativeChange();
+    }
+    bool beginAlternativeChange() noexcept {
+        if(alternativeFlight_.valid)return alternativeFlight_.waiting==0?finishAlternativeChange():true;
+        AlternativeArbiter::Ready ready{};
+        for(unsigned i=0;i<4;++i)ready[i]=alternativeBaseValid_[i];
+        auto plan=alternatives_.prepareNextBar(ready);if(!plan.valid)return false;
+        if(plan.from==plan.to)return true;
+        if(topPulse_.hasOwedOff()||core_.nativeNav().hasStage()||alternativeSerial_==UINT64_MAX)return false;
+        AlternativeFlight flight{};flight.valid=true;flight.plan=plan;flight.bases=alternativeBases_;flight.serial=alternativeSerial_+1;
+        std::array<SourcePacket,144> offs{};unsigned offCount=0;std::array<bool,544> seen{};
+        const auto affected=[&](int api,int type) noexcept {const int group=sourceForPacket(api,type);return group>=0&&plan.from[static_cast<unsigned>(group)]!=plan.to[static_cast<unsigned>(group)];};
+        const auto addOff=[&](int api,int type,int key=127) noexcept {
+            if(offCount==offs.size())return false;
+            offs[offCount++]={true,0,type,api,0,{static_cast<uint8_t>(0x86+api/128),static_cast<uint8_t>(api%128),0},key,flight.serial};
+            seen[static_cast<unsigned>(api)]=true;return true;
+        };
+        for(int key=0;key<36;++key){const int api=core_.output().owner(key);
+            if(api>=0&&affected(api,11)&&!addOff(api,13,key))return false;}
+        for(int api=0;api<528;++api)if(affected(api,11)&&core_.output().debt(api)&&!seen[static_cast<unsigned>(api)]&&!addOff(api,11))return false;
+        std::array<SourcePacket,2048> retained{};unsigned keep=0;
+        for(unsigned n=0;n<sourceWrite_-sourceRead_;++n){const auto packet=sourceMidi_[(sourceRead_+n)%sourceMidi_.size()];
+            if(!affected(packet.api,packet.type))retained[keep++]=packet;}
+        for(unsigned source=0;source<4;++source)if(plan.from[source]!=plan.to[source])flight.reserved+=97;
+        if(keep+offCount+flight.reserved>sourceMidi_.size())return false;
+        alternativeSerial_=flight.serial;flight.waiting=offCount;alternativeFlight_=flight;
+        sourceRead_=sourceWrite_;
+        for(unsigned n=0;n<keep;++n)sourceMidi_[sourceWrite_++%sourceMidi_.size()]=retained[n];
+        for(unsigned n=0;n<offCount;++n){auto packet=offs[n];packet.token=++sourcePacketToken_;sourceMidi_[sourceWrite_++%sourceMidi_.size()]=packet;}
+        for(unsigned source=0;source<4;++source)if(plan.from[source]!=plan.to[source]){
+            musicalScheduler_.cancel(1,static_cast<uint16_t>(source));sourcePending_[source]=-1;cueLoad_.cancelPending(source);
+            if(sourceStatus_[source]==SourceRecallStatus::Pending)sourceStatus_[source]=SourceRecallStatus::None;
+            if(pairedTopSource_==static_cast<int>(source))pairedTopSource_=-1;
+            for(auto& hold:spots_)if(sourceForCell(hold.cell)==static_cast<int>(source))hold={};
+            for(auto& hold:topHold_)if(sourceForRoute(hold.route)==static_cast<int>(source))hold={};
+        }
+        return offCount?true:finishAlternativeChange();
+    }
+    bool finishAlternativeChange() noexcept {
+        if(!alternativeFlight_.valid||alternativeFlight_.waiting)return false;
+        const auto flight=alternativeFlight_;
+        if(flight.global){const auto previous=applyingGlobalOrder_;applyingGlobalOrder_=flight.acceptedOrder;
+            const bool applied=applyGlobal(flight.image,flight.redRestore);applyingGlobalOrder_=previous;return applied;}
+        auto draft=alternatives_;
+        if(!draft.finalize(flight.plan,true))return false;
+        const int config=core_.nativeLive().sessionConfig();std::array<SourcePatchBank::Values,4> before{};
+        std::array<int,388> cells{},values{};unsigned fields=0;
+        std::array<SourcePacket,388> packets{};unsigned count=0;
+        for(unsigned source=0;source<4;++source)if(flight.plan.from[source]!=flight.plan.to[source]){
+            for(unsigned f=0;f<60;++f){const int cell=SourcePatchBank::cell(source,f);const auto prior=core_.nativeLive().desired(cell);
+                before[source][f]=prior.known?prior.value:-2;cells[fields]=cell;values[fields++]=flight.bases[source][f];}
+            for(int f=0;f<24;++f){cells[fields]=1552+24*static_cast<int>(source)+f;values[fields++]=0;}
+            for(int f=0;f<12;++f){cells[fields]=1768+12*static_cast<int>(source)+f;values[fields++]=0;}
+            cells[fields]=1546+static_cast<int>(source);values[fields++]=0;
+            for(unsigned f=0;f<97;++f){
+                int api=-1,type=10,value=0;
+                if(f<60){api=SourcePatchBank::api(source,f);type=SourcePatchBank::type(f);value=flight.bases[source][f];}
+                else if(f<84)api=715+24*static_cast<int>(source)+static_cast<int>(f)-60;
+                else if(f<96){api=384+12*static_cast<int>(source)+static_cast<int>(f)-84;type=11;}
+                else api=709+static_cast<int>(source);
+                const auto status=static_cast<uint8_t>((type==10?0xB6:value?0x96:0x86)+api/128);
+                packets[count++]={true,0,type,api,value,{status,static_cast<uint8_t>(api%128),static_cast<uint8_t>(type==10?value:value?127:0)}};
+            }
+        }
+        if(sourceWrite_-sourceRead_+count>sourceMidi_.size()||!core_.commitNativeAlternativeBases(cells,values,fields,config))return false;
+        alternatives_=draft;alternativeFlight_={};alternativeBaseValid_.fill(false);
+        for(unsigned source=0;source<4;++source)if(flight.plan.from[source]!=flight.plan.to[source]){
+            if(flight.plan.from[source]>=0)alternativeBank_.remember(source/2,static_cast<unsigned>(flight.plan.from[source]),before[source]);
+            disengageSourceMemories(source);
+        }
+        for(unsigned n=0;n<count;++n){auto packet=packets[n];packet.token=++sourcePacketToken_;sourceMidi_[sourceWrite_++%sourceMidi_.size()]=packet;
+            if(packet.type==10)pickup_.rearm(packet.api);}
+        return true;
+    }
+    struct AlternativeFlight {bool valid{},global{},redRestore{};AlternativeArbiter::Plan plan{};std::array<SourcePatchBank::Values,4> bases{};
+        GlobalSnapshot image{};std::uint64_t serial{},acceptedOrder{};unsigned waiting{},reserved{};int presetSlot{-1};};
+    AlternativeArbiter alternatives_{};
+    AlternativeBank alternativeBank_{};
+    AlternativeFlight alternativeFlight_{};
+    std::array<SourcePatchBank::Values,4> alternativeBases_{};
+    std::array<bool,4> alternativeBaseValid_{};
+    std::array<std::uint64_t,4> alternativePendingOrder_{};
+    std::uint64_t alternativeArbitration_{},alternativeSerial_{};
+    int lastInstrumentGroup_{-1},presetInstrumentGroup_{-1};
+    struct AlternativeSelector {bool held{};int source{-1},slot{-1};int64_t down{};std::uint64_t navRevision{};};
+    std::array<AlternativeSelector,8> alternativeSelectors_{};
     using PresetSignature=std::array<bool,19>; // IDs 1,3..20, ID2 PRESET excluded
     PresetSignature presetSignature()const noexcept {
         PresetSignature signature{};const auto& n=core_.nativeNav().active();
@@ -1319,6 +1544,7 @@ private:
     void invalidatePresetsIfChanged(const PresetSignature& before) noexcept {
         if(before==presetSignature())return;
         presetValid_.fill(false);pendingPresetSlot_=-1;initPending_=false;
+        if(alternativeFlight_.valid&&alternativeFlight_.global&&!alternativeFlight_.redRestore){alternativeFlight_={};alternatives_.stop();}
         musicalScheduler_.cancel(3,0);musicalScheduler_.cancel(4,0);
     }
     GlobalSnapshot captureGlobal()const noexcept {
@@ -1326,7 +1552,7 @@ private:
         for(unsigned cell=0;cell<image.live.desired.size();++cell)
             if(!GlobalSnapshot::inScope(cell))image.live.desired[cell]=-2;
         image.mute=muteBridge_.state().applied();image.muteVisible=mutePageVisible();
-        image.soft=soft_.applied();image.cueSelections=cueLoad_.desiredSelections();image.memoryEngaged=memoryEngaged_;image.presetEngaged=presetEngaged_;
+        image.alternatives=alternatives_.active();image.soft=soft_.applied();image.cueSelections=cueLoad_.desiredSelections();image.memoryEngaged=memoryEngaged_;image.presetEngaged=presetEngaged_;
         image.valid=true;return image;
     }
     static int globalApi(unsigned cell,int& type) noexcept {
@@ -1346,7 +1572,21 @@ private:
     }
     bool applyGlobal(const GlobalSnapshot& image,bool redRestore) noexcept {
         const auto& live=core_.nativeLive();
-        if(!image.admissible(live.sessionConfig())||live.revision()>=l01::LiveState::MaxRevision)return false;
+        if(!image.admissible(live.sessionConfig())||live.revision()>=l01::LiveState::MaxRevision||globalApplySerial_==UINT64_MAX)return false;
+        AlternativeArbiter::Ready ready{};
+        for(unsigned source=0;source<4;++source){SourcePatchBank::Values ignored{};
+            ready[source]=image.alternatives[source]<0||alternativeBank_.base(source/2,static_cast<unsigned>(image.alternatives[source]),live.sessionConfig(),ignored);}
+        const auto plan=alternatives_.prepareRecall(image.alternatives,ready);if(!plan.valid)return false;
+        bool closing=false;
+        for(int api=0;api<528;++api){const int source=sourceForPacket(api,11);
+            if(source>=0&&plan.from[static_cast<unsigned>(source)]!=plan.to[static_cast<unsigned>(source)]&&core_.output().debt(api))closing=true;}
+        for(int key=0;key<36;++key){const int api=core_.output().owner(key),source=sourceForPacket(api,11);
+            if(api>=0&&source>=0&&plan.from[static_cast<unsigned>(source)]!=plan.to[static_cast<unsigned>(source)])closing=true;}
+        if(closing)return beginGlobalAlternativeChange(plan,image,redRestore);
+        const auto cutoff=applyingGlobalOrder_?applyingGlobalOrder_:musicalScheduler_.lastOrder();
+        AlternativeArbiter::Ready preserve{};
+        for(unsigned source=0;source<4;++source)preserve[source]=alternatives_.pending()[source]>=0&&alternativePendingOrder_[source]>cutoff;
+        auto alternativeDraft=alternatives_;if(!alternativeDraft.finalize(plan,true,preserve))return false;
         const auto before=live.snapshot();auto target=before;target.revision=live.revision()+1;
         for(unsigned cell=0;cell<target.desired.size();++cell)
             if(GlobalSnapshot::inScope(cell))target.desired[cell]=image.live.desired[cell];
@@ -1379,7 +1619,20 @@ private:
             }else if(value<0)continue;
             if(!append(api,type,value))return false;
         }
+        const bool wasPresetFrame=core_.nativeNav().active().at(292)==1&&core_.nativeNav().active().presetFlag==1&&!mutePageVisible();
         if(count>sourceMidi_.size()||!core_.commitNativeGlobalRecall(target,image.nav))return false;
+        for(unsigned source=0;source<4;++source)if(plan.from[source]>=0&&plan.from[source]!=plan.to[source]){
+            SourcePatchBank::Values last{};for(unsigned f=0;f<60;++f)last[f]=before.desired[static_cast<unsigned>(SourcePatchBank::cell(source,f))];
+            alternativeBank_.remember(source/2,static_cast<unsigned>(plan.from[source]),last);
+        }
+        for(unsigned source=0;source<4;++source)if(plan.from[source]!=plan.to[source]){
+            musicalScheduler_.cancel(1,static_cast<uint16_t>(source));sourcePending_[source]=-1;cue.cancelUnstarted(source);
+            disengageSourceMemories(source);
+            for(auto& hold:topHold_)if(sourceForRoute(hold.route)==static_cast<int>(source))hold={};
+        }
+        alternatives_=alternativeDraft;alternativeFlight_={};bool pendingAlternative=false;
+        for(unsigned source=0;source<4;++source){if(alternatives_.pending()[source]<0)alternativeBaseValid_[source]=false;else pendingAlternative=true;}
+        if(!pendingAlternative)musicalScheduler_.cancel(5,0);
         // Whole-world recall supersedes older queued absolute values, while
         // owed OFFs above survive and future musical requests remain queued.
         // Keep sourceBlocked_: a failed OFF still waits until next render.
@@ -1390,6 +1643,7 @@ private:
             if(type==10&&api>=0&&before.desired[cell]!=target.desired[cell])pickup_.rearm(api);
         }
         muteBridge_=mute;soft_=soft;cueLoad_=cue;muteGate_.restoreVisible(image.muteVisible);muteMidi_.observe(globalMute());
+        if(!wasPresetFrame&&image.nav.at(292)==1&&image.nav.presetFlag==1&&!image.muteVisible)presetInstrumentGroup_=lastInstrumentGroup_;
         memoryEngaged_=image.memoryEngaged;presetEngaged_=image.presetEngaged;
         for(unsigned owner=0;owner<28;++owner)for(int slot=0;slot<(owner<12?4:3);++slot){
             l01::BankS6::MemoryRecord record{};
@@ -1402,9 +1656,9 @@ private:
     std::array<GlobalSnapshot,4> presets_{};
     GlobalSnapshot pendingPresetImage_{},redImage_{},globalInit_{};
     std::array<bool,4> presetEngaged_{},presetValid_{};
-    int pendingPresetSlot_{-1};
+    int pendingPresetSlot_{-1},applyingPresetSlot_{-1};
     bool redActive_{},redHeld_{},redWasActive_{},redDirectGesture_{},initPending_{};int64_t redDownMs_{};
-    std::uint64_t globalApplySerial_{};
+    std::uint64_t globalApplySerial_{},applyingGlobalOrder_{};
     struct MemoryPending {int slot{-1},config{-2};l01::BankS6::MemoryImage values{};};
     bool memoryGesture(int owner,int slot) noexcept {
         return memoryEngaged(owner,slot)?requestMemoryRecall(owner,slot):captureMemory(owner,slot);
@@ -1424,7 +1678,7 @@ private:
             auto prior=core_.nativeLive().desired(cells[f]);changed[f]=!prior.known||prior.value!=values[f];
             for(const auto& hold:spots_)if(hold.cell==cells[f])return;
         }
-        if(sourceWrite_-sourceRead_+9>sourceMidi_.size()||!core_.commitNativeSourceRecall(cells,values,9,request.config))return;
+        if(sourceWrite_-sourceRead_+9+alternativeFlight_.reserved>sourceMidi_.size()||!core_.commitNativeSourceRecall(cells,values,9,request.config))return;
         for(unsigned f=0;f<9;++f){
             int api=cells[f]-(f<6?837:1384),type=f<6?10:11,value=values[f];
             if(type==10&&changed[f])pickup_.rearm(api);
@@ -1443,9 +1697,13 @@ private:
         {
             const int slot=sourcePending_[source];if(slot<0)return;
             sourcePending_[source]=-1;
+            if(sourcePendingAlternative_[source]!=activeAlternative(source)){sourceStatus_[source]=SourceRecallStatus::Busy;return;}
             const int config=core_.nativeLive().sessionConfig();
             if(config<1){sourceStatus_[source]=SourceRecallStatus::UnknownConfig;return;}
             SourcePatchBank::Values patch{};patch.fill(0);
+            const int instrument=activeAlternative(source);
+            if(slot==3&&instrument>=0&&!alternativeBank_.base(source/2,static_cast<unsigned>(instrument),config,patch)){
+                sourceStatus_[source]=SourceRecallStatus::UnknownConfig;return;}
             if(slot<3){SourcePatchBank::Patch saved{};
                 if(!sourcePatches_.read(source,static_cast<unsigned>(slot),saved)||saved.config!=config){
                     sourceStatus_[source]=SourceRecallStatus::EmptyPatch;return;}
@@ -1468,7 +1726,7 @@ private:
                 changed[f]=!prior.known||prior.value!=values[f];
                 for(const auto& hold:spots_)if(hold.cell==cells[f])busy=true;
             }
-            if(busy||sourceWrite_-sourceRead_+count>sourceMidi_.size()||
+            if(busy||sourceWrite_-sourceRead_+count+alternativeFlight_.reserved>sourceMidi_.size()||
                !core_.commitNativeSourceRecall(cells,values,count,config)){
                 sourceStatus_[source]=SourceRecallStatus::Busy;return;
             }
@@ -1484,7 +1742,7 @@ private:
         }
     }
     SourcePatchBank sourcePatches_{};
-    std::array<int,4> sourcePending_{{-1,-1,-1,-1}};
+    std::array<int,4> sourcePending_{{-1,-1,-1,-1}},sourcePendingAlternative_{{-1,-1,-1,-1}};
     std::array<SourceRecallStatus,4> sourceStatus_{};
     std::array<SourcePacket,2048> sourceMidi_{};
     unsigned sourceRead_{},sourceWrite_{},sourcePacketToken_{};
@@ -1510,6 +1768,8 @@ private:
     std::array<int,702> stopAddresses_{};
     std::array<bool,702> stopAwaiting_{};
     unsigned stopCount_{},stopRead_{},stopPendingCount_{};int64_t stopSample_{};
+    std::atomic<int> presetFaceRequest_{-1};
+    std::atomic<bool> publishedPresetFace_{false};
     bool started_{};
     bool historicalL02Bench_{};
     SessionMailbox restores_{},snapshots_{};

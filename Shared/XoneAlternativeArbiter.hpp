@@ -74,10 +74,13 @@ public:
     }
     // Call ONLY after the old destination owners and their OFF debts are dealt with.
     // false means that physical output could not be closed; logical state is not advanced.
-    bool finalize(const Plan& plan,bool releaseConfirmed) noexcept {
+    bool finalize(const Plan& plan,bool releaseConfirmed,const Ready& preservePending=Ready{}) noexcept {
         if(!releaseConfirmed||!plan.valid||plan.revision!=revision_||
            revision_==std::numeric_limits<std::uint64_t>::max())return false;
-        active_=plan.to;pending_.fill(-1);++revision_;return true;
+        active_=plan.to;
+        for(unsigned i=0;i<4;++i)if(!preservePending[i]||pending_[i]==active_[i]||
+            (pending_[i]>=0&&pending_[i]==active_[i^1u]))pending_[i]=-1;
+        ++revision_;return true;
     }
 private:
     Plan prepare(const Targets& next,const Ready& ready,bool recall) const noexcept {

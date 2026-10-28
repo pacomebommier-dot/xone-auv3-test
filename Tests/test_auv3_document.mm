@@ -371,6 +371,46 @@ int main() {
     assert(decoded.desired[1328]==64&&decoded.desired[0]==-2);
     [redUnit deallocateRenderResources];
 
+    // Generic AU parameter opens the PRESET face; BOT2 keeps its MUTE role.
+    XoneMidiAudioUnit *presetUnit=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
+    assert(presetUnit&&!error);presetUnit.MIDIOutputEventBlock=testOutput;
+    assert([presetUnit.inputBusses[0] setFormat:format error:&error]);
+    assert([presetUnit.outputBusses[0] setFormat:format error:&error]);presetUnit.maximumFramesToRender=8192;
+    assert(xone::host::encodeSession(redSession,bytes));presetUnit.fullState=@{@"XONE_LAST_LIVE_V1":[NSData dataWithBytes:bytes.data() length:bytes.size()]};
+    presetUnit.transportStateBlock=^BOOL(AUHostTransportStateFlags *flags,double *position,double *start,double *end){
+        (void)position;(void)start;(void)end;if(flags)*flags=AUHostTransportStateMoving;return YES;
+    };
+    presetUnit.musicalContextBlock=^BOOL(double *tempo,double *numerator,NSInteger *denominator,double *beatPosition,NSInteger *offset,double *downbeat){
+        if(tempo)*tempo=120;
+        if(numerator)*numerator=4;
+        if(denominator)*denominator=4;
+        if(beatPosition)*beatPosition=static_cast<double>(*musicalCursor)/24000.0;
+        if(offset)*offset=static_cast<NSInteger>(((*musicalCursor+23999)/24000)*24000-*musicalCursor);
+        if(downbeat)*downbeat=0;
+        return YES;
+    };
+    AUParameter *face=[presetUnit.parameterTree parameterWithAddress:0];assert(face&&presetUnit.parameterTree.allParameters.count==1);face.value=1;
+    assert([presetUnit allocateRenderResourcesAndReturnError:&error]);render=presetUnit.internalRenderBlock;cursor=0;
+    const NSUInteger beforePreset=sent;pump(48);assert(sent==beforePreset);
+    auto faceValue=presetUnit.parameterTree.implementorValueProvider;assert(faceValue(face)==1);
+    pump(48,0x9E,36,127);pump(48,0x8E,36,0);assert(sent==beforePreset);
+    pump(48,0xBE,16,64);pump(48,0xBE,16,100);assert(sent==beforePreset+2);
+    pump(48,0x9E,36,127);pump(48,0x8E,36,0);assert(sent==beforePreset+2);
+    for(unsigned i=0;i<12;++i)pump(8192);
+    assert(sent==beforePreset+3&&lastStatus==0xBA&&lastNumber==48&&lastValue==64);
+    NSData *presetState=presetUnit.fullStateForDocument[@"XONE_LAST_LIVE_V1"];
+    assert(xone::host::decodeSession(static_cast<const uint8_t *>(presetState.bytes),presetState.length,decoded)&&decoded.desired[1328]==64);
+    face.value=0;pump(48);assert(faceValue(face)==0);
+    // Host automation reaches S3 through the realtime parameter-event path too.
+    expected[0]=cursor;expected[1]=cursor+48;
+    AudioTimeStamp parameterTime{};parameterTime.mFlags=kAudioTimeStampSampleTimeValid;parameterTime.mSampleTime=static_cast<Float64>(cursor);
+    AURenderEvent parameterEvent{};parameterEvent.parameter.eventType=AURenderEventParameter;parameterEvent.parameter.eventSampleTime=cursor+12;
+    parameterEvent.parameter.parameterAddress=0;parameterEvent.parameter.value=1;
+    AudioUnitRenderActionFlags parameterFlags=0;audio.frameLength=48;
+    assert(render(&parameterFlags,&parameterTime,48,0,audio.mutableAudioBufferList,&parameterEvent,nil)==noErr);cursor+=48;
+    assert(faceValue(face)==1&&sent==beforePreset+3);
+    [presetUnit deallocateRenderResources];
+
     std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)\n";
  }
 }

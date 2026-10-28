@@ -112,6 +112,12 @@ public:
         if(packet.value==0){s.applied=-1;if(s.due<0)s.dueReady=false;return true;} // OFF ACK before ON
         s.applied=s.due;s.due=-1;s.dueReady=false;s.blocked=false;return true;
     }
+    void cancelUnstarted(unsigned group) noexcept {if(group<4)channels_[group].pending=-1;}
+    void cancelPending(unsigned group) noexcept {
+        if(group>=4)return;
+        auto& s=channels_[group];s.pending=-1;s.due=-1;s.dueReady=false;s.blocked=false;
+        if(++s.generation==0)++s.generation;
+    }
     void stop()noexcept {
         // STOP cancels unstarted changes, never invents reset of an applied
         // CUE/LOAD or assumes an external device changed its program.

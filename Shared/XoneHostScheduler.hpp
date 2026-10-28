@@ -11,6 +11,7 @@ struct ScheduledAction {
     std::uint16_t command{},destination{};
     std::uint32_t generation{};
     ScheduleWhen when{ScheduleWhen::NextBar};
+    std::uint64_t order{};
 };
 struct DueAction {
     ScheduledAction action{};
@@ -24,16 +25,21 @@ public:
     void clear() noexcept { count_=0; }
     std::uint32_t generation() const noexcept {return generation_;}
     unsigned pending() const noexcept {return count_;}
+    std::uint64_t lastOrder()const noexcept {return nextOrder_;}
+    std::uint64_t orderOf(std::uint16_t command,std::uint16_t destination)const noexcept {
+        for(unsigned i=0;i<count_;++i)if(pending_[i].command==command&&pending_[i].destination==destination)return pending_[i].order;
+        return 0;
+    }
     bool enqueue(std::uint16_t command,std::uint16_t destination,ScheduleWhen when) noexcept {
-        if(count_==Capacity)return false;
-        pending_[count_++]={command,destination,generation_,when};
+        if(count_==Capacity||nextOrder_==UINT64_MAX)return false;
+        pending_[count_++]={command,destination,generation_,when,++nextOrder_};
         return true;
     }
     // Replacement obtains the order of the newest accepted gesture.
     bool replace(std::uint16_t command,std::uint16_t destination,ScheduleWhen when) noexcept {
         bool exists=false;
         for(unsigned i=0;i<count_;++i)if(pending_[i].command==command&&pending_[i].destination==destination)exists=true;
-        if(!exists&&count_==Capacity)return false;
+        if((!exists&&count_==Capacity)||nextOrder_==UINT64_MAX)return false;
         cancel(command,destination);return enqueue(command,destination,when);
     }
     void cancel(std::uint16_t command,std::uint16_t destination) noexcept {
@@ -51,29 +57,31 @@ public:
         unsigned fired=0;
         for(unsigned i=0;i<batch.count;++i){
             const auto& edge=batch.events[i];
-            unsigned j=0;
+            const auto cutoff=nextOrder_;std::array<std::uint64_t,Capacity> attempted{};unsigned attempts=0,j=0;
             while(j<count_){
                 const auto item=pending_[j];
+                bool already=false;for(unsigned a=0;a<attempts;++a)if(attempted[a]==item.order)already=true;
                 const bool stale=item.generation!=generation_;
-                const bool due=!stale&&(item.when==ScheduleWhen::NextBeat||edge.kind==GridKind::Bar);
+                const bool due=!stale&&!already&&item.order<=cutoff&&(item.when==ScheduleWhen::NextBeat||edge.kind==GridKind::Bar);
                 if(!stale&&!due){++j;continue;}
-                // Remove before delivery: PATCH may cancel a MEMORY later in
-                // this same edge without resurrecting a compacted stale copy.
                 for(unsigned k=j+1;k<count_;++k)pending_[k-1]=pending_[k];
                 --count_;
-                if(due){
-                    bool applied=true;
-                    if constexpr(std::is_same_v<decltype(consumer(DueAction{})),bool>)
-                        applied=consumer(DueAction{item,edge.offset,edge.ordinal});
-                    else consumer(DueAction{item,edge.offset,edge.ordinal});
-                    if(applied)++fired;
-                    else if(item.generation==generation_&&count_<Capacity){
-                        // A prepared global recall may wait for output space or
-                        // a NAV stage to close. Keep its original accepted order.
-                        for(unsigned k=count_;k>j;--k)pending_[k]=pending_[k-1];
-                        pending_[j]=item;++count_;++j;
-                    }
+                if(!due)continue;
+                attempted[attempts++]=item.order;
+                bool applied=true;
+                if constexpr(std::is_same_v<decltype(consumer(DueAction{})),bool>)
+                    applied=consumer(DueAction{item,edge.offset,edge.ordinal});
+                else consumer(DueAction{item,edge.offset,edge.ordinal});
+                if(applied)++fired;
+                else if(item.generation==generation_&&count_<Capacity){
+                    unsigned insert=0;while(insert<count_&&pending_[insert].order<item.order)++insert;
+                    for(unsigned k=count_;k>insert;--k)pending_[k]=pending_[k-1];
+                    pending_[insert]=item;++count_;
                 }
+                // The consumer can cancel earlier entries. Restart by identity,
+                // without retrying an attempted item or admitting a fresh one
+                // retroactively at this same musical edge.
+                j=0;
             }
         }
         return fired;
@@ -82,5 +90,6 @@ private:
     std::array<ScheduledAction,Capacity> pending_{};
     unsigned count_{};
     std::uint32_t generation_{1};
+    std::uint64_t nextOrder_{};
 };
 } // namespace xone::host

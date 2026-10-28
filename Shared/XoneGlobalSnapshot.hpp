@@ -5,6 +5,7 @@
 #include "../Core/NavS3.hpp"
 #include "XoneGlobalMute.hpp"
 #include "XoneSoftMidiBridge.hpp"
+#include "XoneAlternativeArbiter.hpp"
 namespace xone::host {
 struct GlobalSnapshot {
  static constexpr int Schema=1;
@@ -13,6 +14,7 @@ struct GlobalSnapshot {
  l01::NavImage nav{};
  GlobalMuteState::Applied mute{};
  SoftMidiBridge::Applied soft{};
+ AlternativeArbiter::Targets alternatives{{-1,-1,-1,-1}};
  std::array<int,4> cueSelections{{-1,-1,-1,-1}};
  std::array<bool,96> memoryEngaged{};
  std::array<bool,4> presetEngaged{};
@@ -27,6 +29,7 @@ struct GlobalSnapshot {
   return (cell>=1477&&cell<1513)||(cell>=1768&&cell<1876);
  }
  bool admissible(int config)const noexcept {
+  if(!AlternativeArbiter::coherent(alternatives))return false;
   if(!valid||schema!=Schema||live.schema!=1||live.config!=config||!l01::NavS3::validate(nav))return false;
   for(unsigned cell=0;cell<live.desired.size();++cell){
    const int value=live.desired[cell];

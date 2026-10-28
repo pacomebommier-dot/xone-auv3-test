@@ -5,10 +5,12 @@
 #include "../Shared/XoneHostGrid.hpp"
 #include "../Shared/XoneValidationFixture.hpp"
 #include "../Shared/XoneHostScheduler.hpp"
+#include <cmath>
 
 @implementation XoneMidiAudioUnit {
     AUAudioUnitBusArray *_inputBusArray;
     AUAudioUnitBusArray *_outputBusArray;
+    AUParameterTree *_nativeParameterTree;
     // Établi avant de démarrer la boucle de rendu ; ne pas muter en cours de rendu.
     AUMIDIOutputEventBlock _cachedMIDIOutput;
     AUHostTransportStateBlock _cachedTransport;
@@ -36,9 +38,24 @@
     _outputBusArray = [[AUAudioUnitBusArray alloc] initWithAudioUnit:self
                                                              busType:AUAudioUnitBusTypeOutput
                                                               busses:@[outputBus]];
+    AUParameter *presetFace=[AUParameterTree createParameterWithIdentifier:@"presetEditor"
+        name:@"PRESET editor" address:0 min:0 max:1 unit:kAudioUnitParameterUnit_Boolean
+        unitName:nil flags:kAudioUnitParameterFlag_IsReadable|kAudioUnitParameterFlag_IsWritable
+        valueStrings:nil dependentParameters:nil];
+    _nativeParameterTree=[AUParameterTree createTreeWithChildren:@[presetFace]];
+    __weak XoneMidiAudioUnit *weakUnit=self;
+    _nativeParameterTree.implementorValueObserver=^(AUParameter *parameter,AUValue value){
+        XoneMidiAudioUnit *unit=weakUnit;
+        if(unit&&parameter.address==0&&std::isfinite(value))unit->_engine.requestPresetPage(value>=0.5f);
+    };
+    _nativeParameterTree.implementorValueProvider=^AUValue(AUParameter *parameter){
+        XoneMidiAudioUnit *unit=weakUnit;
+        return unit&&parameter.address==0&&unit->_engine.presetPageVisibleForHost()?1.0f:0.0f;
+    };
     return self;
 }
 
+- (AUParameterTree *)parameterTree { return _nativeParameterTree; }
 - (AUAudioUnitBusArray *)inputBusses { return _inputBusArray; }
 - (AUAudioUnitBusArray *)outputBusses { return _outputBusArray; }
 - (NSArray<NSString *> *)MIDIOutputNames { return @[@"XONE V0.2 TEST OUT"]; }
@@ -281,6 +298,16 @@
         const AURenderEvent *event = realtimeEventListHead;
         for (;
              event != nullptr && processed < 256; event = event->head.next, ++processed) {
+            if(event->head.eventType==AURenderEventParameter){
+                const auto& parameter=event->parameter;
+                const AUEventSampleTime sample=parameter.eventSampleTime==AUEventSampleTimeImmediate?bufferStart:parameter.eventSampleTime;
+                if(sample<bufferStart||!frameCount||sample>=bufferStart+frameCount||sample<lastEventSample)continue;
+                lastEventSample=sample;deliverGridThrough(sample);
+                if(parameter.parameterAddress==0&&std::isfinite(parameter.value)){
+                    if(parameter.value>=0.5f)engine->showPresetPage();else engine->leavePresetPage();
+                }
+                continue;
+            }
             if (event->head.eventType != AURenderEventMIDI) continue;
             const auto &m = event->MIDI;
             // Immediate is explicitly allowed by AU; other events must belong

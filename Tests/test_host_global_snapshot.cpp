@@ -8,6 +8,12 @@ static void cc(HostEngine& h,int value,int ms){uint8_t raw[]={0xbe,16,uint8_t(va
 static void button(HostEngine& e,int note,bool down,int ms){uint8_t midi[]={uint8_t(down?0x9e:0x8e),uint8_t(note),uint8_t(down?127:0)};assert(!e.receive(0,midi,3,ms,ms).emit);}
 static void click(HostEngine& e,int note,int ms){button(e,note,true,ms);button(e,note,false,ms+1);}
 int main(){
+ {HostEngine e;e.requestPresetPage(true);assert(e.navMode()==0);e.beginRenderBuffer();assert(e.navMode()==1);e.endRenderBuffer();assert(e.presetPageVisibleForHost());
+  e.requestPresetPage(false);e.beginRenderBuffer();e.endRenderBuffer();assert(e.navMode()==0&&!e.presetPageVisibleForHost());}
+
+ {HostActionScheduler q;assert(q.enqueue(1,0,ScheduleWhen::NextBar)&&q.enqueue(2,0,ScheduleWhen::NextBeat)&&q.enqueue(3,0,ScheduleWhen::NextBeat));
+  unsigned fired=0;q.consume(edge(GridKind::Beat,1),[&](DueAction due){++fired;if(due.action.command==2)q.cancel(1,0);});assert(fired==2&&q.pending()==0);}
+
  // A full projection queue cannot block global restore: obsolete absolute
  // writes are replaced, never future musical requests or real OFF debts.
  {HostEngine e;assert(e.restoreSessionBeforeRendering(session(64)));
