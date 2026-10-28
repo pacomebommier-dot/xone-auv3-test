@@ -22,6 +22,10 @@ static xone::l01::LiveState::SessionImage session(int value){
 }
 static GridBatch bar(){GridBatch b{};b.valid=true;b.count=1;b.events[0]={GridKind::Bar,17,4};return b;}
 int main(){
+ {ContinuousPickup pickup;assert(pickup.consider(0,128,50,50,1)==50);
+  assert(pickup.consider(0,128,50,100,2)==100);pickup.rearm(128);
+  assert(pickup.consider(0,128,50,100,3)==-1);}
+
  // Save/replay all twelve real local slots. Never imports SAMPLE or a fourth PATCH.
  for(unsigned g=0;g<4;++g)for(unsigned slot=0;slot<3;++slot){
   HostEngine h;assert(h.setNavForDiagnostic(selected(g)));assert(h.restoreSessionBeforeRendering(session(23+slot)));
@@ -49,6 +53,10 @@ int main(){
  assert(h.restoreSessionBeforeRendering(s));press(h,g,3);assert(!h.desiredLive(320+84*g).known);
  GridBatch b{};b.valid=true;b.count=1;b.events[0]={GridKind::Bar,0,4};h.onMusicalGrid(b);
  assert(h.desiredLive(320+84*g).known&&h.desiredLive(320+84*g).value==0);
+ assert(h.desiredLive(1552+24*g).known&&h.desiredLive(1552+24*g).value==0);
+ assert(h.desiredLive(1768+12*g).known&&h.desiredLive(1768+12*g).value==0);
+ assert(h.desiredLive(1546+g).known&&h.desiredLive(1546+g).value==0);
+ assert(!h.desiredLive(1744).known&& !h.desiredLive(1351+g).known);
  assert(h.desiredLive(1328+g).value==91);assert(!h.desiredLive(320+84*g+30).known);
  }
  std::cout<<"PASS four physical source BASE recalls at BAR preserve MIX and S8 modes\n";

@@ -61,6 +61,12 @@ public:
         a.known=output>=0?output:previous;physical_[static_cast<std::size_t>(cc)]=api;a.raw=raw;a.time=now;
         return output;
     }
+    // A recall must disarm only the controls whose actual target changed.
+    void rearm(int api) noexcept {
+        if(api<0||api>=931)return;
+        state_[static_cast<std::size_t>(api)]={};
+        for(auto& physical:physical_)if(physical==api)physical=-1;
+    }
 private:
     struct State {bool wait{true};int known{-2},raw{-1},initialDistance{},direction{},attempts{},previousDirection{},reversals{};int64_t time{-1},age{};};
     std::array<State,931> state_{};

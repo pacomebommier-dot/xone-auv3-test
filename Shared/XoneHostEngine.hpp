@@ -1132,9 +1132,20 @@ private:
                 patch=saved.values;
             }
             std::array<int,97> cells{},values{};
-            unsigned count=60;
+            unsigned count=97;
+            std::array<int,97> apis{},types{};
+            std::array<bool,97> changed{};
+            for(unsigned f=0;f<60;++f){
+                cells[f]=SourcePatchBank::cell(source,f);values[f]=patch[f];
+                apis[f]=SourcePatchBank::api(source,f);types[f]=SourcePatchBank::type(f);
+            }
+            for(unsigned f=0;f<24;++f){cells[60+f]=1552+24*static_cast<int>(source)+static_cast<int>(f);apis[60+f]=cells[60+f]-837;types[60+f]=10;}
+            for(unsigned f=0;f<12;++f){cells[84+f]=1768+12*static_cast<int>(source)+static_cast<int>(f);apis[84+f]=cells[84+f]-1384;types[84+f]=11;}
+            cells[96]=1546+static_cast<int>(source);apis[96]=cells[96]-837;types[96]=10;
             bool busy=false;
-            for(unsigned f=0;f<count;++f){cells[f]=SourcePatchBank::cell(source,f);values[f]=patch[f];
+            for(unsigned f=0;f<count;++f){
+                const auto prior=core_.nativeLive().desired(cells[f]);
+                changed[f]=!prior.known||prior.value!=values[f];
                 for(const auto& hold:spots_)if(hold.cell==cells[f])busy=true;
             }
             if(busy||sourceWrite_-sourceRead_+count>sourceMidi_.size()||
@@ -1142,7 +1153,8 @@ private:
                 sourceStatus_[source]=SourceRecallStatus::Busy;continue;
             }
             for(unsigned f=0;f<count;++f){
-                int api=SourcePatchBank::api(source,f),type=SourcePatchBank::type(f),value=values[f];
+                int api=apis[f],type=types[f],value=values[f];
+                if(type==10&&changed[f])pickup_.rearm(api);
                 const auto status=static_cast<uint8_t>((type==10?0xB6:value?0x96:0x86)+api/128);
                 auto& p=sourceMidi_[sourceWrite_++%sourceMidi_.size()];
                 p={true,++sourcePacketToken_,type,api,value,{status,static_cast<uint8_t>(api%128),static_cast<uint8_t>(type==10?value:value?127:0)}};
