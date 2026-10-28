@@ -276,6 +276,14 @@ public:
             const bool baseEvent=(cmd==0x90||cmd==0x80)&&physical>=4&&physical<20;
             const bool muteBaseOwned=mutePageEnabled_&&baseEvent&&
                 (wasHeld?muteGate_.ownsBase(static_cast<unsigned>(physical-4)):muteNext.visible());
+            // Latch the original CUE/LOAD identity BEFORE S2/S3 processes
+            // this physical DOWN. The current NAV after processing may have
+            // changed; it must never redirect the original source command.
+            unsigned cueGroup=0,cueIndex=0;
+            const bool cueSource=baseEvent && !muteBaseOwned && !wasHeld &&
+                cmd==0x90&&data[2]!=0&&!core_.longNavPending()&&
+                CueLoadBar::derive(core_.nativeNav(),static_cast<unsigned>(physical),
+                                   cueGroup,cueIndex);
             const int previousNav=navMode();
             core_.retainDjLoopPage(dj2LoopObserved_!=Dj2LoopObserved::Off || dj2LoopStartRequested_);
             const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs,muteBaseOwned);
@@ -318,10 +326,8 @@ public:
                !muteBaseOwned&&physical>=4&&physical<20&&
                !core_.longNavPending()&&!core_.nativeNav().hasStage())
                 soft_.requestFromRoute(physical,softRoute,softRoot);
-            if(accepted&&!wasHeld&&cmd==0x90&&data[2]!=0&&
-               !muteBaseOwned&&physical>=4&&physical<20&&
-               !core_.longNavPending()&&!core_.nativeNav().hasStage())
-                cueLoad_.request(core_.nativeNav(),static_cast<unsigned>(physical));
+            if(accepted && cueSource)
+                cueLoad_.requestQualified(cueGroup,cueIndex);
             drainCore(seq,sample);
             if(accepted&&physical==2&&(cmd==0x90||cmd==0x80)&&
                wasHeld&&!(cmd==0x90&&data[2]!=0))dj2PushRotCaptured_=false;
