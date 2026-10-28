@@ -3,7 +3,7 @@
 ## CUE/LOAD et banques locales
 CUE INST4/8 vise INST1/2 (owners PATCH 8/9), LOAD YELLOW4/8 vise YELLOW1/2 (owners 10/11). Chaque source possède trois PATCH de 60 valeurs : deux blocs MACHINE de 30 paramètres, sans leurs modes S8. Position 4 appelle BASE ; aucun PATCH4. Le DOWN capture source et position avant la mutation NAV. Le BAR authentifié applique via S3 et émet les CC/notes nominaux. CC931..946 conservent leur confirmation de callback indépendante : cette émission ne prouve ni rappel local accepté ni chargement externe.
 
-`saveSourcePatch` capture uniquement des valeurs LIVE connues. Cette API native réelle de sauvegarde/rappel des paires reste distincte des SAVE physiques SAMPLE/MACHINE existants. Aucun geste SAVE de paire absent du contrat n'est inventé : son raccordement physique reste une frontière explicite. Les tests vérifient les banques et mutations réelles, pas un simple adaptateur MIDI.
+`saveSourcePatch` capture uniquement des valeurs LIVE connues. Le raccordement physique est complété : BOT3 + TOP1..3 depuis MACHINE1..8 capture le PATCH commun de la paire correspondante. TOP seul et CUE/LOAD lisent exactement la même banque. MACHINE9..24 gardent leurs PATCH individuels. Les deux pages doivent être connues ; UNKNOWN dans le partenaire refuse le SAVE entier, sans fallback de rappel. Les tests vérifient les banques et mutations réelles, pas un simple adaptateur MIDI.
 
 ## Composition BASE/PATCH
 Chaque rappel de paire compose 97 champs : 60 valeurs/états MACHINE et 37 cibles SOCLE autorisées (24 CC, 12 états SPOT, filtre source). PATCH restaure son payload et remet seulement son SOCLE à zéro. BASE utilise les seuls zéros provisoires explicitement autorisés. Les modes S8, MIX1328..1331, isolations, INIT partagés et autres owners restent intacts. UNKNOWN dans une capture refuse le SAVE ; aucune banque neuve fictive.
@@ -23,3 +23,6 @@ STOP annule les attentes et conserve les banques. Une restauration de session re
 Le banc AU macOS réel ajoute CUE4 physique→BASE au BAR, sortie nominale, callback refusé et reprise au render suivant. Son résultat dépend de la CI Apple, distincte du résultat local Windows. La configuration CI Apple/macOS-15-intel est inchangée. Aucune validation AUM/iPhone n'est annoncée.
 
 Persistance des banques et feedback LED complet restent au bloc 4. PRESET/RED et alternatives S8 restent au bloc 3. Une nouvelle commande à transport explicitement arrêté s'applique directement, sans BAR/BEAT synthétique ni attente de START ; STOP retire les anciennes attentes. En cas de transport inconnu, aucune échéance n'est inventée.
+
+## Complément physique — reprise suivante
+La décision PAIRES_MACHINE_PATCH du 30/09 et l'interface S8 L05 confirment un PATCH60 commun par paire. Le test historique de MACHINE simple utilisait à tort MACHINE2 comme exemple de slot individuel ; il exerce maintenant MACHINE10 avec les mêmes assertions de SAVE30, sortie MIDI et exclusion des modes. Le nouveau test couvre les huit pages appariées, les trois TOP, les holds tardifs, le partenaire UNKNOWN et le rappel TOP au BAR. Ce changement corrige le choix d'owner, sans affaiblir la validation des valeurs.

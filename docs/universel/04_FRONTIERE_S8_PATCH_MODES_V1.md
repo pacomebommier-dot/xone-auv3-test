@@ -10,7 +10,7 @@ Date : 28 octobre 2026. Branche candidate PR #7, sur PR #6. **Pas un nouveau con
 ## Implémentation native de la frontière S8
 - `XoneS8SamplePatchBank.hpp` : huit samples XONE, trois slots chacun, **28 paramètres PATCH** : 16 CC + 12 états SPOT 0/1. Douze modes de configuration (MIX/TOGGLE/TOUCH/FLASH) **hors payload**.
 - `XoneS8MachinePatchBank.hpp` : 24 identifiants MACHINE **virtuels S7** (pas 24 tranches audio AUM), trois slots chacun, **30 paramètres PATCH** : 18 CC + 12 états SPOT 0/1. Douze modes hors payload.
-- Les banques sont indépendantes par identifiant et par slot, vides à l'origine ; les valeurs inconnues interdisent un SAVE, jamais de zéro synthétique.
+- Les pages MACHINE1..8 sont quatre paires INST/YELLOW, chacune avec trois PATCH60 communs dans `XoneSourcePatchBank.hpp` ; MACHINE9..24 gardent leurs trois PATCH30. Les modes de chacune des pages restent séparés. Les banques sont vides à l'origine ; les valeurs inconnues interdisent un SAVE, jamais de zéro synthétique.
 - Le parcours physique de SAVE est SAMPLE : BOT2 puis TOP1..3, ou MACHINE : BOT3 puis TOP1..3 ; une action acceptée ou refusée consomme le TOP et n'entraîne aucun RECALL de secours.
 - Un TOP seul peut programmer le rappel S8 au BAR par le pipeline existant. Le rappel écrit uniquement les 28 ou 30 valeurs LIVE admises, puis envoie les adresses virtuelles S7 : SAMPLE CC 0..127 / NOTE 0..95 ; MACHINE CC 128..559 / NOTE 96..383. Les modes S8 et les autres instruments ne sont pas touchés.
 - Le wrapper AU réutilise le traitement `samplePatchOnGrid` pour les deux familles ; aucun nouveau moteur d'horloge ni flux audio.

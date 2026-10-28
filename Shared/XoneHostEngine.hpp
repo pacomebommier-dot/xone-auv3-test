@@ -257,8 +257,10 @@ public:
     bool readMemory(int owner,int slot,l01::BankS6::MemoryRecord& out)const noexcept {return core_.nativeBank().readMemory(owner,slot,out);}
     // Render-thread local source API. An external adapter is never treated as loaded.
     bool saveSourcePatch(unsigned source,unsigned slot) noexcept {
+        if(source>=4||slot>=3||sourcePending_[source]>=0)return false;
         SourcePatchBank::Values values{};
         for(unsigned f=0;f<values.size();++f){
+            for(const auto& hold:spots_)if(hold.cell==SourcePatchBank::cell(source,f))return false;
             auto v=core_.nativeLive().desired(SourcePatchBank::cell(source,f));
             if(!v.known)return false;
             values[f]=v.value;
@@ -610,7 +612,7 @@ public:
         if(!core_.nativeBank().initialized() && !core_.initializeEmptyNativeBanksForDiagnostic())return false;
         return core_.saveNativePatchForDiagnostic(owner,slot,config,image,expectedRevision);
     }
-    bool samplePatchPending() const noexcept {return samplePatch_.owner>=0;}
+    bool samplePatchPending() const noexcept {return samplePatch_.owner>=0||pairedTopSource_>=0;}
     Result samplePatchOnGrid(const GridBatch& batch,int64_t bufferStart) noexcept {
         if(!batch.valid || batch.overflow || batch.count>batch.events.size())return {};
         for(unsigned i=0;i<batch.count;++i){
@@ -619,7 +621,7 @@ public:
             // A smaller ordinal may therefore be a genuine BAR after a rewind.
             if(edge.kind!=GridKind::Bar || edge.ordinal<0 || edge.ordinal==lastSamplePatchBar_)continue;
             lastSamplePatchBar_=edge.ordinal;
-            if(!samplePatchPending())continue;
+            if(samplePatch_.owner<0)continue;
             const auto request=samplePatch_;samplePatch_={};
             const int base=request.machine?320+42*request.owner:40*request.owner;
             const int width=request.machine?42:40;
@@ -717,7 +719,7 @@ public:
         if(restores_.take(next)&&core_.restoreNativeSessionForDiagnostic(next.image)){
             appliedToken_=next.token;pickup_=ContinuousPickup{};
             core_.output()=l01::OutputS4{};core_.enableTestMidiProjection(true);
-            samplePatch_={}; // a restored session cannot execute an old queued recall
+            samplePatch_={};pairedTopSource_=-1; // a restored session cannot execute an old queued recall
             musicalScheduler_.stop();sourcePending_.fill(-1);sourceStatus_.fill(SourceRecallStatus::None);
             for(auto& pending:memoryPending_)pending={};
             memoryEngaged_.fill(false);
@@ -822,7 +824,7 @@ public:
         requestDjLoopStop(false,true);
         for(auto& target:topHold_)target={};
         topIntentValid_.fill(false);
-        samplePatch_={};lastSamplePatchBar_=-1;
+        samplePatch_={};pairedTopSource_=-1;lastSamplePatchBar_=-1;
         groupDownEpoch_.fill(0); // STOP invalidates stale GROUP proof
         for(auto& hold:groupHolds_)hold={}; // no ghost long on later UP
         soft_.stop(); // cancels only uncommitted SOFT; applied pages persist
@@ -930,6 +932,9 @@ private:
         const int selected=nav.active().at(314);
         const int config=core_.nativeLive().sessionConfig();
         if(selected<1||selected>24||config<1||config>127)return false;
+        // S7 pair authority, retained by S8: the first eight pages share
+        // four PATCH60 banks. A BOT3 save on either page captures both.
+        if(selected<=8)return saveSourcePatch(static_cast<unsigned>((selected-1)/2),static_cast<unsigned>(slot));
         const int owner=selected-1,base=320+42*owner;
         for(const auto& hold:spots_)if(hold.cell>=base&&hold.cell<base+42)return false;
         S8MachinePatchBank::Values values{};values.fill(S8MachinePatchBank::Unknown);
@@ -976,7 +981,7 @@ private:
     }
     std::array<GroupHold,12> groupHolds_{};
     struct SamplePatchRequest {int owner{-1},slot{-1};uint32_t revision{};bool s8{},machine{};};
-    SamplePatchRequest samplePatch_{};int64_t lastSamplePatchBar_{-1};
+    SamplePatchRequest samplePatch_{};int pairedTopSource_{-1};int64_t lastSamplePatchBar_{-1};
     void armSamplePatch(unsigned index) noexcept {
         if(samplePatchPending() || index>=3 || !topIntentValid_[index])return;
         const auto& intent=topIntents_[index];
@@ -1010,6 +1015,14 @@ private:
         const int selected=nav.at(314);
         const int slot=intent.route.position;
         if(selected<1||selected>24||slot<0||slot>=3)return;
+        if(selected<=8){
+            const unsigned source=static_cast<unsigned>((selected-1)/2);
+            SourcePatchBank::Patch patch{};
+            if(!sourcePatches_.read(source,static_cast<unsigned>(slot),patch)||patch.config!=core_.nativeLive().sessionConfig())return;
+            if(!requestSourceRecall(source,static_cast<unsigned>(slot)))return;
+            pairedTopSource_=transportStopped_?-1:static_cast<int>(source);
+            topIntentValid_[index]=false;return;
+        }
         S8MachinePatchBank::Patch patch{};
         if(!s8Machine_.read(static_cast<unsigned>(selected-1),static_cast<unsigned>(slot),patch)||
            !patch.valid||patch.config!=core_.nativeLive().sessionConfig())return;
@@ -1216,6 +1229,7 @@ private:
     std::array<bool,96> memoryEngaged_{};
     void applySourceRecall(unsigned source) noexcept {
         if(source>=4)return;
+        if(pairedTopSource_==static_cast<int>(source))pairedTopSource_=-1;
         {
             const int slot=sourcePending_[source];if(slot<0)return;
             sourcePending_[source]=-1;

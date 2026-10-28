@@ -25,7 +25,7 @@ public:
  }
  bool save(unsigned source,unsigned slot,int config,const Values& values) noexcept {
   if(source>=Sources||slot>=Slots||config<1||config>127||!validate(values))return false;
-  auto& p=bank_[source*Slots+slot];if(p.revision>=16777212u)return false;
+  auto& p=bank_[source*Slots+slot];if(p.revision>=16777212u||(p.valid&&p.config!=config))return false;
   p.valid=true;p.config=config;p.values=values;++p.revision;return true;
  }
  bool read(unsigned source,unsigned slot,Patch& p)const noexcept {
