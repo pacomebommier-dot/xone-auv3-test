@@ -29,6 +29,7 @@ int main() {
     assert(!e.receive(1,cc,3,2001).emit); // untrusted cable, no observation
     assert(e.observed()==-2);
     for (uint8_t ch=1;ch<16;++ch) {
+        if(ch==14)continue; // MIDI channel 15 is the legitimate K2 physical input
         uint8_t other[]{static_cast<uint8_t>(0xB0|ch),4,127};
         assert(!e.receive(0,other,3,2002).emit);
     }
