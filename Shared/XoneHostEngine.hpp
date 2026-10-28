@@ -327,13 +327,14 @@ public:
                     topSaveSuppress_[topIndex]=false;
                     if(topIndex<3){
                         const int candidateMode=core_.localSaveCandidateMode();
-                        if((candidateMode==3||candidateMode==7)&&
-                           core_.consumeLocalSaveCandidate(candidateMode)){
-                            // BOT2+TOP in SAMPLE / BOT3+TOP in MACHINE.
-                            // A consumed/rejected SAVE must NEVER fall through
-                            // to TOP RECALL or a BOT NAV on release.
+                        if(candidateMode==3||candidateMode==7){
+                            // An accepted local candidate owns this TOP even
+                            // if its NAV/profile preflight fails: never fall
+                            // back to RECALL or reinterpret the BOT release.
                             topSaveSuppress_[topIndex]=true;
-                            const bool saved=candidateMode==3&&
+                            const bool admitted=core_.consumeLocalSaveCandidate(candidateMode);
+                            if(!admitted)core_.declineLocalSaveCandidate();
+                            const bool saved=admitted&&candidateMode==3&&
                                 saveSamplePatchFromLive(static_cast<int>(topIndex));
                             if(saved)++sampleSavesAccepted_;
                             else ++sampleSavesRefused_; // MACHINE S8 adapter still unavailable
