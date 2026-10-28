@@ -224,6 +224,11 @@ public:
     }
     int localSaveCandidateMode()const noexcept {return localSave_.bot<0?-1:localSave_.mode;}
     bool localSaveCandidateConsumed()const noexcept {return localSave_.consumed;}
+    // Even a refused SAVE consumes the TOP/BOT ownership; no fallback
+    // RECALL or stale solo NAV is permitted after a failed preflight.
+    void declineLocalSaveCandidate() noexcept {
+        if(localSave_.bot>=0)localSave_.consumed=true;
+    }
     bool consumeLocalSaveCandidate(int expectedMode) noexcept {
         const int bot=localSave_.bot;
         if(bot<0||localSave_.consumed||localSave_.mode!=expectedMode||
