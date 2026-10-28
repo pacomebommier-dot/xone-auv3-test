@@ -1,6 +1,7 @@
 #pragma once
-// S7 V1.2 TOP nonpersistent pulse action bus, MIDI7..14, NOTE680..701.
-// A TOP action is NOT a persistent nominal NOTE, and must not be deduplicated.
+// S7 V1.2 nonpersistent ACTION bus, MIDI7..14:
+// GROUP/LONG NOTE608..679 and TOP NOTE680..701 share ONE ordered FIFO.
+// ACTION impulses are not persistent nominal NOTE states; never deduplicate.
 // A failed ON callback may have reached the receiver: always close with OFF.
 // An OFF failure is owed at the same captured API address until acknowledged.
 #include <array>
@@ -15,15 +16,22 @@ struct TopPulsePacket {
 class TopPulseBus {
 public:
     static constexpr unsigned Capacity=32;
-    static constexpr unsigned Total=22;
+    static constexpr unsigned TopTotal=22;
+    static constexpr unsigned GroupTotal=72;
+    static constexpr unsigned Total=TopTotal+GroupTotal;
+    // The true S3 group/long gesture owner must be qualified by the caller;
+    // this function only translates the stable S7 identity and queues it.
+    // page is zero-based 0..7; action is zero-based 0..2 or 0..5.
+    bool queueGroup(bool fill,unsigned page,unsigned action) noexcept {
+        if(page>=8||action>=(fill?6u:3u))return false;
+        return append((fill?632u:608u)+(fill?6u:3u)*page+action);
+    }
     bool queue(TopPulseFamily family,unsigned member) noexcept {
         const unsigned f=static_cast<unsigned>(family);
         const unsigned limits[4]{4,8,2,8};
         const unsigned offsets[4]{0,4,12,14};
-        if(f>=4 || member>=limits[f] || count_>=Capacity)return false;
-        const unsigned api=680+offsets[f]+member;
-        entries_[(read_+count_)%Capacity]={api,++serial_,false};
-        ++count_;return true;
+        if(f>=4 || member>=limits[f])return false;
+        return append(680+offsets[f]+member);
     }
     unsigned pending() const noexcept {return count_;}
     bool hasOwedOff() const noexcept {
@@ -65,6 +73,11 @@ public:
         entries_=kept;count_=n;read_=0;
     }
 private:
+    bool append(unsigned api) noexcept {
+        if(count_>=Capacity)return false;
+        entries_[(read_+count_)%Capacity]={api,++serial_,false};
+        ++count_;return true;
+    }
     struct Entry {unsigned api{},serial{};bool onAttempted{};};
     std::array<Entry,Capacity> entries_{};
     unsigned read_{},count_{},serial_{};
