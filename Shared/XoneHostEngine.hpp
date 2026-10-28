@@ -391,7 +391,9 @@ public:
     void beginRenderBuffer() noexcept {
         muteLeds_.beginBuffer();
         started_=true;
-        if(!restores_.hasUpdate()||core_.output().outstanding()!=0)return;
+        // A session must not replace an active SOFT owner while its MIDI
+        // NoteOff may still be due (this debt is outside OutputS4).
+        if(!restores_.hasUpdate()||core_.output().outstanding()!=0||soft_.hasOutstandingNotes())return;
         for(std::size_t i=0;i<36;++i)if(core_.surface().held(i))return;
         SessionFrame next{};
         if(restores_.take(next)&&core_.restoreNativeSessionForDiagnostic(next.image)){
