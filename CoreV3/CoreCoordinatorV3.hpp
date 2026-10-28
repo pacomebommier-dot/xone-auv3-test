@@ -142,7 +142,8 @@ public:
         if(!diagnosticLive_||BankS6::memoryIndex(owner,slot)<0||live_.sessionConfig()<1)return false;
         BankS6::MemoryImage image{};
         for(int f=0;f<9;++f){auto v=live_.desired(FxS6::addressFor(owner,f));
-            if(!v.known)return false;image[static_cast<std::size_t>(f)]=v.value;}
+            if(!v.known)return false;
+            image[static_cast<std::size_t>(f)]=v.value;}
         if(!BankS6::validateMemory(image))return false;
         if(!nativeBank_.initialized()&&!nativeBank_.initializeEmpty())return false;
         BankS6::MemoryRecord prior{};

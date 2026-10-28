@@ -56,6 +56,11 @@ public:
     HostEngine() noexcept {
         core_.initializeSourceDefaultNav();
         core_.enableDiagnosticLive(true);
+        // Native logical configuration, independent of backend/instrument profile.
+        // New LIVE stays entirely UNKNOWN; banks stay empty and no MIDI is sent.
+        l01::LiveState::SessionImage local{};
+        local.schema=1;local.config=1;local.revision=1;local.desired.fill(-2);
+        core_.restoreNativeSessionForDiagnostic(local);
         core_.enableTestMidiProjection(true);
         core_.enableDiagnosticTouchNav(true); // source @zk/@zl selection, not SPOT TOUCH output
         core_.enableDiagnosticQualifiedNav(true); // source-qualified SHORT/LONG NAV only
@@ -248,7 +253,8 @@ public:
         SourcePatchBank::Values values{};
         for(unsigned f=0;f<values.size();++f){
             auto v=core_.nativeLive().desired(SourcePatchBank::cell(source,f));
-            if(!v.known)return false;values[f]=v.value;
+            if(!v.known)return false;
+            values[f]=v.value;
         }
         return sourcePatches_.save(source,slot,core_.nativeLive().sessionConfig(),values);
     }
@@ -704,6 +710,10 @@ public:
             appliedToken_=next.token;pickup_=ContinuousPickup{};
             core_.output()=l01::OutputS4{};core_.enableTestMidiProjection(true);
             samplePatch_={}; // a restored session cannot execute an old queued recall
+            musicalScheduler_.stop();sourcePending_.fill(-1);sourceStatus_.fill(SourceRecallStatus::None);
+            for(auto& pending:memoryPending_)pending={};
+            memoryEngaged_.fill(false);
+            sourceRead_=sourceWrite_;sourceBlocked_=false;cueLoad_.stop();
         }
     }
     void endRenderBuffer() noexcept {
@@ -811,6 +821,7 @@ public:
         musicalScheduler_.stop();
         for(auto& pending:memoryPending_)pending={};
         sourcePending_.fill(-1);sourceRead_=sourceWrite_;sourceBlocked_=false;
+        for(auto& status:sourceStatus_)if(status==SourceRecallStatus::Pending)status=SourceRecallStatus::None;
         cueLoad_.stop(); // cancel pending BAR intents, preserve actual CC-sent state
         topPulse_.stop(); // cancels unattempted pulses; retains every attempted OFF
         topSaveSuppress_.fill(false);

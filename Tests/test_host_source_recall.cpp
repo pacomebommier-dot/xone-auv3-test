@@ -22,6 +22,10 @@ static xone::l01::LiveState::SessionImage session(int value){
 }
 static GridBatch bar(){GridBatch b{};b.valid=true;b.count=1;b.events[0]={GridKind::Bar,17,4};return b;}
 int main(){
+ {HostEngine fresh;assert(fresh.setNavForDiagnostic(selected(0)));
+  assert(!fresh.desiredLive(320).known);press(fresh,0,3);fresh.onMusicalGrid(bar());
+  assert(fresh.desiredLive(320).known&&fresh.desiredLive(320).value==0);}
+
  {ContinuousPickup pickup;assert(pickup.consider(0,128,50,50,1)==50);
   assert(pickup.consider(0,128,50,100,2)==100);pickup.rearm(128);
   assert(pickup.consider(0,128,50,100,3)==-1);}

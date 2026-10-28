@@ -16,6 +16,10 @@ static auto session(){xone::l01::LiveState::SessionImage s{};s.schema=1;s.config
  for(int o=0;o<28;++o)for(int f=0;f<9;++f)s.desired[xone::l01::FxS6::addressFor(o,f)]=f<6?50:0;return s;}
 static auto beat(){GridBatch b{};b.valid=true;b.count=1;b.events[0]={GridKind::Beat,0,1};return b;}
 int main(){
+ {HostEngine e;assert(e.restoreSessionBeforeRendering(session()));assert(e.captureMemory(0,0));assert(e.requestMemoryRecall(0,0));
+  auto replacement=session();replacement.desired[1552]=77;assert(e.requestSessionRestore(replacement));e.beginRenderBuffer();
+  assert(e.pendingMemorySlot(0)==-1);e.onMusicalGrid(beat());assert(e.desiredLive(1552).value==77);}
+
  for(int family=3;family<=6;++family)for(int selection=1;selection<=8;++selection){
   if(family<5&&(selection==4||selection==8))continue;
   auto n=page(family,selection);xone::l01::NavS3 nav;assert(nav.initializeDefault());assert(nav.stage(n)&&nav.commit());

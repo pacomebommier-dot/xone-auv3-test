@@ -9,7 +9,7 @@
 @implementation XoneMidiAudioUnit {
     AUAudioUnitBusArray *_inputBusArray;
     AUAudioUnitBusArray *_outputBusArray;
-    // Ã‰tabli avant de dÃ©marrer la boucle de rendu ; ne pas muter en cours de rendu.
+    // Établi avant de démarrer la boucle de rendu ; ne pas muter en cours de rendu.
     AUMIDIOutputEventBlock _cachedMIDIOutput;
     AUHostTransportStateBlock _cachedTransport;
     AUHostMusicalContextBlock _cachedMusicalContext;
@@ -25,7 +25,7 @@
     self = [super initWithComponentDescription:componentDescription options:options error:outError];
     if (!self) return nil;
 
-    // Busses requis par le contrat AUAudioUnit, mÃªme pour un processeur MIDI pur.
+    // Busses requis par le contrat AUAudioUnit, même pour un processeur MIDI pur.
     AVAudioFormat *format = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:44100 channels:2];
     AUAudioUnitBus *inputBus = [[AUAudioUnitBus alloc] initWithFormat:format error:outError];
     AUAudioUnitBus *outputBus = [[AUAudioUnitBus alloc] initWithFormat:format error:outError];
@@ -102,8 +102,8 @@
 }
 
 - (AUInternalRenderBlock)internalRenderBlock {
-    // Capturer seulement l'adresse du slot de sortie, pas d'envoi de message Ã  self
-    // dans le rendu temps rÃ©el. Ne pas allouer ni journaliser dans ce bloc.
+    // Capturer seulement l'adresse du slot de sortie, pas d'envoi de message à self
+    // dans le rendu temps réel. Ne pas allouer ni journaliser dans ce bloc.
     AUMIDIOutputEventBlock __strong *slot = &_cachedMIDIOutput;
     auto *engine = &_engine;
     auto *known = &_transportKnown;

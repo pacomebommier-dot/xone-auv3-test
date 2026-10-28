@@ -29,7 +29,8 @@ public:
   p.valid=true;p.config=config;p.values=values;++p.revision;return true;
  }
  bool read(unsigned source,unsigned slot,Patch& p)const noexcept {
-  if(source>=Sources||slot>=Slots)return false;p=bank_[source*Slots+slot];return p.valid;
+  if(source>=Sources||slot>=Slots)return false;
+  p=bank_[source*Slots+slot];return p.valid;
  }
 private:
  std::array<Patch,Sources*Slots> bank_{};
