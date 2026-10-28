@@ -20,8 +20,10 @@ int main(){
  edge(e,13,true,40);edge(e,14,true,50);edge(e,14,false,60);edge(e,13,false,70);assert(e.navMode()==3);
  auto sample=top(e,0,80);assert(sample.action==HostEngine::TopAction::PatchRecall&&sample.route.position==0);
  assert(top(e,3,90).route==global);
- edge(e,13,true,100);edge(e,13,false,110);assert(e.navMode()==1);
- auto preset=top(e,0,120);assert(preset.action==HostEngine::TopAction::PatchRecall&&preset.route==sample.route);
+ // P3 V2: BOT2 solo in SAMPLE is reserved for MUTE at release, not PRESET.
+ // The SAMPLE PATCH route remains stable until another navigation gesture.
+ edge(e,13,true,100);edge(e,13,false,110);assert(e.navMode()==3);
+ auto sampleAgain=top(e,0,120);assert(sampleAgain.action==HostEngine::TopAction::PatchRecall&&sampleAgain.route==sample.route);
  assert(top(e,3,130).route==global);
  edge(e,14,true,140);edge(e,15,true,150);edge(e,15,false,160);edge(e,14,false,170);assert(e.navMode()==5);
  auto reset=top(e,0,180);assert(reset.action==HostEngine::TopAction::PatchRecall&&reset.route==sample.route);
