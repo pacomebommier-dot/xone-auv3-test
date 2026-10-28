@@ -41,7 +41,7 @@ jobs:
           path: evidence/ci/*.log
   ios:
     needs: portable
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
