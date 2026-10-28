@@ -9,7 +9,7 @@ static xone::l01::NavImage selected(int root,bool high){
     n.at(299+2*root)=high?0:1;
     n.at(300+2*root)=high?1:0;
     n.at(293+2*root)=high?1:4;
-    n.at(294+2*root)=high?8:2;
+    n.at(294+2*root)=high?8:0;
     assert(xone::l01::NavS3::regenerate(n)&&xone::l01::NavS3::validate(n));
     return n;
 }
