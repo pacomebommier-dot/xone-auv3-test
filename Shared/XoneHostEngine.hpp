@@ -127,7 +127,7 @@ public:
     unsigned topPatchRecallsDeferred() const noexcept {return topPatchRecallsDeferred_;}
     enum class TopAction : uint8_t { FilterReset, PatchRecall };
     struct TopIntent {int physical{-1};l01::NavRoute route{};uint32_t sequence{};TopAction action{TopAction::FilterReset};};
-    struct TopCapture {l01::NavRoute route{};int context{-2};};
+    struct TopCapture {l01::NavRoute route{};int context{-2};std::uint64_t navRevision{};};
     bool lastTopIntent(unsigned index,TopIntent& out) const noexcept {
         if(index>=4||!topIntentValid_[index])return false;
         out=topIntents_[index];return true;
@@ -261,7 +261,8 @@ public:
                 if(down){
                     topHold_[static_cast<std::size_t>(physical-32)]={
                         core_.nativeNav().active().route(physical),
-                        core_.nativeNav().active().contextMode
+                        core_.nativeNav().active().contextMode,
+                        core_.nativeNav().revision()
                     };
                 }else{
                     const auto captured=topHold_[static_cast<std::size_t>(physical-32)];
@@ -272,22 +273,41 @@ public:
                     // physical destination has not changed during the gesture.
                     const auto current=core_.nativeNav().active().route(physical);
                     if(captured.route.address>=0&&captured.route==current&&
+                       captured.navRevision==core_.nativeNav().revision()&&
                        captured.context==core_.nativeNav().active().contextMode){
                         const auto index=static_cast<std::size_t>(physical-32);
-                        // Unambiguous GOLDEN INIT TOP1..3 on the bare/default
-                        // page: these are ACTION pulses, not RESET requests.
-                        // TOP4 remains FILTER GLOBAL and cannot acquire a
-                        // fabricated RESET_DEFAULT; selected/overlay pages keep
-                        // their source-specific PATCH/RESET resolver unchanged.
+                        // Source GOLDEN TOP dispatch. Root 0 = INST/DRUMS,
+                        // root 1 = YELLOW/FILL. Source S3 @zf flags 303/304
+                        // and page fields 297/298 qualify the selected voice.
+                        // Exactly one owner is visible on a committed NAV
+                        // image. TOP4 is invariant FILTER GLOBAL: never pulse.
                         const auto& nav=core_.nativeNav().active();
-                        const bool plainInit=index<3 && nav.at(291)==0 &&
-                            nav.at(292)==0 && nav.contextMode==0 && nav.presetFlag==0 &&
-                            nav.at(293)==0 && nav.at(294)==0 &&
-                            nav.at(295)==0 && nav.at(296)==0 &&
-                            !mutePageVisible() && !core_.longNavPending();
-                        if(plainInit){
-                            if(topPulse_.queue(TopPulseFamily::Init,index))
-                                record(seq,sample,Stage::Decision,Reason::Musical,0,data,3,680+static_cast<int>(index));
+                        const int root=nav.at(291);
+                        const bool normal=nav.at(292)==0 && nav.contextMode==0 &&
+                            nav.presetFlag==0 && !mutePageVisible() &&
+                            !core_.longNavPending() && (root==0||root==1);
+                        TopPulseFamily family=TopPulseFamily::Init;
+                        unsigned member=0;bool isPulse=false;
+                        if(normal){
+                            const int selected=nav.at(303+root);
+                            if(selected==1 && index==2) {
+                                const int voice=nav.at(297+root);
+                                if(voice>=1 && voice<=8){
+                                    family=root==0?TopPulseFamily::Drums:TopPulseFamily::Fill;
+                                    member=static_cast<unsigned>(voice-1);isPulse=true;
+                                }
+                            }else if(selected==0){
+                                if(root==0 && index<3){family=TopPulseFamily::Init;member=static_cast<unsigned>(index);isPulse=true;}
+                                else if(root==1 && index<2){family=TopPulseFamily::Yellow;member=static_cast<unsigned>(index);isPulse=true;}
+                            }
+                        }
+                        if(isPulse){
+                            if(topPulse_.queue(family,member))
+                                record(seq,sample,Stage::Decision,Reason::Musical,0,data,3,
+                                       680+static_cast<int>(family==TopPulseFamily::Init?member:
+                                       family==TopPulseFamily::Drums?4+member:
+                                       family==TopPulseFamily::Yellow?12+member:14+member));
+                            else record(seq,sample,Stage::Overflow,Reason::Rejected,0,data,3);
                         }else{
                         // Source ownership: SAMPLE(mode3) and MACHINE(mode7)
                         // TOP1..3 are PATCH recalls, not FILTER RESET.
