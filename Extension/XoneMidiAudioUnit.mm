@@ -182,15 +182,19 @@
                 engine->ackCueLoadPacket(packet,ok,sample);
             }
         };
+        bool failedTopOffInThisBuffer=false;
         const auto flushTop = [&](AUEventSampleTime sample) {
-            if(!sendMIDI)return;
+            // Multiple flush sites (MIDI edge + end-of-buffer timer) share
+            // one render pass. A failed OFF must NOT be retried again inside
+            // the same buffer; its next chance is the next render buffer.
+            if(!sendMIDI||failedTopOffInThisBuffer)return;
             for(unsigned n=0;n<64;++n) {
                 const auto packet=engine->nextTopPulse();
                 if(!packet.valid)break;
                 const bool success=sendMIDI(sample,0,3,packet.bytes)==noErr;
                 engine->ackTopPulse(packet,success,sample);
                 // Never overtake a failed OFF with the next queued TOP.
-                if(!success&&!packet.on)break;
+                if(!success&&!packet.on){failedTopOffInThisBuffer=true;break;}
             }
         };
         const auto flushMuteLeds = [&](AUEventSampleTime sample,int64_t ms) {
