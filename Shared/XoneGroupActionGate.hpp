@@ -9,6 +9,7 @@ struct QualifiedGroupAction {
     bool fill{};
     unsigned page{},action{},physical{};
     std::uint64_t navRevision{};
+    std::uint32_t physicalDownEpoch{}; // captured only on a true physical DOWN
     bool sourceOwned{}; // evidence from S2/S3, not an inferred route
 };
 class GroupActionGate {
