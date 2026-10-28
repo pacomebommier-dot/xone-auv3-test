@@ -3,7 +3,13 @@
 #include <iostream>
 using namespace xone::host;
 int main() {
+    // The old two-CC CH1 mapping must be absent from production by default.
+    HostEngine production;
+    uint8_t probe[]{0xB0,4,64};
+    assert(!production.receive(0,probe,3,0).emit);
+    assert(!production.enableHistoricalL02BenchForDiagnostic(true));
     HostEngine e;
+    assert(e.enableHistoricalL02BenchForDiagnostic(true));
     for (unsigned v=0; v<128; ++v) {
         for (unsigned cc : {4u,8u}) {
             uint8_t input[]{0xB0, static_cast<uint8_t>(cc), static_cast<uint8_t>(v)};
