@@ -4,6 +4,7 @@
 #include "XoneContinuousInput.hpp"
 #include "XoneSoftMidiBridge.hpp"
 #include "XoneTopPulseBus.hpp"
+#include "XoneS8SamplePatchBank.hpp"
 #include "XoneGroupActionGate.hpp"
 #include "XoneSession.hpp"
 #include "../Core/MutePhysicalGate.hpp"
@@ -117,6 +118,18 @@ public:
         if(service.command==DjLoopCommand::None || service.command!=djLoopCommand_ ||
            service.generation!=dj2BackendGeneration_)return false;
         djLoopCommand_=DjLoopCommand::None;return true;
+    }
+    bool s8SamplePatchForDiagnostic(int voice,int slot,S8SamplePatchBank::Patch& out)const noexcept {
+        return voice>=0&&slot>=0&&s8Sample_.read(static_cast<unsigned>(voice),
+                                                  static_cast<unsigned>(slot),out);
+    }
+    bool setS8SampleModeBeforeRendering(int voice,int index,int mode) noexcept {
+        return !started_&&voice>=0&&index>=0&&
+            s8Sample_.setMode(static_cast<unsigned>(voice),static_cast<unsigned>(index),mode);
+    }
+    int s8SampleMode(int voice,int index)const noexcept {
+        return voice>=0&&index>=0?s8Sample_.mode(static_cast<unsigned>(voice),
+                                                static_cast<unsigned>(index)):-2;
     }
     bool samplePatchForDiagnostic(int owner,int slot,l01::BankS6::PatchRecord& out)const noexcept {
         return core_.nativeBank().readPatch(owner,slot,out);
@@ -481,9 +494,24 @@ public:
             const int base=40*request.owner;
             // A recall must not steal a physical TOUCH/MIX owner or its OFF.
             for(const auto& hold:spots_)if(hold.cell>=base && hold.cell<base+40)return {};
-            l01::BankS6::PatchRecord patch{};
-            if(!core_.nativeBank().readPatch(request.owner,request.slot,patch) || !patch.valid ||
-               patch.revision!=request.revision || patch.config!=core_.nativeLive().sessionConfig())return {};
+            S8SamplePatchBank::Values values{};
+            int config=-1;
+            if(request.s8){
+                S8SamplePatchBank::Patch patch{};
+                if(!s8Sample_.read(static_cast<unsigned>(request.owner),
+                                   static_cast<unsigned>(request.slot),patch)||
+                   !patch.valid||patch.revision!=request.revision||
+                   patch.config!=core_.nativeLive().sessionConfig())return {};
+                values=patch.values;config=patch.config;
+            }else{
+                l01::BankS6::PatchRecord patch{};
+                if(!core_.nativeBank().readPatch(request.owner,request.slot,patch)||!patch.valid||
+                   patch.revision!=request.revision||
+                   patch.config!=core_.nativeLive().sessionConfig())return {};
+                for(int field=0;field<28;++field)values[static_cast<std::size_t>(field)]=patch.values[static_cast<std::size_t>(field)];
+                config=patch.config;
+            }
+            if(!S8SamplePatchBank::validate(values))return {};
             auto projection=core_.output();projection.drain();
             Result result{};
             const auto seq=++sequence_;
@@ -491,7 +519,7 @@ public:
             for(int field=0;field<28;++field){
                 const int type=field<16?10:11;
                 const int api=field<16?16*request.owner+field:12*request.owner+field-16;
-                const int value=patch.values[static_cast<std::size_t>(field)];
+                const int value=values[static_cast<std::size_t>(field)];
                 if(!projection.apply({type,api,value,127}))return {};
                 // OutputS4 deduplicates CC/state writes. Preserve its exact bytes.
                 for(std::size_t n=0;n<projection.emitted();++n){
@@ -504,8 +532,12 @@ public:
                 }
                 projection.drain();
             }
-            if(!core_.recallNativeSamplePatch(request.owner,request.slot,request.revision,
-                                             core_.nativeLive().revision()))return {};
+            if(request.s8){
+                if(!core_.recallNativeS8SamplePatch(request.owner,values,config,
+                                                  core_.nativeLive().revision()))return {};
+            }else if(!core_.recallNativeSamplePatch(request.owner,request.slot,
+                                                     request.revision,
+                                                     core_.nativeLive().revision()))return {};
             return result;
         }
         return {};
@@ -702,8 +734,8 @@ public:
     }
     uint32_t overflows() const noexcept {return overflows_.load(std::memory_order_relaxed);}
 private:
-    // Snapshot the exact SOURCE SAMPLE40 image with no fabricated zero and no
-    // outgoing MIDI. An UNKNOWN or invalid mode rejects before a bank write.
+    // S8 SAMPLE: capture 28 instrument parameters only, excluding modes
+    // 28..39, which belong solely to the S8 configuration.
     bool saveSamplePatchFromLive(int slot) noexcept {
         const auto& nav=core_.nativeNav();
         if(slot<0||slot>=3||!nav.stable()||nav.hasStage()||nav.active().at(292)!=3 ||
@@ -713,21 +745,18 @@ private:
         const int config=core_.nativeLive().sessionConfig();
         if(owner<0||owner>=8||config<1||config>127)return false;
         for(const auto& spot:spots_)if(spot.cell>=40*owner&&spot.cell<40*(owner+1))return false;
-        l01::BankS6::PatchImage image{};image.fill(l01::BankS6::Unknown);
-        for(int field=0;field<40;++field){
-            const auto value=core_.nativeLive().desired(40*owner+field);
+        S8SamplePatchBank::Values image{};image.fill(S8SamplePatchBank::Unknown);
+        for(unsigned field=0;field<S8SamplePatchBank::ParamCount;++field){
+            const auto value=core_.nativeLive().desired(40*owner+static_cast<int>(field));
             if(!value.known)return false;
-            image[static_cast<std::size_t>(field)]=value.value;
+            image[field]=value.value;
         }
-        if(!l01::BankS6::validatePatch(owner,image))return false;
-        l01::BankS6::PatchRecord previous{};
-        const bool initialized=core_.nativeBank().initialized();
-        if(initialized &&
-           (!core_.nativeBank().readPatch(owner,slot,previous) ||
-            (previous.valid&&previous.config!=config)))return false;
-        if(!initialized&&!core_.initializeEmptyNativeBanksForDiagnostic())return false;
-        return core_.saveNativePatchForDiagnostic(owner,slot,config,image,
-                                                  initialized?previous.revision:0);
+        if(!S8SamplePatchBank::validate(image))return false;
+        S8SamplePatchBank::Patch prior{};
+        if(!s8Sample_.read(static_cast<unsigned>(owner),static_cast<unsigned>(slot),prior) ||
+           (prior.valid&&prior.config!=config))return false;
+        return s8Sample_.save(static_cast<unsigned>(owner),static_cast<unsigned>(slot),
+                              config,image,prior.revision);
     }
     struct GroupHold {
         QualifiedGroupAction action{};
@@ -759,7 +788,7 @@ private:
         }
     }
     std::array<GroupHold,12> groupHolds_{};
-    struct SamplePatchRequest {int owner{-1},slot{-1};uint32_t revision{};};
+    struct SamplePatchRequest {int owner{-1},slot{-1};uint32_t revision{};bool s8{};};
     SamplePatchRequest samplePatch_{};int64_t lastSamplePatchBar_{-1};
     void armSamplePatch(unsigned index) noexcept {
         if(samplePatchPending() || index>=3 || !topIntentValid_[index])return;
@@ -767,11 +796,19 @@ private:
         const int packed=intent.route.address;
         if(packed<0 || packed/1024!=11 || (packed%1024)/32!=1)return;
         const int owner=packed%32-1,slot=intent.route.position;
-        l01::BankS6::PatchRecord patch{};
-        if(owner<0 || owner>=8 || slot<0 || slot>=3 ||
-           !core_.nativeBank().readPatch(owner,slot,patch) || !patch.valid ||
-           patch.config!=core_.nativeLive().sessionConfig())return;
-        samplePatch_={owner,slot,patch.revision};
+        if(owner<0||owner>=8||slot<0||slot>=3)return;
+        S8SamplePatchBank::Patch native{};
+        if(s8Sample_.read(static_cast<unsigned>(owner),static_cast<unsigned>(slot),native) &&
+           native.valid && native.config==core_.nativeLive().sessionConfig()) {
+            samplePatch_={owner,slot,native.revision,true};
+        }else{
+            // Explicit pre-render S6 fixtures remain available for historical
+            // compatibility tests; normal physical SAVE never writes S6.
+            l01::BankS6::PatchRecord historical{};
+            if(!core_.nativeBank().readPatch(owner,slot,historical)||!historical.valid||
+               historical.config!=core_.nativeLive().sessionConfig())return;
+            samplePatch_={owner,slot,historical.revision,false};
+        }
         topIntentValid_[index]=false; // command accepted once; BAR still has not applied it
     }
     void requestDjLoopStop(bool reset,bool invalidate=false) noexcept {
@@ -930,6 +967,7 @@ private:
     ContinuousPickup pickup_{};
     SoftMidiBridge soft_{};
     TopPulseBus topPulse_{};
+    S8SamplePatchBank s8Sample_{};
     std::array<bool,4> topSaveSuppress_{};
     unsigned sampleSavesAccepted_{},sampleSavesRefused_{};
     std::array<std::uint32_t,36> groupDownEpoch_{};
