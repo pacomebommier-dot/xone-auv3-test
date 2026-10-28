@@ -506,34 +506,52 @@ public:
             lastSamplePatchBar_=edge.ordinal;
             if(!samplePatchPending())continue;
             const auto request=samplePatch_;samplePatch_={};
-            const int base=40*request.owner;
-            // A recall must not steal a physical TOUCH/MIX owner or its OFF.
-            for(const auto& hold:spots_)if(hold.cell>=base && hold.cell<base+40)return {};
-            S8SamplePatchBank::Values values{};
+            const int base=request.machine?320+42*request.owner:40*request.owner;
+            const int width=request.machine?42:40;
+            // Never override active SPOT owners, especially momentary OFF debts.
+            for(const auto& hold:spots_)if(hold.cell>=base&&hold.cell<base+width)return {};
+            std::array<int,30> values{};
+            const int count=request.machine?30:28;
             int config=-1;
-            if(request.s8){
+            if(request.machine){
+                S8MachinePatchBank::Patch patch{};
+                if(!s8Machine_.read(static_cast<unsigned>(request.owner),
+                                    static_cast<unsigned>(request.slot),patch)||
+                   !patch.valid||patch.revision!=request.revision||
+                   patch.config!=core_.nativeLive().sessionConfig())return {};
+                values=patch.values;config=patch.config;
+                if(!S8MachinePatchBank::validate(patch.values))return {};
+            }else if(request.s8){
                 S8SamplePatchBank::Patch patch{};
                 if(!s8Sample_.read(static_cast<unsigned>(request.owner),
                                    static_cast<unsigned>(request.slot),patch)||
                    !patch.valid||patch.revision!=request.revision||
                    patch.config!=core_.nativeLive().sessionConfig())return {};
-                values=patch.values;config=patch.config;
+                for(int field=0;field<28;++field)values[static_cast<std::size_t>(field)]=patch.values[static_cast<std::size_t>(field)];
+                config=patch.config;
+                if(!S8SamplePatchBank::validate(patch.values))return {};
             }else{
+                // Historical S6 pre-render fixture path, explicitly isolated
+                // from the S8 banks used by actual physical SAVE.
                 l01::BankS6::PatchRecord patch{};
                 if(!core_.nativeBank().readPatch(request.owner,request.slot,patch)||!patch.valid||
                    patch.revision!=request.revision||
                    patch.config!=core_.nativeLive().sessionConfig())return {};
                 for(int field=0;field<28;++field)values[static_cast<std::size_t>(field)]=patch.values[static_cast<std::size_t>(field)];
                 config=patch.config;
+                S8SamplePatchBank::Values prior{};
+                for(int field=0;field<28;++field)prior[static_cast<std::size_t>(field)]=values[static_cast<std::size_t>(field)];
+                if(!S8SamplePatchBank::validate(prior))return {};
             }
-            if(!S8SamplePatchBank::validate(values))return {};
             auto projection=core_.output();projection.drain();
             Result result{};
             const auto seq=++sequence_;
             const auto sample=bufferStart+edge.offset;
-            for(int field=0;field<28;++field){
-                const int type=field<16?10:11;
-                const int api=field<16?16*request.owner+field:12*request.owner+field-16;
+            for(int field=0;field<count;++field){
+                const int type=field<(request.machine?18:16)?10:11;
+                const int api=request.machine?
+                    (field<18?128+18*request.owner+field:96+12*request.owner+field-18):
+                    (field<16?16*request.owner+field:12*request.owner+field-16);
                 const int value=values[static_cast<std::size_t>(field)];
                 if(!projection.apply({type,api,value,127}))return {};
                 // OutputS4 deduplicates CC/state writes. Preserve its exact bytes.
@@ -547,8 +565,13 @@ public:
                 }
                 projection.drain();
             }
-            if(request.s8){
-                if(!core_.recallNativeS8SamplePatch(request.owner,values,config,
+            if(request.machine){
+                if(!core_.recallNativeS8MachinePatch(request.owner,values,config,
+                                                   core_.nativeLive().revision()))return {};
+            }else if(request.s8){
+                S8SamplePatchBank::Values patchValues{};
+                for(int field=0;field<28;++field)patchValues[static_cast<std::size_t>(field)]=values[static_cast<std::size_t>(field)];
+                if(!core_.recallNativeS8SamplePatch(request.owner,patchValues,config,
                                                   core_.nativeLive().revision()))return {};
             }else if(!core_.recallNativeSamplePatch(request.owner,request.slot,
                                                      request.revision,
