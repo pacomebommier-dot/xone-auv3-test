@@ -13,7 +13,9 @@ static void physical(HostEngine& h,int p,int ms){for(int note=24;note<40;++note)
  const uint8_t down[]={0x9e,uint8_t(note),127},up[]={0x8e,uint8_t(note),0};h.receive(0,down,3,ms,ms);h.receive(0,up,3,ms+1,ms+1);return;}assert(false);}
 static int memoryButton(const xone::l01::NavImage& n,int slot){for(int p=4;p<20;++p){auto r=n.route(p);if((r.address/1024==5||r.address/1024==8)&&r.position==slot)return p;}assert(false);return -1;}
 static auto session(){xone::l01::LiveState::SessionImage s{};s.schema=1;s.config=7;s.revision=1;s.desired.fill(-2);
- for(int o=0;o<28;++o)for(int f=0;f<9;++f)s.desired[xone::l01::FxS6::addressFor(o,f)]=f<6?50:0;return s;}
+ for(int o=0;o<28;++o)for(int f=0;f<9;++f)s.desired[xone::l01::FxS6::addressFor(o,f) ]=f<6?50:0;
+ return s;
+}
 static auto beat(){GridBatch b{};b.valid=true;b.count=1;b.events[0]={GridKind::Beat,0,1};return b;}
 int main(){
  {HostEngine e;assert(e.restoreSessionBeforeRendering(session()));assert(e.captureMemory(0,0));assert(e.requestMemoryRecall(0,0));

@@ -2,6 +2,8 @@
 #import <AVFoundation/AVFoundation.h>
 #import "../Extension/XoneMidiAudioUnit.h"
 #include "../Shared/XoneValidationFixture.hpp"
+#include "../Shared/XoneCueLoadBar.hpp"
+#include "../Core/NativeSlices.hpp"
 #include <cassert>
 #include <iostream>
 int main() {
@@ -25,7 +27,7 @@ int main() {
     };
     __block NSUInteger sent=0,failAt=0;
     AUEventSampleTime expectedRange[]{0,8192};auto *expected=expectedRange;
-    uint8_t bytesSent[64][3]{};auto *recorded=bytesSent;
+    uint8_t bytesSent[1024][3]{};auto *recorded=bytesSent;
     __block NSUInteger ledSent=0,failLedAt=0;
     uint8_t ledBytes[4096][3]{};auto *ledRecorded=ledBytes;
     __block uint8_t lastStatus=0,lastNumber=0,lastValue=0;
@@ -36,7 +38,7 @@ int main() {
             for(unsigned i=0;i<3;++i)ledRecorded[ledSent][i]=data[i];
             ++ledSent;return ledSent==failLedAt?static_cast<OSStatus>(-1):noErr;
         }
-        assert(sent<64);
+        assert(sent<1024);
         for(unsigned i=0;i<3;++i)recorded[sent][i]=data[i];
         ++sent;lastStatus=data[0];lastNumber=data[1];lastValue=data[2];return sent==failAt?static_cast<OSStatus>(-1):noErr;
     };
@@ -301,6 +303,52 @@ int main() {
     pump(48);assert(sent==beforeTop+5&&lastStatus==0x8B&&lastNumber==41&&lastValue==0);
     pump(48);assert(sent==beforeTop+5);
     [topUnit deallocateRenderResources];
+
+    // Real AU: no fixture, physical CUE4 BASE -> local owner0 at host BAR.
+    // One rejected callback retries only in the following render buffer.
+    XoneMidiAudioUnit *sourceUnit=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
+    assert(sourceUnit&&!error);sourceUnit.MIDIOutputEventBlock=testOutput;
+    assert([sourceUnit.inputBusses[0] setFormat:format error:&error]);
+    assert([sourceUnit.outputBusses[0] setFormat:format error:&error]);
+    sourceUnit.maximumFramesToRender=8192;cursor=0;
+    sourceUnit.transportStateBlock=^BOOL(AUHostTransportStateFlags *flags,double *position,double *start,double *end){
+        (void)position;(void)start;(void)end;if(flags)*flags=AUHostTransportStateMoving;return YES;
+    };
+    sourceUnit.musicalContextBlock=^BOOL(double *tempo,double *numerator,NSInteger *denominator,double *beatPosition,NSInteger *offset,double *downbeat){
+        if(tempo)*tempo=120;
+        if(numerator)*numerator=4;
+        if(denominator)*denominator=4;
+        if(beatPosition)*beatPosition=static_cast<double>(*musicalCursor)/24000.0;
+        if(offset)*offset=static_cast<NSInteger>(((*musicalCursor+23999)/24000)*24000-*musicalCursor);
+        if(downbeat)*downbeat=0;
+        return YES;
+    };
+    assert([sourceUnit allocateRenderResourcesAndReturnError:&error]);render=sourceUnit.internalRenderBlock;
+    const auto physicalNote=[](int physical){
+        for(int n=24;n<40;++n)if(xone::l01::SurfaceInput::physicalControl(n)==physical)return n;
+        assert(false);return -1;
+    };
+    xone::l01::NavS3 sourceNav;assert(sourceNav.initializeDefault());int selectCue=-1;
+    for(int p=4;p<20;++p)if(sourceNav.active().route(p).address==2*1024+3*32+4)selectCue=p;
+    assert(selectCue>=0);pump(48,0x9E,physicalNote(selectCue),127);pump(48,0x8E,physicalNote(selectCue),0);
+    auto cueNav=sourceNav.active();cueNav.at(299)=1;cueNav.at(293)=4;
+    assert(xone::l01::NavS3::regenerate(cueNav)&&sourceNav.stage(cueNav)&&sourceNav.commit());int baseButton=-1;
+    for(int p=4;p<20;++p){unsigned group=0,index=0;
+        if(xone::host::CueLoadBar::derive(sourceNav,static_cast<unsigned>(p),group,index)&&group==0&&index==3)baseButton=p;
+    }
+    assert(baseButton>=0);const NSUInteger beforeSource=sent;
+    pump(48,0x9E,physicalNote(baseButton),127);pump(48,0x8E,physicalNote(baseButton),0);assert(sent==beforeSource);
+    failAt=beforeSource+2;
+    for(unsigned n=0;n<12;++n)pump(8192);
+    assert(sent==beforeSource+2); // CUE CC then failed first nominal CC; no same-buffer retry
+    assert(recorded[beforeSource][0]==0xBD&&recorded[beforeSource][1]==38&&recorded[beforeSource][2]==127);
+    assert(recorded[beforeSource+1][0]==0xB7&&recorded[beforeSource+1][1]==0&&recorded[beforeSource+1][2]==0);
+    failAt=0;pump(48);assert(sent==beforeSource+99);pump(48);assert(sent==beforeSource+99);
+    NSData *sourceState=sourceUnit.fullStateForDocument[@"XONE_LAST_LIVE_V1"];
+    assert(xone::host::decodeSession(static_cast<const uint8_t *>(sourceState.bytes),sourceState.length,decoded));
+    assert(decoded.desired[320]==0&&decoded.desired[1552]==0&&decoded.desired[1768]==0);
+    assert(decoded.desired[350]==-2&&decoded.desired[1328]==-2&&decoded.desired[404]==-2);
+    [sourceUnit deallocateRenderResources];
 
     std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)\n";
  }

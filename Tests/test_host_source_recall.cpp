@@ -8,11 +8,11 @@ static xone::l01::NavImage selected(int group){
  n.at(293+2*root)=high?1:4;n.at(294+2*root)=high?8:0;
  assert(xone::l01::NavS3::regenerate(n));return n;
 }
-static void press(HostEngine& h,int group,int slot){
+static void press(HostEngine& h,int group,int slot,int ms=1){
  xone::l01::NavS3 nav;assert(nav.initializeDefault());assert(nav.stage(selected(group))&&nav.commit());
  for(int p=4;p<20;++p){unsigned g=0,i=0;if(!CueLoadBar::derive(nav,p,g,i)||int(i%4)!=slot)continue;
   for(int note=24;note<40;++note)if(xone::l01::SurfaceInput::physicalControl(note)==p){
-   const uint8_t down[]={0x9e,uint8_t(note),127},up[]={0x8e,uint8_t(note),0};h.receive(0,down,3,0,1);h.receive(0,up,3,1,2);return;}}
+   const uint8_t down[]={0x9e,uint8_t(note),127},up[]={0x8e,uint8_t(note),0};h.receive(0,down,3,ms,ms);h.receive(0,up,3,ms+1,ms+1);return;}}
  assert(false);
 }
 static xone::l01::LiveState::SessionImage session(int value){
@@ -21,7 +21,34 @@ static xone::l01::LiveState::SessionImage session(int value){
  return s;
 }
 static GridBatch bar(){GridBatch b{};b.valid=true;b.count=1;b.events[0]={GridKind::Bar,17,4};return b;}
+static int noteFor(int p){for(int n=24;n<40;++n)if(xone::l01::SurfaceInput::physicalControl(n)==p)return n;assert(false);return -1;}
+static void click(HostEngine& h,int physical,int ms){uint8_t down[]={0x9e,uint8_t(noteFor(physical)),127},up[]={0x8e,uint8_t(noteFor(physical)),0};h.receive(0,down,3,ms,ms);h.receive(0,up,3,ms+1,ms+1);}
 int main(){
+ {HostEngine e;assert(e.restoreSessionBeforeRendering(session(51)));assert(e.saveSourcePatch(0,0));
+  assert(e.restoreSessionBeforeRendering(session(62)));assert(e.saveSourcePatch(0,1));assert(e.restoreSessionBeforeRendering(session(70)));
+  assert(e.requestSourceRecall(0,1));e.onMusicalGrid(bar());assert(e.desiredLive(320).value==62);
+  assert(e.requestSourceRecall(0,0));auto next=bar();next.events[0].ordinal=8;e.onMusicalGrid(next);assert(e.desiredLive(320).value==51);
+  assert(e.requestSourceRecall(0,3));next.events[0].ordinal=12;e.onMusicalGrid(next);assert(e.desiredLive(320).value==0);
+  SourcePatchBank::Patch saved{};assert(e.readSourcePatch(0,0,saved)&&saved.values[0]==51);
+ }
+ {HostEngine e;assert(e.restoreSessionBeforeRendering(session(23)));assert(e.saveSourcePatch(0,0));
+  assert(e.requestSourceRecall(0,0));e.onMusicalGrid(bar());
+  while(e.nextSourcePacket().valid){auto p=e.nextSourcePacket();e.ackSourcePacket(p,true,17);}
+  e.stop(18);assert(e.pendingStopOffs()==24);
+  e.beginStopRetryPass(18);unsigned off=0;for(;;){auto p=e.nextStopPacket();if(!p.emit)break;assert((p.bytes[0]&0xf0)==0x80);e.sent(p,0);++off;}
+  assert(off==24&&e.pendingStopOffs()==0);e.beginStopRetryPass(19);assert(!e.nextStopPacket().emit);
+ }
+
+ {HostEngine e;xone::l01::NavS3 nav;assert(nav.initializeDefault());int selection=-1;
+  for(int p=4;p<20;++p)if(nav.active().route(p).address==2*1024+3*32+4)selection=p;
+  assert(selection>=0);click(e,selection,1);press(e,0,3,3);assert(e.pendingCueLoad()==1);
+  click(e,4,5);e.onMusicalGrid(bar());assert(e.desiredLive(320).known&&e.desiredLive(320).value==0);
+ }
+ {HostEngine e;assert(e.requestSourceRecall(0,3)&&e.requestSourceRecall(1,3));e.onMusicalGrid(bar());
+  assert(e.desiredLive(320).known&&e.desiredLive(404).known&&!e.desiredLive(488).known);
+  unsigned count=0;while(e.nextSourcePacket().valid){auto p=e.nextSourcePacket();e.ackSourcePacket(p,true,17);++count;}assert(count==194);
+ }
+
  {HostEngine fresh;assert(fresh.setNavForDiagnostic(selected(0)));
   assert(!fresh.desiredLive(320).known);press(fresh,0,3);fresh.onMusicalGrid(bar());
   assert(fresh.desiredLive(320).known&&fresh.desiredLive(320).value==0);}
