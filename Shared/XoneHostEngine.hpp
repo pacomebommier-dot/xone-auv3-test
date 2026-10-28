@@ -122,12 +122,18 @@ public:
     // Unified S7 ACTION FIFO. The S2/S3 caller MUST provide a qualified
     // captured owner; an arbitrary held button is not a musical GROUP.
     bool acceptQualifiedGroupAction(const QualifiedGroupAction& action) noexcept {
-        if(!GroupActionGate::authorize(core_.nativeNav(),action,
+        if(action.physical>=groupDownEpoch_.size() ||
+           action.physicalDownEpoch==0 ||
+           groupDownEpoch_[action.physical]!=action.physicalDownEpoch ||
+           !GroupActionGate::authorize(core_.nativeNav(),action,
                core_.surface().held(action.physical),core_.longNavPending()))
             return false;
         return topPulse_.queueGroup(action.fill,action.page,action.action);
     }
     std::uint64_t nativeNavRevisionForQualifiedSource() const noexcept {return core_.nativeNav().revision();}
+    std::uint32_t physicalDownEpochForQualifiedSource(unsigned physical) const noexcept {
+        return physical<groupDownEpoch_.size()?groupDownEpoch_[physical]:0;
+    }
     unsigned pendingActionPulses() const noexcept {return topPulse_.pending();}
     unsigned pendingTopPulses() const noexcept {return topPulse_.pending();}
     TopPulsePacket nextActionPulse() const noexcept {return topPulse_.next();}
@@ -225,6 +231,18 @@ public:
             const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs,muteBaseOwned);
             record(seq,sample,Stage::Decision,accepted?Reason::Integrated:Reason::ClockRejected,cable,data,length);
             if(accepted)resolveDjLoopNavigation(previousNav);
+            // A GROUP source proof lives only between a TRUE DOWN and its
+            // TRUE UP; STOP invalidates the epoch even if SurfaceInput keeps
+            // the physical Held bit until the real release.
+            if(accepted&&physical>=0&&physical<36&&(cmd==0x90||cmd==0x80)){
+                const bool down=cmd==0x90&&data[2]!=0;
+                if(down&&!wasHeld){
+                    ++groupEpochCounter_;
+                    if(groupEpochCounter_==0)++groupEpochCounter_;
+                    groupDownEpoch_[static_cast<unsigned>(physical)]=groupEpochCounter_;
+                }else if(!down&&wasHeld)
+                    groupDownEpoch_[static_cast<unsigned>(physical)]=0;
+            }
             // Only real, non-duplicate physical DOWN can arm the 4 choices on
             // a source-qualified DRUMS/FILL page. No synthetic selection.
             if(accepted&&!wasHeld&&cmd==0x90&&data[2]!=0&&
@@ -556,6 +574,7 @@ public:
         for(auto& target:topHold_)target={};
         topIntentValid_.fill(false);
         samplePatch_={};lastSamplePatchBar_=-1;
+        groupDownEpoch_.fill(0); // STOP invalidates stale GROUP proof
         soft_.stop(); // cancels only uncommitted SOFT; applied pages persist
         topPulse_.stop(); // cancels unattempted pulses; retains every attempted OFF
         browserLoadPending_=false;browserSelectionSequence_=0;
@@ -787,6 +806,8 @@ private:
     ContinuousPickup pickup_{};
     SoftMidiBridge soft_{};
     TopPulseBus topPulse_{};
+    std::array<std::uint32_t,36> groupDownEpoch_{};
+    std::uint32_t groupEpochCounter_{1};
     DjBrowserWindow browser_{};
     std::array<TopCapture,4> topHold_{};
     std::array<TopIntent,4> topIntents_{};
