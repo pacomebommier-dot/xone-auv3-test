@@ -43,6 +43,11 @@ public:
     bool request(const l01::NavS3& nav,unsigned physical)noexcept {
         unsigned group=0,index=0;
         if(!derive(nav,physical,group,index))return false;
+        return requestQualified(group,index);
+    }
+    bool requestQualified(unsigned group,unsigned index)noexcept {
+        if(group>=channels_.size()||index>=8||
+           ((group&1)==0?index>=4:index<4))return false;
         auto& s=channels_[group];
         // Capture the owner at the true DOWN. Later NAV edits cannot
         // move the pending action to a different instrument/group.
