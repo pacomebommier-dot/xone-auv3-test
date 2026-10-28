@@ -6,7 +6,10 @@ static void edge(HostEngine& e,int note,bool down,int ms){const uint8_t b[]{stat
 static HostEngine::TopIntent top(HostEngine& e,int index,int ms){edge(e,52+index,true,ms);edge(e,52+index,false,ms+1);HostEngine::TopIntent out{};assert(e.lastTopIntent(index,out));return out;}
 int main(){
  HostEngine e;
- auto normal=top(e,0,1);assert(normal.action==HostEngine::TopAction::FilterReset&&normal.route.position==0);
+ // Bare INIT TOP1 is a transient ACTION pulse, not a FILTER RESET.
+ edge(e,52,true,1);edge(e,52,false,2);
+ assert(e.pendingTopPulses()==1);
+ HostEngine::TopIntent none{};assert(!e.lastTopIntent(0,none));
  const auto global=top(e,3,3).route;
  edge(e,15,true,10);edge(e,15,false,20);
  auto yellow=top(e,0,30);assert(yellow.action==HostEngine::TopAction::FilterReset&&yellow.route.position==2);
