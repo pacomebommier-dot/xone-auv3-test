@@ -40,7 +40,9 @@ public:
     }
     // STOP cancels uncommitted choices; it never synthesizes a physical UP
     // or invents a transport BAR. Applied selections remain logical state.
-    void stop() noexcept {pending_.fill(-1);lastBar_=-1;}
+    void stop() noexcept {pending_.fill(-1);sounding_.fill(false);lastBar_=-1;}
+    // STOP retains the logical choice but disarms its output; all possibly
+    // delivered ONs receive an owed OFF, without replaying ON at reopen.
     unsigned pendingCount()const noexcept {
         unsigned n=0;for(int x:pending_)if(x>=0)++n;return n;
     }
@@ -65,6 +67,7 @@ public:
                     needsOff_[previous]=true;
                 }
                 active_[page]=static_cast<int>(choice);
+                sounding_[page]=true;
                 ++changes;
             }
         }
@@ -75,7 +78,7 @@ public:
     SoftMidiPacket next(unsigned& cursor) const noexcept {
         for(unsigned pass=0;pass<2;++pass){
             for(unsigned i=cursor;i<64;++i){
-                const bool desired=active_[i/4]==static_cast<int>(i%4);
+                const bool desired=sounding_[i/4]&&active_[i/4]==static_cast<int>(i%4);
                 const bool off=needsOff_[i] || (possiblyOn_[i]&&!desired);
                 if(pass==0 && off)return make(i,false);
                 if(pass==1 && desired&&!confirmedOn_[i]&&!hasOwedOff(i/4))return make(i,true);
@@ -97,7 +100,7 @@ public:
 private:
     bool hasOwedOff(unsigned page)const noexcept {
         for(unsigned j=4*page;j<4*page+4;++j)
-            if(needsOff_[j]||(possiblyOn_[j]&&active_[page]!=static_cast<int>(j%4)))return true;
+            if(needsOff_[j]||(possiblyOn_[j]&&(!sounding_[page]||active_[page]!=static_cast<int>(j%4))))return true;
         return false;
     }
     static SoftMidiPacket make(unsigned index,bool on)noexcept {
@@ -107,6 +110,7 @@ private:
                    static_cast<std::uint8_t>(on?127:0)}};
     }
     std::array<int,16> active_{},pending_{};
+    std::array<bool,16> sounding_{};
     std::array<bool,64> possiblyOn_{},confirmedOn_{},needsOff_{};
     std::int64_t lastBar_{-1};
 };
