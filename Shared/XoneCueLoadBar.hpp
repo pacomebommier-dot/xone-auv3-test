@@ -55,7 +55,10 @@ public:
         s.pending=static_cast<int>(index);
         return true;
     }
-    void onBar() noexcept {
+    void onBar() noexcept {commitPending();}
+    // Explicit stopped-transport application, not a manufactured BAR event.
+    void onStopped() noexcept {commitPending();}
+    void commitPending() noexcept {
         for(unsigned g=0;g<channels_.size();++g){
             auto& s=channels_[g];
             if(s.dueReady||s.pending<0)continue;

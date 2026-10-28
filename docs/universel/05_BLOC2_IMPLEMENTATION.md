@@ -22,4 +22,4 @@ STOP annule les attentes et conserve les banques. Une restauration de session re
 
 Le banc AU macOS réel ajoute CUE4 physique→BASE au BAR, sortie nominale, callback refusé et reprise au render suivant. Son résultat dépend de la CI Apple, distincte du résultat local Windows. La configuration CI Apple/macOS-15-intel est inchangée. Aucune validation AUM/iPhone n'est annoncée.
 
-Persistance des banques et feedback LED complet restent au bloc 4. PRESET/RED et alternatives S8 restent au bloc 3. Le comportement de nouvelles commandes à transport déjà arrêté n'est pas étendu ici : les rappels du présent chemin attendent leur grille authentifiée ; STOP retire ceux déjà en attente.
+Persistance des banques et feedback LED complet restent au bloc 4. PRESET/RED et alternatives S8 restent au bloc 3. Une nouvelle commande à transport explicitement arrêté s'applique directement, sans BAR/BEAT synthétique ni attente de START ; STOP retire les anciennes attentes. En cas de transport inconnu, aucune échéance n'est inventée.

@@ -24,6 +24,8 @@ static GridBatch bar(){GridBatch b{};b.valid=true;b.count=1;b.events[0]={GridKin
 static int noteFor(int p){for(int n=24;n<40;++n)if(xone::l01::SurfaceInput::physicalControl(n)==p)return n;assert(false);return -1;}
 static void click(HostEngine& h,int physical,int ms){uint8_t down[]={0x9e,uint8_t(noteFor(physical)),127},up[]={0x8e,uint8_t(noteFor(physical)),0};h.receive(0,down,3,ms,ms);h.receive(0,up,3,ms+1,ms+1);}
 int main(){
+ {HostEngine e;e.stop(0);assert(e.requestSourceRecall(0,3));assert(e.desiredLive(320).known&&e.desiredLive(320).value==0);}
+
  {HostEngine e;assert(e.restoreSessionBeforeRendering(session(51)));assert(e.saveSourcePatch(0,0));
   assert(e.restoreSessionBeforeRendering(session(62)));assert(e.saveSourcePatch(0,1));assert(e.restoreSessionBeforeRendering(session(70)));
   assert(e.requestSourceRecall(0,1));e.onMusicalGrid(bar());assert(e.desiredLive(320).value==62);

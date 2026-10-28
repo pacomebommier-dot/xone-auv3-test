@@ -232,16 +232,23 @@ public:
         if(index<0||!core_.captureNativeMemory(owner,slot))return false;
         memoryEngaged_[static_cast<unsigned>(index)]=true;return true;
     }
+    void observeTransport(bool running) noexcept {transportStopped_=!running;}
+    void forgetTransport() noexcept {transportStopped_=false;}
     bool requestMemoryRecall(int owner,int slot) noexcept {
         if(!memoryEngaged(owner,slot))return false;
         l01::BankS6::MemoryRecord saved{};
         if(!core_.nativeBank().readMemory(owner,slot,saved)||!saved.valid||saved.config!=core_.nativeLive().sessionConfig())return false;
-        if(!musicalScheduler_.replace(2,static_cast<uint16_t>(owner),ScheduleWhen::NextBeat))return false;
-        memoryPending_[static_cast<unsigned>(owner)]={slot,saved.config,saved.values};return true;
+        if(!transportStopped_&&!musicalScheduler_.replace(2,static_cast<uint16_t>(owner),ScheduleWhen::NextBeat))return false;
+        memoryPending_[static_cast<unsigned>(owner)]={slot,saved.config,saved.values};
+        if(transportStopped_)applyMemoryRecall(static_cast<unsigned>(owner));
+        return true;
     }
     bool requestSourceRecall(unsigned source,unsigned choice) noexcept {
-        if(source>=4||choice>3||!musicalScheduler_.replace(1,static_cast<uint16_t>(source),ScheduleWhen::NextBar))return false;
-        sourcePending_[source]=static_cast<int>(choice);sourceStatus_[source]=SourceRecallStatus::Pending;return true;
+        if(source>=4||choice>3)return false;
+        if(!transportStopped_&&!musicalScheduler_.replace(1,static_cast<uint16_t>(source),ScheduleWhen::NextBar))return false;
+        sourcePending_[source]=static_cast<int>(choice);sourceStatus_[source]=SourceRecallStatus::Pending;
+        if(transportStopped_)applySourceRecall(source);
+        return true;
     }
     bool memoryEngaged(int owner,int slot)const noexcept {
         int index=l01::BankS6::memoryIndex(owner,slot);return index>=0&&memoryEngaged_[static_cast<unsigned>(index)];
@@ -406,6 +413,7 @@ public:
                 soft_.requestFromRoute(physical,softRoute,softRoot);
             if(accepted && cueSource){
                 cueLoad_.requestQualified(cueGroup,cueIndex);
+                if(transportStopped_)cueLoad_.onStopped();
                 requestSourceRecall(cueGroup,cueIndex%4);
             }
             if(accepted&&memorySource)memoryGesture(memoryOwner,memorySlot);
@@ -799,7 +807,7 @@ public:
     void beginStopRetryPass(int64_t sample) noexcept {stopRead_=0;stopSample_=sample;}
     unsigned pendingStopOffs() const noexcept {return stopPendingCount_;}
     void stop(int64_t sample) noexcept {
-        started_=true;
+        started_=true;transportStopped_=true;
         // Keep output debts until the real callback confirms each OFF.
         const auto output=core_.output();
         stopCount_=stopRead_=stopPendingCount_=0;stopSample_=sample;
@@ -1202,6 +1210,7 @@ private:
                 {status,static_cast<uint8_t>(api%128),static_cast<uint8_t>(type==10?value:value?127:0)}};
         }
     }
+    bool transportStopped_{}; // false also means unknown: never guess a stopped clock
     HostActionScheduler musicalScheduler_{};
     std::array<MemoryPending,28> memoryPending_{};
     std::array<bool,96> memoryEngaged_{};

@@ -60,5 +60,7 @@ int main(){
  uint8_t raw[]={0xbe,uint8_t(cc),50};auto result=h.receive(0,raw,3,3,3);assert(result.emit);h.sent(result,0);
  raw[2]=99;result=h.receive(0,raw,3,4,4);assert(result.emit);h.sent(result,0);assert(h.desiredLive(1552).value==99);
  physical(h,p,5);assert(h.desiredLive(1552).value==99);h.onMusicalGrid(beat());assert(h.desiredLive(1552).value==50);
+ raw[2]=50;result=h.receive(0,raw,3,10,10);h.sent(result,0);raw[2]=99;result=h.receive(0,raw,3,11,11);assert(result.emit);h.sent(result,0);
+ h.stop(12);physical(h,p,13);assert(h.desiredLive(1552).value==50&&h.pendingMemorySlot(0)==-1);
  std::cout<<"PASS physical MEMORY capture then BEAT recall\n";
 }

@@ -227,11 +227,12 @@
             if (transport(&flags, nullptr, nullptr, nullptr)) {
                 const bool nowMoving = (flags & AUHostTransportStateMoving) != 0;
                 if (*known && *moving && !nowMoving) { engine->stop(bufferStart); flushStop(); flushSoft(bufferStart); flushTop(bufferStart); }
-                *known = true; *moving = nowMoving;
-            } else { *known = false; }
+                *known = true; *moving = nowMoving;engine->observeTransport(nowMoving);
+            } else { *known = false;engine->forgetTransport(); }
         }
         engine->beginSourceRetryPass();
         flushSource(bufferStart);
+        if(!transport)engine->forgetTransport();
         // Inspect host transport before retrying an unstarted TOP pulse:
         // a STOP transition must cancel queued ONs, never emit them first.
         flushTop(bufferStart);
@@ -300,6 +301,7 @@
                 if (sendMIDI) engine->sent(packet, sendMIDI(sample, 0, 3, packet.bytes));
                 else engine->noOutput(packet);
             }
+            flushCueLoad(sample);flushSource(sample); // explicit stopped recalls, no synthetic grid
             flushTop(sample); // TOP UP produces pulse at true MIDI offset
             flushMuteLeds(sample,ms);
         }
