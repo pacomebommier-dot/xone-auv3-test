@@ -9,6 +9,7 @@
 #include "XoneCueLoadBar.hpp"
 #include "XoneSourcePatchBank.hpp"
 #include "XoneHostScheduler.hpp"
+#include "XoneGlobalSnapshot.hpp"
 #include "XoneGroupActionGate.hpp"
 #include "XoneSession.hpp"
 #include "../Core/MutePhysicalGate.hpp"
@@ -184,7 +185,7 @@ public:
     unsigned topPatchRecallsDeferred() const noexcept {return topPatchRecallsDeferred_;}
     enum class TopAction : uint8_t { FilterReset, PatchRecall };
     struct TopIntent {int physical{-1};l01::NavRoute route{};uint32_t sequence{};TopAction action{TopAction::FilterReset};};
-    struct TopCapture {l01::NavRoute route{};int context{-2};std::uint64_t navRevision{};};
+    struct TopCapture {l01::NavRoute route{};int context{-2};std::uint64_t navRevision{};int root{-1};};
     bool lastTopIntent(unsigned index,TopIntent& out) const noexcept {
         if(index>=4||!topIntentValid_[index])return false;
         out=topIntents_[index];return true;
@@ -226,6 +227,61 @@ public:
         slot=route.position;return l01::BankS6::memoryIndex(owner,slot)>=0;
     }
     enum class SourceRecallStatus : uint8_t { None, Pending, AppliedLocal, EmptyPatch, UnknownConfig, Busy };
+    bool showPresetPage() noexcept {
+        auto n=core_.nativeNav().active();n.at(292)=1;n.presetFlag=1;
+        if(!l01::NavS3::regenerate(n)||!core_.stageNativeNav(n)||!core_.commitNativeNav())return false;
+        muteGate_.restoreVisible(false);return true;
+    }
+    bool leavePresetPage() noexcept {
+        auto n=core_.nativeNav().active();n.at(292)=n.contextMode;n.presetFlag=0;
+        return l01::NavS3::regenerate(n)&&core_.stageNativeNav(n)&&core_.commitNativeNav();
+    }
+    // INIT uses a separately supplied local reference, never a fabricated RESET zero.
+    bool configureGlobalInit(const GlobalSnapshot& reference) noexcept {
+        if(initPending_||!reference.admissible(core_.nativeLive().sessionConfig()))return false;
+        globalInit_=reference;return true;
+    }
+    bool requestGlobalInit() noexcept {
+        if(!globalInit_.admissible(core_.nativeLive().sessionConfig()))return false;
+        if(transportStopped_)return applyGlobal(globalInit_,false);
+        if(!musicalScheduler_.replace(4,0,ScheduleWhen::NextBeat))return false;
+        initPending_=true;return true;
+    }
+    bool presetEngaged(unsigned slot)const noexcept {return slot<4&&presetEngaged_[slot];}
+    bool presetMusicallyValid(unsigned slot)const noexcept {return slot<4&&presetValid_[slot];}
+    int pendingPreset()const noexcept {return pendingPresetSlot_;}
+    bool redActive()const noexcept {return redActive_;}
+    bool capturePreset(unsigned slot) noexcept {
+        if(slot>=4||redActive_)return false;
+        const bool before=presetEngaged_[slot];presetEngaged_[slot]=true;
+        const auto image=captureGlobal();
+        if(!image.admissible(core_.nativeLive().sessionConfig())){presetEngaged_[slot]=before;return false;}
+        presets_[slot]=image;presetValid_[slot]=false;return true;
+    }
+    bool requestPresetRecall(unsigned slot) noexcept {
+        if(slot>=4||!presets_[slot].admissible(core_.nativeLive().sessionConfig()))return false;
+        if(transportStopped_){
+            if(!applyGlobal(presets_[slot],false))return false;
+        }else{
+            if(!musicalScheduler_.replace(3,0,ScheduleWhen::NextBar))return false;
+            pendingPresetImage_=presets_[slot];pendingPresetSlot_=static_cast<int>(slot);
+        }
+        presetValid_[slot]=true;return true;
+    }
+    bool captureRed() noexcept {
+        if(redActive_)return false;
+        const auto image=captureGlobal();
+        if(!image.admissible(core_.nativeLive().sessionConfig()))return false;
+        redImage_=image;redActive_=true;return true;
+    }
+    bool restoreRed() noexcept {
+        if(!redActive_||!applyGlobal(redImage_,true))return false;
+        redActive_=false;redImage_.valid=false;return true;
+    }
+    bool readPreset(unsigned slot,GlobalSnapshot& out)const noexcept {
+        if(slot>=4)return false;
+        out=presets_[slot];return out.valid;
+    }
     // Native commands use contractual owner IDs, not external destinations.
     bool captureMemory(int owner,int slot) noexcept {
         const int index=l01::BankS6::memoryIndex(owner,slot);
@@ -257,7 +313,7 @@ public:
     bool readMemory(int owner,int slot,l01::BankS6::MemoryRecord& out)const noexcept {return core_.nativeBank().readMemory(owner,slot,out);}
     // Render-thread local source API. An external adapter is never treated as loaded.
     bool saveSourcePatch(unsigned source,unsigned slot) noexcept {
-        if(source>=4||slot>=3||sourcePending_[source]>=0)return false;
+        if(source>=4||slot>=3||sourcePending_[source]>=0||redActive_)return false;
         SourcePatchBank::Values values{};
         for(unsigned f=0;f<values.size();++f){
             for(const auto& hold:spots_)if(hold.cell==SourcePatchBank::cell(source,f))return false;
@@ -273,7 +329,7 @@ public:
     SourceRecallStatus sourceRecallStatus(unsigned source)const noexcept {
         return source<4?sourceStatus_[source]:SourceRecallStatus::None;
     }
-    struct SourcePacket {bool valid{};unsigned token{};int type{},api{-1},value{};std::array<uint8_t,3> bytes{};};
+    struct SourcePacket {bool valid{};unsigned token{};int type{},api{-1},value{};std::array<uint8_t,3> bytes{};int key{127};};
     SourcePacket nextSourcePacket()const noexcept {
         if(sourceRead_==sourceWrite_||sourceBlocked_)return {};
         return sourceMidi_[sourceRead_%sourceMidi_.size()];
@@ -283,7 +339,7 @@ public:
         const auto current=nextSourcePacket();
         if(!current.valid||packet.token!=current.token)return;
         Result r{true,{current.bytes[0],current.bytes[1],current.bytes[2]},sequence_,sample,true,current.api,current.value,current.type};
-        sent(r,success?0:-1);
+        r.key=current.key;sent(r,success?0:-1);
         if(success)++sourceRead_;else sourceBlocked_=true;
     }
     int cueLoadSent(unsigned group) const noexcept {return cueLoad_.sentSelection(group);}
@@ -300,9 +356,20 @@ public:
     unsigned onMusicalGrid(const GridBatch& b) noexcept {
         unsigned committed=soft_.observe(b); // only authenticated BAR, never timer
         if(b.valid&&!b.overflow&&b.count<=b.events.size()){
-            musicalScheduler_.consume(b,[this](DueAction due) noexcept {
+            musicalScheduler_.consume(b,[this](DueAction due) noexcept -> bool {
                 if(due.action.command==1)applySourceRecall(due.action.destination);
                 else if(due.action.command==2)applyMemoryRecall(due.action.destination);
+                else if(due.action.command==4){
+                    if(!initPending_)return true;
+                    if(!applyGlobal(globalInit_,false))return false;
+                    initPending_=false;
+                }else if(due.action.command==3){
+                    const int slot=pendingPresetSlot_;
+                    if(slot<0)return true;
+                    if(!applyGlobal(pendingPresetImage_,false))return false;
+                    pendingPresetSlot_=-1;presetValid_[static_cast<unsigned>(slot)]=true;
+                }
+                return true;
             });
             for(unsigned i=0;i<b.count;++i)if(b.events[i].kind==GridKind::Bar)cueLoad_.onBar();
         }
@@ -332,6 +399,14 @@ public:
     static_assert(std::atomic<uint32_t>::is_always_lock_free,"RT trace requires lock-free indices");
     // Called only by render thread. Host cable is NOT an authenticated device ID.
     Result receive(uint8_t cable,const uint8_t* data,size_t length,int64_t sample,int64_t gestureMs=0) noexcept {
+        const auto before=presetSignature();const auto applied=globalApplySerial_;redDirectGesture_=false;
+        auto result=receiveImpl(cable,data,length,sample,gestureMs);
+        if(cable==0&&data&&length==3&&(data[0]&15)==14&&((data[0]&0xf0)==0x80||(data[0]&0xf0)==0x90)&&
+           !redDirectGesture_&&applied==globalApplySerial_)invalidatePresetsIfChanged(before);
+        return result;
+    }
+private:
+    Result receiveImpl(uint8_t cable,const uint8_t* data,size_t length,int64_t sample,int64_t gestureMs=0) noexcept {
         started_=true;
         const auto seq=++sequence_;
         record(seq,sample,cable?Stage::RxFeedback:Stage::RxIn,Reason::Received,cable,data,length);
@@ -371,6 +446,10 @@ public:
             int memoryOwner=-1,memorySlot=-1;
             const bool memorySource=baseEvent&&!muteBaseOwned&&!wasHeld&&cmd==0x90&&data[2]!=0&&
                 !core_.longNavPending()&&deriveMemory(core_.nativeNav(),physical,memoryOwner,memorySlot);
+            const bool redReleaseOwned=physical==0&&wasHeld&&core_.s3().physicalOwner(0)==0;
+            const auto presetRoute=physical>=4&&physical<20?core_.nativeNav().active().route(physical):l01::NavRoute{};
+            const bool presetSource=baseEvent&&!muteBaseOwned&&!wasHeld&&cmd==0x90&&data[2]!=0&&
+                core_.nativeNav().active().presetFlag==1&&presetRoute.address==14*1024+17*32&&presetRoute.position>=0&&presetRoute.position<=4;
             const int previousNav=navMode();
             core_.retainDjLoopPage(dj2LoopObserved_!=Dj2LoopObserved::Off || dj2LoopStartRequested_);
             const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs,muteBaseOwned);
@@ -419,6 +498,22 @@ public:
                 requestSourceRecall(cueGroup,cueIndex%4);
             }
             if(accepted&&memorySource)memoryGesture(memoryOwner,memorySlot);
+            if(accepted&&presetSource){
+                const unsigned slot=static_cast<unsigned>(presetRoute.position);
+                if(slot==4)requestGlobalInit();
+                else if(!presetEngaged(slot))capturePreset(slot);
+                else requestPresetRecall(slot);
+            }
+            if(accepted&&physical==0){
+                const bool down=cmd==0x90&&data[2]!=0;
+                if(down&&!wasHeld&&core_.s3().physicalOwner(0)==0){
+                    redDirectGesture_=true;redWasActive_=redActive_;redDownMs_=gestureMs;
+                    redHeld_=redActive_||captureRed();
+                }else if(!down&&wasHeld&&redHeld_&&redReleaseOwned){
+                    redDirectGesture_=true;redHeld_=false;
+                    if(redWasActive_||gestureMs-redDownMs_>=200)restoreRed();
+                }
+            }
             drainCore(seq,sample);
             if(accepted&&physical==2&&(cmd==0x90||cmd==0x80)&&
                wasHeld&&!(cmd==0x90&&data[2]!=0))dj2PushRotCaptured_=false;
@@ -491,7 +586,7 @@ public:
                     topHold_[topIndex]=topSaveSuppress_[topIndex]?TopCapture{}:TopCapture{
                         core_.nativeNav().active().route(physical),
                         core_.nativeNav().active().contextMode,
-                        core_.nativeNav().revision()
+                        core_.nativeNav().revision(),core_.nativeNav().active().at(291)
                     };
                 }else{
                     if(topSaveSuppress_[topIndex]){
@@ -599,6 +694,7 @@ public:
         record(seq,sample,Stage::Decision,Reason::Mapped,cable,r.bytes,3);
         return r;
     }
+public:
     // Lifecycle-only restore: call before rendering starts, never from UI during render.
     bool restoreSessionBeforeRendering(const l01::LiveState::SessionImage& image) noexcept {
         return !started_&&core_.restoreNativeSessionForDiagnostic(image);
@@ -722,7 +818,8 @@ public:
             samplePatch_={};pairedTopSource_=-1; // a restored session cannot execute an old queued recall
             musicalScheduler_.stop();sourcePending_.fill(-1);sourceStatus_.fill(SourceRecallStatus::None);
             for(auto& pending:memoryPending_)pending={};
-            memoryEngaged_.fill(false);
+            memoryEngaged_.fill(false);presetEngaged_.fill(false);presetValid_.fill(false);
+            pendingPresetSlot_=-1;initPending_=false;redActive_=false;redImage_.valid=false;redHeld_=false;
             sourceRead_=sourceWrite_;sourceBlocked_=false;cueLoad_.stop();
         }
     }
@@ -810,6 +907,7 @@ public:
     unsigned pendingStopOffs() const noexcept {return stopPendingCount_;}
     void stop(int64_t sample) noexcept {
         started_=true;transportStopped_=true;
+        redActive_=false;redImage_.valid=false;redHeld_=false;pendingPresetSlot_=-1;initPending_=false;
         // Keep output debts until the real callback confirms each OFF.
         const auto output=core_.output();
         stopCount_=stopRead_=stopPendingCount_=0;stopSample_=sample;
@@ -868,6 +966,7 @@ public:
     int navMode() const noexcept {return core_.nativeNav().active().at(292);}
     bool longNavPending() const noexcept {return core_.longNavPending();}
     void advance(int64_t ms,int64_t sample) noexcept {
+        const auto signatureBeforeTimer=presetSignature();
         started_=true;
         const bool wasMuteVisible=mutePageVisible();
         muteGate_.advance(ms);
@@ -883,6 +982,7 @@ public:
         core_.retainDjLoopPage(dj2LoopObserved_!=Dj2LoopObserved::Off || dj2LoopStartRequested_);
         if(!core_.onTimer(ms))record(seq,sample,Stage::Decision,Reason::ClockRejected,0,nullptr,0);
         else resolveDjLoopNavigation(previousNav);
+        invalidatePresetsIfChanged(signatureBeforeTimer);
         drainCore(seq,sample);
     }
     // SPSC: exactly one consumer (UI main thread); no reset while rendering.
@@ -901,6 +1001,7 @@ private:
     // S8 SAMPLE: capture 28 instrument parameters only, excluding modes
     // 28..39, which belong solely to the S8 configuration.
     bool saveSamplePatchFromLive(int slot) noexcept {
+        if(redActive_)return false;
         const auto& nav=core_.nativeNav();
         if(slot<0||slot>=3||!nav.stable()||nav.hasStage()||nav.active().at(292)!=3 ||
            nav.active().contextMode!=3||core_.longNavPending()||samplePatchPending())
@@ -925,6 +1026,7 @@ private:
     // Native S8 MACHINE capture: 18 CC + 12 SPOT states. The 12
     // behavior modes at offset 30..41 are immutable to PATCH operations.
     bool saveMachinePatchFromLive(int slot) noexcept {
+        if(redActive_)return false;
         const auto& nav=core_.nativeNav();
         if(slot<0||slot>=3||!nav.stable()||nav.hasStage()||nav.active().at(292)!=7||
            nav.active().contextMode!=7||nav.active().presetFlag!=0||
@@ -1195,6 +1297,114 @@ private:
     TopPulseBus topPulse_{};
     S8SamplePatchBank s8Sample_{};
     S8MachinePatchBank s8Machine_{};
+    using PresetSignature=std::array<bool,19>; // IDs 1,3..20, ID2 PRESET excluded
+    PresetSignature presetSignature()const noexcept {
+        PresetSignature signature{};const auto& n=core_.nativeNav().active();
+        const bool sample=n.contextMode==3,machine=n.contextMode==7,exposed=!sample&&!machine;
+        const bool yellow=n.at(291)==1,inst=exposed&&!yellow,ylw=exposed&&yellow;
+        signature[0]=n.at(292)==5;signature[2]=sample;signature[3]=yellow;
+        signature[5]=inst&&n.at(299)==1;signature[6]=inst&&n.at(300)==1;signature[4]=signature[5]||signature[6];
+        signature[8]=ylw&&n.at(301)==1;signature[9]=ylw&&n.at(302)==1;signature[7]=signature[8]||signature[9];
+        signature[14]=inst&&n.at(303)==1;signature[15]=ylw&&n.at(304)==1;
+        for(unsigned i=0;i<3;++i)if(core_.surface().held(32+i)&&topHold_[i].context==0){
+            if(inst&&topHold_[i].root==0&&n.at(303)==0)signature[10]=true;
+            if(ylw&&topHold_[i].root==1&&n.at(304)==0&&i<2)signature[11]=true;
+        }
+        for(int i=0;i<6;++i){
+            const int cell=yellow?1870+i:1864+i;const auto value=core_.nativeLive().desired(cell);
+            if((signature[14]||signature[15])&&value.known&&value.value==1)signature[i<3?12:13]=true;
+        }
+        signature[17]=machine;signature[18]=redActive_;return signature;
+    }
+    void invalidatePresetsIfChanged(const PresetSignature& before) noexcept {
+        if(before==presetSignature())return;
+        presetValid_.fill(false);pendingPresetSlot_=-1;initPending_=false;
+        musicalScheduler_.cancel(3,0);musicalScheduler_.cancel(4,0);
+    }
+    GlobalSnapshot captureGlobal()const noexcept {
+        GlobalSnapshot image{};image.live=core_.nativeLive().snapshot();image.nav=core_.nativeNav().active();
+        for(unsigned cell=0;cell<image.live.desired.size();++cell)
+            if(!GlobalSnapshot::inScope(cell))image.live.desired[cell]=-2;
+        image.mute=muteBridge_.state().applied();image.muteVisible=mutePageVisible();
+        image.soft=soft_.applied();image.cueSelections=cueLoad_.desiredSelections();image.memoryEngaged=memoryEngaged_;image.presetEngaged=presetEngaged_;
+        image.valid=true;return image;
+    }
+    static int globalApi(unsigned cell,int& type) noexcept {
+        type=10;
+        if(cell<320){if(cell%40<16)return 16*static_cast<int>(cell/40)+static_cast<int>(cell%40);
+            type=11;return 12*static_cast<int>(cell/40)+static_cast<int>(cell%40)-16;}
+        if(cell<1328){const int owner=static_cast<int>((cell-320)/42),field=static_cast<int>((cell-320)%42);
+            if(field<18)return 128+18*owner+field;
+            type=11;return field<30?96+12*owner+field-18:-1;}
+        if(cell>=1328&&cell<1477)return cell==1340||cell==1341?-1:static_cast<int>(cell)-768;
+        if(cell>=1546&&cell<1768)return static_cast<int>(cell)-837;
+        type=11;
+        if(cell>=1477&&cell<1513)return static_cast<int>(cell)-985;
+        if(cell>=1768&&cell<1864)return static_cast<int>(cell)-1384;
+        if(cell>=1864&&cell<1876)return static_cast<int>(cell)-1384;
+        return -1;
+    }
+    bool applyGlobal(const GlobalSnapshot& image,bool redRestore) noexcept {
+        const auto& live=core_.nativeLive();
+        if(!image.admissible(live.sessionConfig())||live.revision()>=l01::LiveState::MaxRevision)return false;
+        const auto before=live.snapshot();auto target=before;target.revision=live.revision()+1;
+        for(unsigned cell=0;cell<target.desired.size();++cell)
+            if(GlobalSnapshot::inScope(cell))target.desired[cell]=image.live.desired[cell];
+        auto mute=muteBridge_;auto soft=soft_;auto cue=cueLoad_;
+        if(!mute.restoreApplied(image.mute,redRestore)||!soft.restoreApplied(image.soft)||!cue.restoreSelections(image.cueSelections))return false;
+        std::array<SourcePacket,2048> packets{};unsigned count=0;std::array<bool,544> off{};
+        const auto append=[&](int api,int type,int value,int key=127) noexcept {
+            if(count==packets.size()||api<0)return false;
+            const bool on=type==11&&value==1;
+            const auto status=static_cast<uint8_t>((type==10?0xB6:on?0x96:0x86)+api/128);
+            packets[count++]={true,0,type,api,value,{status,static_cast<uint8_t>(api%128),static_cast<uint8_t>(type==10?value:on?127:0)},key};
+            return true;
+        };
+        // Close captured TOUCH owners first. A failing OFF blocks later ONs.
+        for(int key=0;key<36;++key){const int api=core_.output().owner(key);
+            if(api>=0){if(!append(api,13,0,key))return false;if(api<544)off[static_cast<unsigned>(api)]=true;}}
+        for(unsigned api=0;api<528;++api)if(core_.output().debt(static_cast<int>(api))&&!off[api]){
+            if(!append(static_cast<int>(api),11,0))return false;
+            off[api]=true;
+        }
+        for(unsigned cell=0;cell<target.desired.size();++cell){
+            if(!GlobalSnapshot::inScope(cell))continue;
+            int type=10;const int api=globalApi(cell,type);if(api<0)continue;
+            int value=target.desired[cell];
+            // LOOP m is internal. Only its three effective gain destinations emit.
+            if(cell>=1337&&cell<=1339){const int m=target.desired[1341];if(value<0||m<0)continue;value=(value*m+63)/127;}
+            if(type==11){
+                if(value<0){if(!core_.output().debt(api)||off[static_cast<unsigned>(api)])continue;value=0;}
+                if(value==0&&off[static_cast<unsigned>(api)])continue;
+            }else if(value<0)continue;
+            if(!append(api,type,value))return false;
+        }
+        if(count>sourceMidi_.size()||!core_.commitNativeGlobalRecall(target,image.nav))return false;
+        // Whole-world recall supersedes older queued absolute values, while
+        // owed OFFs above survive and future musical requests remain queued.
+        // Keep sourceBlocked_: a failed OFF still waits until next render.
+        sourceRead_=sourceWrite_;
+        for(unsigned i=0;i<count;++i){auto packet=packets[i];packet.token=++sourcePacketToken_;sourceMidi_[sourceWrite_++%sourceMidi_.size()]=packet;}
+        for(unsigned cell=0;cell<target.desired.size();++cell){if(!GlobalSnapshot::inScope(cell))continue;
+            int type=10;const int api=globalApi(cell,type);
+            if(type==10&&api>=0&&before.desired[cell]!=target.desired[cell])pickup_.rearm(api);
+        }
+        muteBridge_=mute;soft_=soft;cueLoad_=cue;muteGate_.restoreVisible(image.muteVisible);muteMidi_.observe(globalMute());
+        memoryEngaged_=image.memoryEngaged;presetEngaged_=image.presetEngaged;
+        for(unsigned owner=0;owner<28;++owner)for(int slot=0;slot<(owner<12?4:3);++slot){
+            l01::BankS6::MemoryRecord record{};
+            if(!core_.nativeBank().readMemory(static_cast<int>(owner),slot,record)||!record.valid||record.config!=target.config)
+                memoryEngaged_[static_cast<unsigned>(l01::BankS6::memoryIndex(static_cast<int>(owner),slot))]=false;
+        }
+        for(auto& hold:spots_)hold={};
+        ++globalApplySerial_;return true;
+    }
+    std::array<GlobalSnapshot,4> presets_{};
+    GlobalSnapshot pendingPresetImage_{},redImage_{},globalInit_{};
+    std::array<bool,4> presetEngaged_{},presetValid_{};
+    int pendingPresetSlot_{-1};
+    bool redActive_{},redHeld_{},redWasActive_{},redDirectGesture_{},initPending_{};int64_t redDownMs_{};
+    std::uint64_t globalApplySerial_{};
     struct MemoryPending {int slot{-1},config{-2};l01::BankS6::MemoryImage values{};};
     bool memoryGesture(int owner,int slot) noexcept {
         return memoryEngaged(owner,slot)?requestMemoryRecall(owner,slot):captureMemory(owner,slot);
@@ -1276,7 +1486,7 @@ private:
     SourcePatchBank sourcePatches_{};
     std::array<int,4> sourcePending_{{-1,-1,-1,-1}};
     std::array<SourceRecallStatus,4> sourceStatus_{};
-    std::array<SourcePacket,1024> sourceMidi_{};
+    std::array<SourcePacket,2048> sourceMidi_{};
     unsigned sourceRead_{},sourceWrite_{},sourcePacketToken_{};
     bool sourceBlocked_{};
     CueLoadBar cueLoad_{};

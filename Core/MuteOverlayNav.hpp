@@ -6,6 +6,7 @@
 namespace xone::l01 {
 class MuteOverlayNav {
 public:
+    void restoreVisible(bool visible) noexcept {visible_=visible;} // preserve LONG return archive
     bool visible() const noexcept {return visible_;}
     bool momentary() const noexcept {return momentary_;}
     bool shortPress() noexcept {

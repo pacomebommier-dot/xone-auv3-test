@@ -9,6 +9,7 @@
 namespace xone::l01 {
 class MutePhysicalGate {
 public:
+ void restoreVisible(bool visible)noexcept{nav_.restoreVisible(visible);}
  bool visible()const noexcept{return nav_.visible();}
  bool botHeld()const noexcept{return botHeld_;}
  bool ownsBase(unsigned base)const noexcept{return base<16&&baseHeld_[base];}

@@ -350,6 +350,27 @@ int main() {
     assert(decoded.desired[350]==-2&&decoded.desired[1328]==-2&&decoded.desired[404]==-2);
     [sourceUnit deallocateRenderResources];
 
+    // Physical RED: capture on first short press, immediate restore on second.
+    // Native global recall failures use the same next-render retry boundary.
+    XoneMidiAudioUnit *redUnit=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
+    assert(redUnit&&!error);redUnit.MIDIOutputEventBlock=testOutput;
+    assert([redUnit.inputBusses[0] setFormat:format error:&error]);
+    assert([redUnit.outputBusses[0] setFormat:format error:&error]);redUnit.maximumFramesToRender=8192;
+    auto redSession=image;redSession.desired.fill(-2);redSession.desired[1328]=64;
+    assert(xone::host::encodeSession(redSession,bytes));
+    redUnit.fullState=@{@"XONE_LAST_LIVE_V1":[NSData dataWithBytes:bytes.data() length:bytes.size()]};
+    assert([redUnit allocateRenderResourcesAndReturnError:&error]);render=redUnit.internalRenderBlock;
+    const NSUInteger beforeRed=sent;cursor=0;
+    pump(48,0x9E,12,127);pump(48,0x8E,12,0);assert(sent==beforeRed);
+    pump(48,0xBE,16,64);pump(48,0xBE,16,100);assert(sent==beforeRed+2);
+    pump(48,0x9E,12,127);failAt=beforeRed+3;pump(48,0x8E,12,0);
+    assert(sent==beforeRed+3&&lastStatus==0xBA&&lastNumber==48&&lastValue==64);
+    failAt=0;pump(48);assert(sent==beforeRed+4);pump(48);assert(sent==beforeRed+4);
+    NSData *redState=redUnit.fullStateForDocument[@"XONE_LAST_LIVE_V1"];
+    assert(xone::host::decodeSession(static_cast<const uint8_t *>(redState.bytes),redState.length,decoded));
+    assert(decoded.desired[1328]==64&&decoded.desired[0]==-2);
+    [redUnit deallocateRenderResources];
+
     std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)\n";
  }
 }

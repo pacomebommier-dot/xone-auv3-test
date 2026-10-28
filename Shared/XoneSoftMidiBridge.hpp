@@ -13,6 +13,12 @@ struct SoftMidiPacket {
 };
 class SoftMidiBridge {
 public:
+    struct Applied {std::array<int,16> choices{};std::array<bool,16> sounding{};};
+    Applied applied()const noexcept {return {active_,sounding_};}
+    bool restoreApplied(const Applied& image) noexcept {
+        for(unsigned i=0;i<16;++i)if(image.choices[i]<-1||image.choices[i]>3||(image.choices[i]<0&&image.sounding[i]))return false;
+        active_=image.choices;sounding_=image.sounding;return true;
+    }
     SoftMidiBridge() noexcept {active_.fill(-1);pending_.fill(-1);}
     // Physical K2 INST1 column: controls 4,8,12,16. No inferred page
     // from an UNKNOWN nav. S3 @zm maps DRUMS to kind5 (kind6/7 for page8)

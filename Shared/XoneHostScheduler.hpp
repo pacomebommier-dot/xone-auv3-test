@@ -4,6 +4,7 @@
 #include "XoneHostGrid.hpp"
 #include <array>
 #include <cstdint>
+#include <type_traits>
 namespace xone::host {
 enum class ScheduleWhen : unsigned char { NextBeat, NextBar };
 struct ScheduledAction {
@@ -18,7 +19,7 @@ struct DueAction {
 };
 class HostActionScheduler {
 public:
-    static constexpr unsigned Capacity=32;
+    static constexpr unsigned Capacity=35;
     void stop() noexcept { clear(); ++generation_; }
     void clear() noexcept { count_=0; }
     std::uint32_t generation() const noexcept {return generation_;}
@@ -60,7 +61,19 @@ public:
                 // this same edge without resurrecting a compacted stale copy.
                 for(unsigned k=j+1;k<count_;++k)pending_[k-1]=pending_[k];
                 --count_;
-                if(due){consumer(DueAction{item,edge.offset,edge.ordinal});++fired;}
+                if(due){
+                    bool applied=true;
+                    if constexpr(std::is_same_v<decltype(consumer(DueAction{})),bool>)
+                        applied=consumer(DueAction{item,edge.offset,edge.ordinal});
+                    else consumer(DueAction{item,edge.offset,edge.ordinal});
+                    if(applied)++fired;
+                    else if(item.generation==generation_&&count_<Capacity){
+                        // A prepared global recall may wait for output space or
+                        // a NAV stage to close. Keep its original accepted order.
+                        for(unsigned k=count_;k>j;--k)pending_[k]=pending_[k-1];
+                        pending_[j]=item;++count_;++j;
+                    }
+                }
             }
         }
         return fired;

@@ -180,7 +180,7 @@
         };
         const auto flushSource = [&](AUEventSampleTime sample) {
             if(!sendMIDI)return;
-            for(unsigned n=0;n<1024;++n){
+            for(unsigned n=0;n<2048;++n){
                 const auto packet=engine->nextSourcePacket();if(!packet.valid)break;
                 const bool ok=sendMIDI(sample,0,3,packet.bytes.data())==noErr;
                 engine->ackSourcePacket(packet,ok,sample);if(!ok)break;

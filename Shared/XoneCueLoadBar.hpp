@@ -40,6 +40,20 @@ public:
         index=static_cast<unsigned>(selection==8?4:0)+static_cast<unsigned>(r.position);
         return true;
     }
+    std::array<int,4> desiredSelections()const noexcept {
+        std::array<int,4> result{};
+        for(unsigned group=0;group<4;++group){const auto& s=channels_[group];result[group]=s.dueReady?s.due:s.applied;}
+        return result;
+    }
+    bool restoreSelections(const std::array<int,4>& choices) noexcept {
+        for(unsigned group=0;group<4;++group)if(choices[group]!=-1&&
+            (choices[group]<0||choices[group]>7||((group&1)==0?choices[group]>3:choices[group]<4)))return false;
+        for(unsigned group=0;group<4;++group){auto& s=channels_[group];
+            s.due=choices[group];s.dueReady=s.applied!=choices[group];s.blocked=false;
+            if(++s.generation==0)++s.generation;
+        }
+        return true; // live pending gestures are preserved, never loaded from an image
+    }
     bool request(const l01::NavS3& nav,unsigned physical)noexcept {
         unsigned group=0,index=0;
         if(!derive(nav,physical,group,index))return false;
@@ -95,7 +109,7 @@ public:
         if(!expected.valid||expected.group!=packet.group||expected.generation!=packet.generation||
            expected.api!=packet.api||expected.value!=packet.value)return false;
         if(!callbackSucceeded){s.blocked=true;return true;}
-        if(packet.value==0){s.applied=-1;return true;} // OFF ACK before ON
+        if(packet.value==0){s.applied=-1;if(s.due<0)s.dueReady=false;return true;} // OFF ACK before ON
         s.applied=s.due;s.due=-1;s.dueReady=false;s.blocked=false;return true;
     }
     void stop()noexcept {

@@ -219,6 +219,16 @@ public:
             if(!next.commitDesired(cells[i],values[i],next.revision(),config))return false;
         live_=next;return true;
     }
+    // Global recall has its own musical scope, not a lifecycle/session reload.
+    // Keep S2/S3 held owners and the immutable LONG return archive alive (Q11).
+    bool commitNativeGlobalRecall(const LiveState::SessionImage& image,const NavImage& navigation) noexcept {
+        if(!diagnosticLive_||image.config!=live_.sessionConfig()||image.revision!=live_.revision()+1||
+           !NavS3::validate(navigation)||nav_.hasStage())return false;
+        auto nextLive=live_;auto nextNav=nav_;auto nextS3=s3_;
+        if(!nextLive.restoreSession(image)||!nextNav.stage(navigation)||!nextNav.commit()||
+           !nextS3.observeNav(navigation.at(292),true))return false;
+        live_=nextLive;nav_=nextNav;s3_=nextS3;return true;
+    }
     const BankS6& nativeBank() const noexcept {return nativeBank_;}
     // L01/10: read-only FX-memory snapshots; no persistence implied.
     bool supplyFxMemoryForDiagnostic(int owner,int slot,const FxS6::MemorySnapshot& m)noexcept {

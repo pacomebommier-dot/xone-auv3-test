@@ -12,6 +12,9 @@ public:
     using Muted=std::array<bool,Targets>;
     enum class Gesture : unsigned char { ShortMute, LongSolo };
     struct Pending {bool valid{};Gesture gesture{};unsigned target{};};
+    struct Applied {Muted layer{},beforeSolo{};int solo{-1};bool hasSnapshot{};};
+    Applied applied()const noexcept {return {explicitMute_,beforeSolo_,solo_,haveSnapshot_};}
+    Pending pendingAt(unsigned index)const noexcept {return index<count_?queued_[index]:Pending{};}
     // One pending action per BASE, at most 16 distinct targets in an arbitration.
     // Repeated arm on same BASE replaces its not-yet-applied action.
     bool arm(unsigned target,Gesture gesture) noexcept {

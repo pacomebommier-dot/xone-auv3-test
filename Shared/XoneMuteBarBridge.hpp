@@ -21,6 +21,16 @@ public:
  }
  void stop() noexcept {schedule_.stop();mute_.stop();armed_=false;}
  void restore() noexcept {schedule_.invalidate();mute_.cancelForRestore();armed_=false;}
+ bool restoreApplied(const GlobalMuteState::Applied& image,bool cancelPending) noexcept {
+   auto next=mute_;
+   if(!next.restoreApplied(image.layer,image.solo,image.beforeSolo,image.hasSnapshot))return false;
+   if(!cancelPending)for(unsigned i=0;i<mute_.pendingCount();++i){
+     const auto p=mute_.pendingAt(i);if(!next.arm(p.target,p.gesture))return false;
+   }
+   mute_=next;
+   if(cancelPending){schedule_.invalidate();armed_=false;}
+   return true;
+ }
  const GlobalMuteState& state() const noexcept{return mute_;}
 private:
  HostActionScheduler schedule_{};
