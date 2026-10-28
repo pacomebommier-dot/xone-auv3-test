@@ -39,8 +39,13 @@ int main() {
     }
     {
         HostEngine e;auto i=image();i.desired[1337]=127;assert(e.restoreSessionBeforeRendering(i));loopMode(e);
-        assert(!cc(e,16,127,40).emit);assert(!cc(e,19,64,50).emit);
-        assert(!e.desiredLive(1341).known && e.observed()==-2); // no invented multiplier
+        assert(!cc(e,16,127,40).emit); // no r1 without its physical m
+        const auto seeded=cc(e,19,64,50); // m is now physically established, not invented
+        assert(seeded.packetCount()==1&&seeded.api==569&&seeded.value==64);
+        e.sent(seeded,0);
+        assert(e.desiredLive(1341).known && e.desiredLive(1341).value==64);
+        assert(e.observed()==-2); // transmission is not external observation
+        assert(!cc(e,19,64,51).emit);
     }
     std::cout<<"PASS physical source selection and LOOP same-revision derived gains, batch send failure, UNKNOWN\n";
 }
