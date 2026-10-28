@@ -17,7 +17,7 @@ static void note(HostEngine& e,int n,bool down,int ms){
 static void configured(HostEngine& e,bool complete){
     xone::host::SessionImage image{};
     image.schema=1;image.config=1;image.revision=1;image.desired.fill(-2);
-    for(int i=0;i<40;++i)image.desired[i]=i>=28?1:(i+17)%128;
+    for(int i=0;i<40;++i)image.desired[i]=i>=28?1:(i>=16?(i%2):(i+17)%128);
     if(!complete)image.desired[4]=-2;
     assert(e.restoreSessionBeforeRendering(image));
     assert(e.setNavForDiagnostic(mode(3)));
@@ -44,7 +44,7 @@ int main(){
         xone::l01::BankS6::PatchRecord record{};
         assert(e.samplePatchForDiagnostic(0,0,record)&&record.valid);
         assert(record.config==1&&record.revision==1);
-        for(int i=0;i<40;++i)assert(record.values[i]==(i>=28?1:(i+17)%128));
+        for(int i=0;i<40;++i)assert(record.values[i]==(i>=28?1:(i>=16?(i%2):(i+17)%128)));
         for(int i=40;i<84;++i)assert(record.values[i]==-2);
     }
     // ALL three physical PATCH slots have distinct storage.
