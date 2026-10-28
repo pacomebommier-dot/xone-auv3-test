@@ -259,9 +259,14 @@ int main() {
     [lifecycle deallocateRenderResources];
     assert(sent==beforeFixture+2); // no callback outside the host render cycle
     assert([lifecycle allocateRenderResourcesAndReturnError:&error]);
+    pump(48);assert(sent==beforeFixture+2); // superclass cleared output; debt stays due
+    [lifecycle deallocateRenderResources];
+    lifecycle.MIDIOutputEventBlock=testOutput; // host reconnects the output before allocation
+    assert([lifecycle allocateRenderResourcesAndReturnError:&error]);
     pump(48);assert(sent==beforeFixture+3&&lastStatus==0x89&&lastNumber==0&&lastValue==0);
     pump(48,0x8E,48,0);assert(sent==beforeFixture+3); // real UP after shutdown stays inert
     [lifecycle deallocateRenderResources];
+    lifecycle.MIDIOutputEventBlock=testOutput;
     assert([lifecycle allocateRenderResourcesAndReturnError:&error]);
     pump(48);assert(sent==beforeFixture+3); // confirmed OFF is never duplicated
     [lifecycle deallocateRenderResources];
