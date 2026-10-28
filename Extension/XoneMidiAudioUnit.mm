@@ -192,7 +192,7 @@
             AUHostTransportStateFlags flags = static_cast<AUHostTransportStateFlags>(0);
             if (transport(&flags, nullptr, nullptr, nullptr)) {
                 const bool nowMoving = (flags & AUHostTransportStateMoving) != 0;
-                if (*known && *moving && !nowMoving) { scheduler->stop(); engine->stop(bufferStart); flushStop(); }
+                if (*known && *moving && !nowMoving) { scheduler->stop(); engine->stop(bufferStart); flushStop(); flushSoft(bufferStart); }
                 *known = true; *moving = nowMoving;
             } else { *known = false; }
         }
@@ -250,7 +250,7 @@
             lastEventSample=sample;
             deliverGridThrough(sample);
             if (m.length == 1 && m.data[0] == 0xFC && m.cable == 0) {
-                scheduler->stop(); engine->stop(sample); flushStop(); flushMuteLeds(sample,static_cast<int64_t>(*elapsedMs+1000.0*(sample-bufferStart)/rate)); continue;
+                scheduler->stop(); engine->stop(sample); flushStop(); flushSoft(sample); flushMuteLeds(sample,static_cast<int64_t>(*elapsedMs+1000.0*(sample-bufferStart)/rate)); continue;
             }
             const auto ms = static_cast<int64_t>(*elapsedMs + 1000.0 * (sample-bufferStart) / rate);
             const auto result = engine->receive(m.cable, m.data, m.length, sample, ms);
