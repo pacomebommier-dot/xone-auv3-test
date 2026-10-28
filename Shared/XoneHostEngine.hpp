@@ -716,15 +716,14 @@ private:
             image[static_cast<std::size_t>(field)]=value.value;
         }
         if(!l01::BankS6::validatePatch(owner,image))return false;
-        auto bank=core_.nativeBank();
-        if(!bank.initialized() && !bank.initializeEmpty())return false;
         l01::BankS6::PatchRecord previous{};
-        if(!bank.readPatch(owner,slot,previous)|| (previous.valid&&previous.config!=config))
-            return false;
-        return core_.nativeBank().initialized()?
-            core_.saveNativePatchForDiagnostic(owner,slot,config,image,previous.revision):
-            (core_.initializeEmptyNativeBanksForDiagnostic()&&
-             core_.saveNativePatchForDiagnostic(owner,slot,config,image,0));
+        const bool initialized=core_.nativeBank().initialized();
+        if(initialized &&
+           (!core_.nativeBank().readPatch(owner,slot,previous) ||
+            (previous.valid&&previous.config!=config)))return false;
+        if(!initialized&&!core_.initializeEmptyNativeBanksForDiagnostic())return false;
+        return core_.saveNativePatchForDiagnostic(owner,slot,config,image,
+                                                  initialized?previous.revision:0);
     }
     struct GroupHold {
         QualifiedGroupAction action{};
