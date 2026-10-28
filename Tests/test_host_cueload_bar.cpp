@@ -114,6 +114,55 @@ int main(){
         c.stop();assert(c.pendingActions()==0&&c.sentSelection(3)==5);
         c.onBar();assert(!c.next().valid);
     }
+    // Four independent source groups can commit on the SAME BAR. Each
+    // retains its captured owner despite navigation among the groups.
+    {
+        CueLoadBar c;
+        for(int root=0;root<2;++root)for(int high=0;high<2;++high){
+            xone::l01::NavS3 n;assert(n.initializeDefault());
+            assert(n.stage(selected(root,high!=0))&&n.commit());
+            unsigned p=0;
+            const unsigned choice=high?7:3;
+            for(unsigned physical=4;physical<20;++physical){
+                unsigned g=0,i=0;
+                if(CueLoadBar::derive(n,physical,g,i)&&i==choice){p=physical;break;}
+            }
+            assert(p>=4&&c.request(n,p));
+        }
+        assert(c.pendingActions()==4&&!c.next().valid);
+        c.onBar();
+        for(int g=0;g<4;++g){
+            const auto p=c.next();
+            assert(p.valid&&p.group==static_cast<unsigned>(g));
+            const int wanted=(g<2?931:939)+(g%2?7:3);
+            assert(p.api==wanted&&p.value==127);
+            assert(c.acknowledge(p,true));
+        }
+        assert(c.pendingActions()==0);
+        assert(c.sentSelection(0)==3&&c.sentSelection(1)==7&&
+               c.sentSelection(2)==3&&c.sentSelection(3)==7);
+    }
+    // Failed OFF cannot be bypassed by the dependent new ON.
+    {
+        CueLoadBar c;xone::l01::NavS3 n;assert(n.initializeDefault());
+        assert(n.stage(selected(0,false))&&n.commit());
+        unsigned a=0,b=0;
+        for(unsigned physical=4;physical<20;++physical){
+            unsigned g=0,i=0;if(!CueLoadBar::derive(n,physical,g,i))continue;
+            if(i==0)a=physical;
+            if(i==1)b=physical;
+        }
+        assert(a>=4&&b>=4&&c.request(n,a));c.onBar();
+        auto first=c.next();assert(first.valid&&c.acknowledge(first,true));
+        assert(c.request(n,b));c.onBar();
+        auto off=c.next();assert(off.valid&&off.value==0);
+        assert(c.acknowledge(off,false)&&!c.next().valid);
+        c.beginRetryPass();
+        auto again=c.next();assert(again.valid&&again.value==0&&again.api==off.api);
+        assert(c.acknowledge(again,true));
+        auto on=c.next();assert(on.valid&&on.value==127&&on.api!=off.api);
+        assert(c.acknowledge(on,true)&&c.sentSelection(0)==1);
+    }
     // RESET or preset overlays are NOT CUE/LOAD sources.
     {
         auto n=selected(0,false);n.at(292)=5;n.contextMode=0;
