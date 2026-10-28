@@ -73,5 +73,46 @@ int main(){
     verify(e.nextTopPulse(),680,false);
     e.ackTopPulse(e.nextTopPulse(),true,53*48);
     assert(!e.nextTopPulse().valid);
+    // Physical DRUMS TOP3: source root0, S3 selected voice3.
+    {
+        xone::l01::NavS3 nav;assert(nav.initializeDefault());
+        auto page=nav.active();page.at(303)=1;page.at(297)=3;
+        assert(xone::l01::NavS3::regenerate(page)&&xone::l01::NavS3::validate(page));
+        HostEngine drums;assert(drums.setNavForDiagnostic(page));
+        press(drums,34,60);assert(drums.pendingTopPulses()==1);
+        verify(drums.nextTopPulse(),686,true);
+        auto x=drums.nextTopPulse();drums.ackTopPulse(x,true,61*48);
+        drums.ackTopPulse(drums.nextTopPulse(),true,61*48);
+    }
+    // Physical YELLOW TOP1/2 and FILL TOP3 belong to distinct root1 pages.
+    {
+        xone::l01::NavS3 nav;assert(nav.initializeDefault());
+        auto page=nav.active();page.at(291)=1;
+        assert(xone::l01::NavS3::regenerate(page)&&xone::l01::NavS3::validate(page));
+        HostEngine yellow;assert(yellow.setNavForDiagnostic(page));
+        press(yellow,32,70);press(yellow,33,80);
+        assert(yellow.pendingTopPulses()==2);
+        verify(yellow.nextTopPulse(),692,true);
+        auto x=yellow.nextTopPulse();yellow.ackTopPulse(x,true,81*48);
+        yellow.ackTopPulse(yellow.nextTopPulse(),true,81*48);
+        verify(yellow.nextTopPulse(),693,true);
+        x=yellow.nextTopPulse();yellow.ackTopPulse(x,true,81*48);
+        yellow.ackTopPulse(yellow.nextTopPulse(),true,81*48);
+        page.at(304)=1;page.at(298)=8;
+        assert(xone::l01::NavS3::regenerate(page)&&xone::l01::NavS3::validate(page));
+        HostEngine fill;assert(fill.setNavForDiagnostic(page));
+        press(fill,34,90);
+        verify(fill.nextTopPulse(),701,true);
+    }
+    // A changed NAV while TOP is physically held does not retarget that UP.
+    {
+        HostEngine changed;
+        const std::uint8_t down[]{0x9E,52,127};
+        const std::uint8_t up[]{0x8E,52,0};
+        assert(!changed.receive(0,down,3,0,0).emit);
+        press(changed,3,5); // physical BOT4 changes root (note15)
+        assert(!changed.receive(0,up,3,6*48,6).emit);
+        assert(changed.pendingTopPulses()==0);
+    }
     std::cout<<"PASS S7 TOP 22-address pulse bus, physical INIT, FIFO, callback failure and STOP OFF debt\n";
 }
