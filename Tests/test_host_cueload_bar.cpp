@@ -116,7 +116,7 @@ int main(){
     }
     // RESET or preset overlays are NOT CUE/LOAD sources.
     {
-        auto n=selected(0,false);n.at(292)=5;n.contextMode=5;
+        auto n=selected(0,false);n.at(292)=5;n.contextMode=0;
         assert(xone::l01::NavS3::regenerate(n)&&xone::l01::NavS3::validate(n));
         xone::l01::NavS3 nav;assert(nav.initializeDefault());assert(nav.stage(n)&&nav.commit());
         for(unsigned p=4;p<20;++p){unsigned g=0,i=0;assert(!CueLoadBar::derive(nav,p,g,i));}
