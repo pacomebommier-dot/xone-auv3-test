@@ -28,29 +28,40 @@ public:
         pending_[count_++]={command,destination,generation_,when};
         return true;
     }
+    // Replacement obtains the order of the newest accepted gesture.
+    bool replace(std::uint16_t command,std::uint16_t destination,ScheduleWhen when) noexcept {
+        bool exists=false;
+        for(unsigned i=0;i<count_;++i)if(pending_[i].command==command&&pending_[i].destination==destination)exists=true;
+        if(!exists&&count_==Capacity)return false;
+        cancel(command,destination);return enqueue(command,destination,when);
+    }
+    void cancel(std::uint16_t command,std::uint16_t destination) noexcept {
+        unsigned write=0;
+        for(unsigned i=0;i<count_;++i)if(pending_[i].command!=command||pending_[i].destination!=destination)pending_[write++]=pending_[i];
+        count_=write;
+    }
     // The caller increments generation when switching session/destination; stale actions cannot fire.
     void invalidate() noexcept { ++generation_;clear(); }
     // When clock is missing or has reset, never execute or guess timing.
     // Pending items remain queued during temporary clock loss, unless caller explicitly stops.
     template <typename Consumer>
     unsigned consume(const GridBatch& batch,Consumer&& consumer) noexcept {
-        if(!batch.valid || batch.overflow)return 0;
+        if(!batch.valid || batch.overflow || batch.count>batch.events.size())return 0;
         unsigned fired=0;
         for(unsigned i=0;i<batch.count;++i){
             const auto& edge=batch.events[i];
-            unsigned write=0;
-            for(unsigned j=0;j<count_;++j){
-                const auto& item=pending_[j];
-                const bool due=item.generation==generation_ &&
-                    (item.when==ScheduleWhen::NextBeat || edge.kind==GridKind::Bar);
-                if(due){
-                    consumer(DueAction{item,edge.offset,edge.ordinal});
-                    ++fired;
-                }else if(item.generation==generation_){
-                    pending_[write++]=item;
-                }
+            unsigned j=0;
+            while(j<count_){
+                const auto item=pending_[j];
+                const bool stale=item.generation!=generation_;
+                const bool due=!stale&&(item.when==ScheduleWhen::NextBeat||edge.kind==GridKind::Bar);
+                if(!stale&&!due){++j;continue;}
+                // Remove before delivery: PATCH may cancel a MEMORY later in
+                // this same edge without resurrecting a compacted stale copy.
+                for(unsigned k=j+1;k<count_;++k)pending_[k-1]=pending_[k];
+                --count_;
+                if(due){consumer(DueAction{item,edge.offset,edge.ordinal});++fired;}
             }
-            count_=write;
         }
         return fired;
     }

@@ -9,12 +9,11 @@
 @implementation XoneMidiAudioUnit {
     AUAudioUnitBusArray *_inputBusArray;
     AUAudioUnitBusArray *_outputBusArray;
-    // Établi avant de démarrer la boucle de rendu ; ne pas muter en cours de rendu.
+    // Ã‰tabli avant de dÃ©marrer la boucle de rendu ; ne pas muter en cours de rendu.
     AUMIDIOutputEventBlock _cachedMIDIOutput;
     AUHostTransportStateBlock _cachedTransport;
     AUHostMusicalContextBlock _cachedMusicalContext;
     xone::host::HostGrid _musicalGrid;
-    xone::host::HostActionScheduler _musicalScheduler;
     xone::host::HostEngine _engine;
     bool _transportKnown, _moving;
     double _gestureElapsedMs, _gestureSampleRate;
@@ -26,7 +25,7 @@
     self = [super initWithComponentDescription:componentDescription options:options error:outError];
     if (!self) return nil;
 
-    // Busses requis par le contrat AUAudioUnit, même pour un processeur MIDI pur.
+    // Busses requis par le contrat AUAudioUnit, mÃªme pour un processeur MIDI pur.
     AVAudioFormat *format = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:44100 channels:2];
     AUAudioUnitBus *inputBus = [[AUAudioUnitBus alloc] initWithFormat:format error:outError];
     AUAudioUnitBus *outputBus = [[AUAudioUnitBus alloc] initWithFormat:format error:outError];
@@ -51,7 +50,6 @@
     _cachedTransport = [self.transportStateBlock copy];
     _cachedMusicalContext = [self.musicalContextBlock copy];
     _musicalGrid.reset();
-    _musicalScheduler.stop();
     _transportKnown = false;
     _gestureSampleRate = self.outputBusses[0].format.sampleRate;
     return YES;
@@ -60,7 +58,6 @@
 - (void)deallocateRenderResources {
     // Host has stopped rendering. Cancel transient work, preserve real OFF debts.
     // No MIDI callback outside render: reallocation retries at its first buffer.
-    _musicalScheduler.stop();
     _engine.stop(0);
     _transportKnown = false;
     _cachedMIDIOutput = nil;
@@ -105,8 +102,8 @@
 }
 
 - (AUInternalRenderBlock)internalRenderBlock {
-    // Capturer seulement l'adresse du slot de sortie, pas d'envoi de message à self
-    // dans le rendu temps réel. Ne pas allouer ni journaliser dans ce bloc.
+    // Capturer seulement l'adresse du slot de sortie, pas d'envoi de message Ã  self
+    // dans le rendu temps rÃ©el. Ne pas allouer ni journaliser dans ce bloc.
     AUMIDIOutputEventBlock __strong *slot = &_cachedMIDIOutput;
     auto *engine = &_engine;
     auto *known = &_transportKnown;
@@ -116,7 +113,6 @@
     AUHostTransportStateBlock __strong *transportSlot = &_cachedTransport;
     AUHostMusicalContextBlock __strong *musicSlot = &_cachedMusicalContext;
     auto *grid = &_musicalGrid;
-    auto *scheduler = &_musicalScheduler;
     return ^AUAudioUnitStatus(AudioUnitRenderActionFlags *actionFlags,
                              const AudioTimeStamp *timestamp,
                              AVAudioFrameCount frameCount,
@@ -184,7 +180,7 @@
         };
         const auto flushSource = [&](AUEventSampleTime sample) {
             if(!sendMIDI)return;
-            for(unsigned n=0;n<512;++n){
+            for(unsigned n=0;n<1024;++n){
                 const auto packet=engine->nextSourcePacket();if(!packet.valid)break;
                 const bool ok=sendMIDI(sample,0,3,packet.bytes.data())==noErr;
                 engine->ackSourcePacket(packet,ok,sample);if(!ok)break;
@@ -230,7 +226,7 @@
             AUHostTransportStateFlags flags = static_cast<AUHostTransportStateFlags>(0);
             if (transport(&flags, nullptr, nullptr, nullptr)) {
                 const bool nowMoving = (flags & AUHostTransportStateMoving) != 0;
-                if (*known && *moving && !nowMoving) { scheduler->stop(); engine->stop(bufferStart); flushStop(); flushSoft(bufferStart); flushTop(bufferStart); }
+                if (*known && *moving && !nowMoving) { engine->stop(bufferStart); flushStop(); flushSoft(bufferStart); flushTop(bufferStart); }
                 *known = true; *moving = nowMoving;
             } else { *known = false; }
         }
@@ -264,7 +260,6 @@
                   bufferStart+gridObservation.events[gridRead].offset<=sample){
                 xone::host::GridBatch one{};
                 one.valid=true;one.count=1;one.events[0]=gridObservation.events[gridRead++];
-                scheduler->consume(one, [](xone::host::DueAction) noexcept {});
                 engine->onMusicalGrid(one);
                 flushSoft(bufferStart+one.events[0].offset);
                 flushCueLoad(bufferStart+one.events[0].offset);
@@ -295,7 +290,7 @@
             lastEventSample=sample;
             deliverGridThrough(sample);
             if (m.length == 1 && m.data[0] == 0xFC && m.cable == 0) {
-                scheduler->stop(); engine->stop(sample); flushStop(); flushSoft(sample); flushTop(sample); flushMuteLeds(sample,static_cast<int64_t>(*elapsedMs+1000.0*(sample-bufferStart)/rate)); continue;
+                engine->stop(sample); flushStop(); flushSoft(sample); flushTop(sample); flushMuteLeds(sample,static_cast<int64_t>(*elapsedMs+1000.0*(sample-bufferStart)/rate)); continue;
             }
             const auto ms = static_cast<int64_t>(*elapsedMs + 1000.0 * (sample-bufferStart) / rate);
             const auto result = engine->receive(m.cable, m.data, m.length, sample, ms);

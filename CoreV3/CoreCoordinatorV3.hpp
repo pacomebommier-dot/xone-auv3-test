@@ -138,6 +138,17 @@ public:
         if(!nextFx.publishNativeMemory(owner,slot,f))return false;
         nativeBank_=nextBank;fx_=nextFx;return true;
     }
+    bool captureNativeMemory(int owner,int slot) noexcept {
+        if(!diagnosticLive_||BankS6::memoryIndex(owner,slot)<0||live_.sessionConfig()<1)return false;
+        BankS6::MemoryImage image{};
+        for(int f=0;f<9;++f){auto v=live_.desired(FxS6::addressFor(owner,f));
+            if(!v.known)return false;image[static_cast<std::size_t>(f)]=v.value;}
+        if(!BankS6::validateMemory(image))return false;
+        if(!nativeBank_.initialized()&&!nativeBank_.initializeEmpty())return false;
+        BankS6::MemoryRecord prior{};
+        return nativeBank_.readMemory(owner,slot,prior)&&
+            nativeBank_.saveMemory(owner,slot,live_.sessionConfig(),image,prior.revision);
+    }
     // Explicit diagnostic recall of native MEMORY into the native single-writer
     // desired LIVE image. Source caller still has to qualify real gesture routing.
     bool recallNativeFxMemoryForDiagnostic(int owner,int slot,std::uint32_t expectedLiveRevision) noexcept {

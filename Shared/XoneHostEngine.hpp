@@ -8,6 +8,7 @@
 #include "XoneS8MachinePatchBank.hpp"
 #include "XoneCueLoadBar.hpp"
 #include "XoneSourcePatchBank.hpp"
+#include "XoneHostScheduler.hpp"
 #include "XoneGroupActionGate.hpp"
 #include "XoneSession.hpp"
 #include "../Core/MutePhysicalGate.hpp"
@@ -207,6 +208,41 @@ public:
     int lastBrowserLoadDeckForDiagnostic() const noexcept {return lastBrowserLoadDeck_;}
     // 16 neutral CUE/LOAD virtual CC. These report successful MIDI callback
     // delivery, NEVER a loaded synth preset or an applied XONE PATCH.
+    static bool deriveMemory(const l01::NavS3& nav,int physical,int& owner,int& slot) noexcept {
+        owner=slot=-1;
+        if(!nav.stable()||nav.hasStage()||physical<4||physical>=20)return false;
+        const auto& n=nav.active();if(n.contextMode!=0||n.presetFlag!=0||n.at(292)!=0)return false;
+        auto route=n.route(physical);if(route.address<0)return false;
+        const int kind=route.address/1024,family=(route.address%1024)/32,page=route.address%32;
+        if(kind==5&&(family==3||family==4)&&page>=1&&page<=8&&page!=4&&page!=8){
+            owner=6*(family-3)+page-1-(page>4?1:0);
+        }else if(kind==8&&(family==5||family==6)&&page>=1&&page<=8){owner=12+8*(family-5)+page-1;}
+        else return false;
+        slot=route.position;return l01::BankS6::memoryIndex(owner,slot)>=0;
+    }
+    enum class SourceRecallStatus : uint8_t { None, Pending, AppliedLocal, EmptyPatch, UnknownConfig, Busy };
+    // Native commands use contractual owner IDs, not external destinations.
+    bool captureMemory(int owner,int slot) noexcept {
+        const int index=l01::BankS6::memoryIndex(owner,slot);
+        if(index<0||!core_.captureNativeMemory(owner,slot))return false;
+        memoryEngaged_[static_cast<unsigned>(index)]=true;return true;
+    }
+    bool requestMemoryRecall(int owner,int slot) noexcept {
+        if(!memoryEngaged(owner,slot))return false;
+        l01::BankS6::MemoryRecord saved{};
+        if(!core_.nativeBank().readMemory(owner,slot,saved)||!saved.valid||saved.config!=core_.nativeLive().sessionConfig())return false;
+        if(!musicalScheduler_.replace(2,static_cast<uint16_t>(owner),ScheduleWhen::NextBeat))return false;
+        memoryPending_[static_cast<unsigned>(owner)]={slot,saved.config,saved.values};return true;
+    }
+    bool requestSourceRecall(unsigned source,unsigned choice) noexcept {
+        if(source>=4||choice>3||!musicalScheduler_.replace(1,static_cast<uint16_t>(source),ScheduleWhen::NextBar))return false;
+        sourcePending_[source]=static_cast<int>(choice);sourceStatus_[source]=SourceRecallStatus::Pending;return true;
+    }
+    bool memoryEngaged(int owner,int slot)const noexcept {
+        int index=l01::BankS6::memoryIndex(owner,slot);return index>=0&&memoryEngaged_[static_cast<unsigned>(index)];
+    }
+    int pendingMemorySlot(unsigned owner)const noexcept {return owner<28?memoryPending_[owner].slot:-1;}
+    bool readMemory(int owner,int slot,l01::BankS6::MemoryRecord& out)const noexcept {return core_.nativeBank().readMemory(owner,slot,out);}
     // Render-thread local source API. An external adapter is never treated as loaded.
     bool saveSourcePatch(unsigned source,unsigned slot) noexcept {
         SourcePatchBank::Values values{};
@@ -219,7 +255,6 @@ public:
     bool readSourcePatch(unsigned source,unsigned slot,SourcePatchBank::Patch& out)const noexcept {
         return sourcePatches_.read(source,slot,out);
     }
-    enum class SourceRecallStatus : uint8_t { None, Pending, AppliedLocal, EmptyPatch, UnknownConfig, Busy };
     SourceRecallStatus sourceRecallStatus(unsigned source)const noexcept {
         return source<4?sourceStatus_[source]:SourceRecallStatus::None;
     }
@@ -249,9 +284,13 @@ public:
     const GlobalMuteState& globalMute() const noexcept {return muteBridge_.state();}
     unsigned onMusicalGrid(const GridBatch& b) noexcept {
         unsigned committed=soft_.observe(b); // only authenticated BAR, never timer
-        if(b.valid&&!b.overflow&&b.count<=b.events.size())
-            for(unsigned i=0;i<b.count;++i)if(b.events[i].kind==GridKind::Bar)
-                { applySourceRecalls(); cueLoad_.onBar(); }
+        if(b.valid&&!b.overflow&&b.count<=b.events.size()){
+            musicalScheduler_.consume(b,[this](DueAction due) noexcept {
+                if(due.action.command==1)applySourceRecall(due.action.destination);
+                else if(due.action.command==2)applyMemoryRecall(due.action.destination);
+            });
+            for(unsigned i=0;i<b.count;++i)if(b.events[i].kind==GridKind::Bar)cueLoad_.onBar();
+        }
         if(mutePageEnabled_){
             const unsigned muteCommitted=muteBridge_.observe(b);
             if(muteCommitted)muteMidi_.observe(muteBridge_.state());
@@ -314,6 +353,9 @@ public:
                 cmd==0x90&&data[2]!=0&&!core_.longNavPending()&&
                 CueLoadBar::derive(core_.nativeNav(),static_cast<unsigned>(physical),
                                    cueGroup,cueIndex);
+            int memoryOwner=-1,memorySlot=-1;
+            const bool memorySource=baseEvent&&!muteBaseOwned&&!wasHeld&&cmd==0x90&&data[2]!=0&&
+                !core_.longNavPending()&&deriveMemory(core_.nativeNav(),physical,memoryOwner,memorySlot);
             const int previousNav=navMode();
             core_.retainDjLoopPage(dj2LoopObserved_!=Dj2LoopObserved::Off || dj2LoopStartRequested_);
             const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs,muteBaseOwned);
@@ -358,9 +400,9 @@ public:
                 soft_.requestFromRoute(physical,softRoute,softRoot);
             if(accepted && cueSource){
                 cueLoad_.requestQualified(cueGroup,cueIndex);
-                sourcePending_[cueGroup]=static_cast<int>(cueIndex%4);
-                sourceStatus_[cueGroup]=SourceRecallStatus::Pending;
+                requestSourceRecall(cueGroup,cueIndex%4);
             }
+            if(accepted&&memorySource)memoryGesture(memoryOwner,memorySlot);
             drainCore(seq,sample);
             if(accepted&&physical==2&&(cmd==0x90||cmd==0x80)&&
                wasHeld&&!(cmd==0x90&&data[2]!=0))dj2PushRotCaptured_=false;
@@ -766,6 +808,8 @@ public:
         groupDownEpoch_.fill(0); // STOP invalidates stale GROUP proof
         for(auto& hold:groupHolds_)hold={}; // no ghost long on later UP
         soft_.stop(); // cancels only uncommitted SOFT; applied pages persist
+        musicalScheduler_.stop();
+        for(auto& pending:memoryPending_)pending={};
         sourcePending_.fill(-1);sourceRead_=sourceWrite_;sourceBlocked_=false;
         cueLoad_.stop(); // cancel pending BAR intents, preserve actual CC-sent state
         topPulse_.stop(); // cancels unattempted pulses; retains every attempted OFF
@@ -1119,16 +1163,48 @@ private:
     TopPulseBus topPulse_{};
     S8SamplePatchBank s8Sample_{};
     S8MachinePatchBank s8Machine_{};
-    void applySourceRecalls() noexcept {
-        for(unsigned source=0;source<4;++source){
-            const int slot=sourcePending_[source];if(slot<0)continue;
+    struct MemoryPending {int slot{-1},config{-2};l01::BankS6::MemoryImage values{};};
+    bool memoryGesture(int owner,int slot) noexcept {
+        return memoryEngaged(owner,slot)?requestMemoryRecall(owner,slot):captureMemory(owner,slot);
+    }
+    void disengageSourceMemories(unsigned source) noexcept {
+        // Only the three explicitly mapped INST/YELLOW pages of this source.
+        for(unsigned page=3*source;page<3*source+3;++page){
+            musicalScheduler_.cancel(2,static_cast<uint16_t>(page));memoryPending_[page]={};
+            for(int slot=0;slot<4;++slot)memoryEngaged_[static_cast<unsigned>(l01::BankS6::memoryIndex(static_cast<int>(page),slot))]=false;
+        }
+    }
+    void applyMemoryRecall(unsigned owner) noexcept {
+        if(owner>=28)return;
+        auto request=memoryPending_[owner];memoryPending_[owner]={};if(request.slot<0)return;
+        std::array<int,97> cells{},values{};std::array<bool,9> changed{};
+        for(unsigned f=0;f<9;++f){cells[f]=l01::FxS6::addressFor(static_cast<int>(owner),static_cast<int>(f));values[f]=request.values[f];
+            auto prior=core_.nativeLive().desired(cells[f]);changed[f]=!prior.known||prior.value!=values[f];
+            for(const auto& hold:spots_)if(hold.cell==cells[f])return;
+        }
+        if(sourceWrite_-sourceRead_+9>sourceMidi_.size()||!core_.commitNativeSourceRecall(cells,values,9,request.config))return;
+        for(unsigned f=0;f<9;++f){
+            int api=cells[f]-(f<6?837:1384),type=f<6?10:11,value=values[f];
+            if(type==10&&changed[f])pickup_.rearm(api);
+            auto status=static_cast<uint8_t>((type==10?0xB6:value?0x96:0x86)+api/128);
+            sourceMidi_[sourceWrite_++%sourceMidi_.size()]={true,++sourcePacketToken_,type,api,value,
+                {status,static_cast<uint8_t>(api%128),static_cast<uint8_t>(type==10?value:value?127:0)}};
+        }
+    }
+    HostActionScheduler musicalScheduler_{};
+    std::array<MemoryPending,28> memoryPending_{};
+    std::array<bool,96> memoryEngaged_{};
+    void applySourceRecall(unsigned source) noexcept {
+        if(source>=4)return;
+        {
+            const int slot=sourcePending_[source];if(slot<0)return;
             sourcePending_[source]=-1;
             const int config=core_.nativeLive().sessionConfig();
-            if(config<1){sourceStatus_[source]=SourceRecallStatus::UnknownConfig;continue;}
+            if(config<1){sourceStatus_[source]=SourceRecallStatus::UnknownConfig;return;}
             SourcePatchBank::Values patch{};patch.fill(0);
             if(slot<3){SourcePatchBank::Patch saved{};
                 if(!sourcePatches_.read(source,static_cast<unsigned>(slot),saved)||saved.config!=config){
-                    sourceStatus_[source]=SourceRecallStatus::EmptyPatch;continue;}
+                    sourceStatus_[source]=SourceRecallStatus::EmptyPatch;return;}
                 patch=saved.values;
             }
             std::array<int,97> cells{},values{};
@@ -1150,7 +1226,7 @@ private:
             }
             if(busy||sourceWrite_-sourceRead_+count>sourceMidi_.size()||
                !core_.commitNativeSourceRecall(cells,values,count,config)){
-                sourceStatus_[source]=SourceRecallStatus::Busy;continue;
+                sourceStatus_[source]=SourceRecallStatus::Busy;return;
             }
             for(unsigned f=0;f<count;++f){
                 int api=apis[f],type=types[f],value=values[f];
@@ -1159,13 +1235,14 @@ private:
                 auto& p=sourceMidi_[sourceWrite_++%sourceMidi_.size()];
                 p={true,++sourcePacketToken_,type,api,value,{status,static_cast<uint8_t>(api%128),static_cast<uint8_t>(type==10?value:value?127:0)}};
             }
+            disengageSourceMemories(source);
             sourceStatus_[source]=SourceRecallStatus::AppliedLocal;
         }
     }
     SourcePatchBank sourcePatches_{};
     std::array<int,4> sourcePending_{{-1,-1,-1,-1}};
     std::array<SourceRecallStatus,4> sourceStatus_{};
-    std::array<SourcePacket,512> sourceMidi_{};
+    std::array<SourcePacket,1024> sourceMidi_{};
     unsigned sourceRead_{},sourceWrite_{},sourcePacketToken_{};
     bool sourceBlocked_{};
     CueLoadBar cueLoad_{};
