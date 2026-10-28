@@ -53,6 +53,11 @@ public:
         core_.enableDiagnosticQualifiedNav(true); // source-qualified SHORT/LONG NAV only
         // Opt-in native BOT2 overlay; legacy diagnostic harness retains NAV role1.
     }
+    // Historical CH1 remap is an opt-in test seam, never production MIDI API.
+    bool enableHistoricalL02BenchForDiagnostic(bool yes) noexcept {
+        if(started_)return false;
+        historicalL02Bench_=yes;return true;
+    }
     void enableNativeMutePage(bool yes) noexcept {mutePageEnabled_=yes;core_.enableNativeMuteBot2(yes);}
     bool mutePageVisible() const noexcept {return mutePageEnabled_&&muteGate_.visible();}
     bool muteGesturePending() const noexcept {return muteBridge_.state().pendingCount()!=0;}
@@ -285,8 +290,8 @@ public:
             }
             return {};
         }
-        // Explicit T01 bench profile: CH1 only, exactly two CC mappings, no Thru.
-        if(data[0]!=0xB0 || (data[1]!=4 && data[1]!=8)) {
+        // Explicit T01 bench profile only: never remap CH1 in the default AU.
+        if(!historicalL02Bench_ || data[0]!=0xB0 || (data[1]!=4 && data[1]!=8)) {
             record(seq,sample,Stage::Decision,Reason::Rejected,cable,data,length);return {};
         }
         Result r{true,{0xB0,static_cast<uint8_t>(data[1]==4?74:71),data[2]},seq,sample};
@@ -636,9 +641,12 @@ private:
         const auto target=continuousTarget(core_.nativeNav().active().route(36+cc));
         if(!target.valid()||target.api==572)return {};
         const auto live=core_.nativeLive().desired(target.cell);
-        if(!live.known){record(seq,sample,Stage::Decision,Reason::UnknownLive,0,nullptr,0);return {};}
+        // S3 @zr: a physical move is a real initial DESIRED value even when
+        // the session has no fixture. It is not an inferred RESET default.
+        // Seeding pickup with raw also latches this physical controller, so
+        // the next movement does not spuriously wait for a second pickup.
         if(core_.nativeLive().revision()>=l01::LiveState::MaxRevision)return {};
-        const int value=pickup_.consider(cc,target.api,live.value,raw,ms);
+        const int value=pickup_.consider(cc,target.api,live.known?live.value:raw,raw,ms);
         if(value<0){record(seq,sample,Stage::Decision,Reason::PickupWait,0,nullptr,0);return {};}
         const bool loop=(target.api>=569&&target.api<=571)||target.api==573;
         auto projection=core_.output();
@@ -712,6 +720,7 @@ private:
     std::array<bool,702> stopAwaiting_{};
     unsigned stopCount_{},stopRead_{},stopPendingCount_{};int64_t stopSample_{};
     bool started_{};
+    bool historicalL02Bench_{};
     SessionMailbox restores_{},snapshots_{};
     SessionFrame uiSession_{}; // UI owns cache and request generation.
     uint32_t requestedToken_{}; // UI only
