@@ -164,6 +164,23 @@ public:
                                    next.revision(),record.config))return false;
         live_=next;return true;
     }
+    // S8 SAMPLE bank is the authority for 28 instrument PATCH parameters.
+    // The 12 SPOT modes live in S8 configuration and are never touched here.
+    // The S3 coordinator remains the ONLY writer of the shared LIVE image.
+    bool recallNativeS8SamplePatch(int owner,const std::array<int,28>& values,
+                                   int config,std::uint32_t expectedLiveRevision) noexcept {
+        if(!diagnosticLive_||owner<0||owner>=8||config<1||config>127||
+           live_.sessionConfig()!=config||live_.revision()!=expectedLiveRevision||
+           longTx_.pending()||touch_.busy()||nav_.hasStage()||touchOwner_!=-1||
+           expectedLiveRevision>LiveState::MaxRevision-28)return false;
+        auto next=live_;
+        for(int field=0;field<28;++field){
+            const int v=values[static_cast<std::size_t>(field)];
+            if(v<0||v>127||(field>=16&&v>1))return false;
+            if(!next.commitDesired(40*owner+field,v,next.revision(),config))return false;
+        }
+        live_=next;return true;
+    }
     const BankS6& nativeBank() const noexcept {return nativeBank_;}
     // L01/10: read-only FX-memory snapshots; no persistence implied.
     bool supplyFxMemoryForDiagnostic(int owner,int slot,const FxS6::MemorySnapshot& m)noexcept {
