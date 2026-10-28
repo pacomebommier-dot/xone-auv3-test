@@ -197,7 +197,6 @@
         };
         flushMute(bufferStart); // old failed writes, no fabricated BAR
         flushSoft(bufferStart); // retry only previously applied SOFT notes
-        flushTop(bufferStart); // only an already admitted TOP action / OFF debt
         // Retry only genuine outstanding STOP OFF debts. This precedes any
         // fresh physical MIDI in this buffer and cannot invent a note ON.
         engine->beginStopRetryPass(bufferStart);
@@ -210,6 +209,9 @@
                 *known = true; *moving = nowMoving;
             } else { *known = false; }
         }
+        // Inspect host transport before retrying an unstarted TOP pulse:
+        // a STOP transition must cancel queued ONs, never emit them first.
+        flushTop(bufferStart);
         flushMuteLeds(bufferStart,static_cast<int64_t>(*elapsedMs));
         // Host-derived grid supplies authenticated musical edges.
         xone::host::MusicalContext context{};
