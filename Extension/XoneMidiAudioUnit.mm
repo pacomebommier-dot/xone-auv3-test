@@ -169,6 +169,19 @@
                 cursor=ok?0:packet.index+1;
             }
         };
+        // S7 TOP ACTION impulses are FIFO and never a persistent NOTE state.
+        // Failed ON is conservatively followed by OFF; failed OFF is retried.
+        const auto flushTop = [&](AUEventSampleTime sample) {
+            if(!sendMIDI)return;
+            for(unsigned n=0;n<64;++n) {
+                const auto packet=engine->nextTopPulse();
+                if(!packet.valid)break;
+                const bool success=sendMIDI(sample,0,3,packet.bytes)==noErr;
+                engine->ackTopPulse(packet,success,sample);
+                // Never overtake a failed OFF with the next queued TOP.
+                if(!success&&!packet.on)break;
+            }
+        };
         const auto flushMuteLeds = [&](AUEventSampleTime sample,int64_t ms) {
             engine->prepareMuteLeds(ms);
             if(!sendMIDI)return;
@@ -184,6 +197,7 @@
         };
         flushMute(bufferStart); // old failed writes, no fabricated BAR
         flushSoft(bufferStart); // retry only previously applied SOFT notes
+        flushTop(bufferStart); // only an already admitted TOP action / OFF debt
         // Retry only genuine outstanding STOP OFF debts. This precedes any
         // fresh physical MIDI in this buffer and cannot invent a note ON.
         engine->beginStopRetryPass(bufferStart);
@@ -192,7 +206,7 @@
             AUHostTransportStateFlags flags = static_cast<AUHostTransportStateFlags>(0);
             if (transport(&flags, nullptr, nullptr, nullptr)) {
                 const bool nowMoving = (flags & AUHostTransportStateMoving) != 0;
-                if (*known && *moving && !nowMoving) { scheduler->stop(); engine->stop(bufferStart); flushStop(); flushSoft(bufferStart); }
+                if (*known && *moving && !nowMoving) { scheduler->stop(); engine->stop(bufferStart); flushStop(); flushSoft(bufferStart); flushTop(bufferStart); }
                 *known = true; *moving = nowMoving;
             } else { *known = false; }
         }
@@ -250,7 +264,7 @@
             lastEventSample=sample;
             deliverGridThrough(sample);
             if (m.length == 1 && m.data[0] == 0xFC && m.cable == 0) {
-                scheduler->stop(); engine->stop(sample); flushStop(); flushSoft(sample); flushMuteLeds(sample,static_cast<int64_t>(*elapsedMs+1000.0*(sample-bufferStart)/rate)); continue;
+                scheduler->stop(); engine->stop(sample); flushStop(); flushSoft(sample); flushTop(sample); flushMuteLeds(sample,static_cast<int64_t>(*elapsedMs+1000.0*(sample-bufferStart)/rate)); continue;
             }
             const auto ms = static_cast<int64_t>(*elapsedMs + 1000.0 * (sample-bufferStart) / rate);
             const auto result = engine->receive(m.cable, m.data, m.length, sample, ms);
@@ -260,6 +274,7 @@
                 if (sendMIDI) engine->sent(packet, sendMIDI(sample, 0, 3, packet.bytes));
                 else engine->noOutput(packet);
             }
+            flushTop(sample); // TOP UP produces pulse at true MIDI offset
             flushMuteLeds(sample,ms);
         }
         if (event != nullptr) engine->renderOverflow(bufferStart);
