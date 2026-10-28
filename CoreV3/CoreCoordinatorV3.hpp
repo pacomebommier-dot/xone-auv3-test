@@ -197,6 +197,16 @@ public:
         }
         live_=next;return true;
     }
+    // Qualified local source recalls use the same S3 LIVE writer. No backend ACK.
+    bool commitNativeSourceRecall(const std::array<int,97>& cells,
+            const std::array<int,97>& values,unsigned count,int config) noexcept {
+        if(!diagnosticLive_||count==0||count>cells.size()||config!=live_.sessionConfig()||
+           longTx_.pending()||touch_.busy()||nav_.hasStage()||touchOwner_!=-1)return false;
+        auto next=live_;
+        for(unsigned i=0;i<count;++i)
+            if(!next.commitDesired(cells[i],values[i],next.revision(),config))return false;
+        live_=next;return true;
+    }
     const BankS6& nativeBank() const noexcept {return nativeBank_;}
     // L01/10: read-only FX-memory snapshots; no persistence implied.
     bool supplyFxMemoryForDiagnostic(int owner,int slot,const FxS6::MemorySnapshot& m)noexcept {

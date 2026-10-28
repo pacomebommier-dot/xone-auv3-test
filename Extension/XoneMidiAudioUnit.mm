@@ -182,6 +182,14 @@
                 engine->ackCueLoadPacket(packet,ok,sample);
             }
         };
+        const auto flushSource = [&](AUEventSampleTime sample) {
+            if(!sendMIDI)return;
+            for(unsigned n=0;n<512;++n){
+                const auto packet=engine->nextSourcePacket();if(!packet.valid)break;
+                const bool ok=sendMIDI(sample,0,3,packet.bytes.data())==noErr;
+                engine->ackSourcePacket(packet,ok,sample);if(!ok)break;
+            }
+        };
         bool failedTopOffInThisBuffer=false;
         const auto flushTop = [&](AUEventSampleTime sample) {
             // Multiple flush sites (MIDI edge + end-of-buffer timer) share
@@ -226,6 +234,8 @@
                 *known = true; *moving = nowMoving;
             } else { *known = false; }
         }
+        engine->beginSourceRetryPass();
+        flushSource(bufferStart);
         // Inspect host transport before retrying an unstarted TOP pulse:
         // a STOP transition must cancel queued ONs, never emit them first.
         flushTop(bufferStart);
@@ -258,6 +268,7 @@
                 engine->onMusicalGrid(one);
                 flushSoft(bufferStart+one.events[0].offset);
                 flushCueLoad(bufferStart+one.events[0].offset);
+                flushSource(bufferStart+one.events[0].offset);
                 const auto patch=engine->samplePatchOnGrid(one,bufferStart);
                 for(unsigned n=0;n<patch.packetCount();++n){
                     const auto packet=patch.packet(n);

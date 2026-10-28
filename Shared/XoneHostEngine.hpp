@@ -7,6 +7,7 @@
 #include "XoneS8SamplePatchBank.hpp"
 #include "XoneS8MachinePatchBank.hpp"
 #include "XoneCueLoadBar.hpp"
+#include "XoneSourcePatchBank.hpp"
 #include "XoneGroupActionGate.hpp"
 #include "XoneSession.hpp"
 #include "../Core/MutePhysicalGate.hpp"
@@ -206,6 +207,35 @@ public:
     int lastBrowserLoadDeckForDiagnostic() const noexcept {return lastBrowserLoadDeck_;}
     // 16 neutral CUE/LOAD virtual CC. These report successful MIDI callback
     // delivery, NEVER a loaded synth preset or an applied XONE PATCH.
+    // Render-thread local source API. An external adapter is never treated as loaded.
+    bool saveSourcePatch(unsigned source,unsigned slot) noexcept {
+        SourcePatchBank::Values values{};
+        for(unsigned f=0;f<values.size();++f){
+            auto v=core_.nativeLive().desired(SourcePatchBank::cell(source,f));
+            if(!v.known)return false;values[f]=v.value;
+        }
+        return sourcePatches_.save(source,slot,core_.nativeLive().sessionConfig(),values);
+    }
+    bool readSourcePatch(unsigned source,unsigned slot,SourcePatchBank::Patch& out)const noexcept {
+        return sourcePatches_.read(source,slot,out);
+    }
+    enum class SourceRecallStatus : uint8_t { None, Pending, AppliedLocal, EmptyPatch, UnknownConfig, Busy };
+    SourceRecallStatus sourceRecallStatus(unsigned source)const noexcept {
+        return source<4?sourceStatus_[source]:SourceRecallStatus::None;
+    }
+    struct SourcePacket {bool valid{};unsigned token{};int type{},api{-1},value{};std::array<uint8_t,3> bytes{};};
+    SourcePacket nextSourcePacket()const noexcept {
+        if(sourceRead_==sourceWrite_||sourceBlocked_)return {};
+        return sourceMidi_[sourceRead_%sourceMidi_.size()];
+    }
+    void beginSourceRetryPass() noexcept {sourceBlocked_=false;}
+    void ackSourcePacket(const SourcePacket& packet,bool success,int64_t sample) noexcept {
+        const auto current=nextSourcePacket();
+        if(!current.valid||packet.token!=current.token)return;
+        Result r{true,{current.bytes[0],current.bytes[1],current.bytes[2]},sequence_,sample,true,current.api,current.value,current.type};
+        sent(r,success?0:-1);
+        if(success)++sourceRead_;else sourceBlocked_=true;
+    }
     int cueLoadSent(unsigned group) const noexcept {return cueLoad_.sentSelection(group);}
     int cueLoadPending(unsigned group) const noexcept {return cueLoad_.pendingSelection(group);}
     unsigned pendingCueLoad() const noexcept {return cueLoad_.pendingActions();}
@@ -221,7 +251,7 @@ public:
         unsigned committed=soft_.observe(b); // only authenticated BAR, never timer
         if(b.valid&&!b.overflow&&b.count<=b.events.size())
             for(unsigned i=0;i<b.count;++i)if(b.events[i].kind==GridKind::Bar)
-                cueLoad_.onBar();
+                { applySourceRecalls(); cueLoad_.onBar(); }
         if(mutePageEnabled_){
             const unsigned muteCommitted=muteBridge_.observe(b);
             if(muteCommitted)muteMidi_.observe(muteBridge_.state());
@@ -326,8 +356,11 @@ public:
                !muteBaseOwned&&physical>=4&&physical<20&&
                !core_.longNavPending()&&!core_.nativeNav().hasStage())
                 soft_.requestFromRoute(physical,softRoute,softRoot);
-            if(accepted && cueSource)
+            if(accepted && cueSource){
                 cueLoad_.requestQualified(cueGroup,cueIndex);
+                sourcePending_[cueGroup]=static_cast<int>(cueIndex%4);
+                sourceStatus_[cueGroup]=SourceRecallStatus::Pending;
+            }
             drainCore(seq,sample);
             if(accepted&&physical==2&&(cmd==0x90||cmd==0x80)&&
                wasHeld&&!(cmd==0x90&&data[2]!=0))dj2PushRotCaptured_=false;
@@ -733,6 +766,7 @@ public:
         groupDownEpoch_.fill(0); // STOP invalidates stale GROUP proof
         for(auto& hold:groupHolds_)hold={}; // no ghost long on later UP
         soft_.stop(); // cancels only uncommitted SOFT; applied pages persist
+        sourcePending_.fill(-1);sourceRead_=sourceWrite_;sourceBlocked_=false;
         cueLoad_.stop(); // cancel pending BAR intents, preserve actual CC-sent state
         topPulse_.stop(); // cancels unattempted pulses; retains every attempted OFF
         topSaveSuppress_.fill(false);
@@ -1085,6 +1119,43 @@ private:
     TopPulseBus topPulse_{};
     S8SamplePatchBank s8Sample_{};
     S8MachinePatchBank s8Machine_{};
+    void applySourceRecalls() noexcept {
+        for(unsigned source=0;source<4;++source){
+            const int slot=sourcePending_[source];if(slot<0)continue;
+            sourcePending_[source]=-1;
+            const int config=core_.nativeLive().sessionConfig();
+            if(config<1){sourceStatus_[source]=SourceRecallStatus::UnknownConfig;continue;}
+            SourcePatchBank::Values patch{};patch.fill(0);
+            if(slot<3){SourcePatchBank::Patch saved{};
+                if(!sourcePatches_.read(source,static_cast<unsigned>(slot),saved)||saved.config!=config){
+                    sourceStatus_[source]=SourceRecallStatus::EmptyPatch;continue;}
+                patch=saved.values;
+            }
+            std::array<int,97> cells{},values{};
+            unsigned count=60;
+            bool busy=false;
+            for(unsigned f=0;f<count;++f){cells[f]=SourcePatchBank::cell(source,f);values[f]=patch[f];
+                for(const auto& hold:spots_)if(hold.cell==cells[f])busy=true;
+            }
+            if(busy||sourceWrite_-sourceRead_+count>sourceMidi_.size()||
+               !core_.commitNativeSourceRecall(cells,values,count,config)){
+                sourceStatus_[source]=SourceRecallStatus::Busy;continue;
+            }
+            for(unsigned f=0;f<count;++f){
+                int api=SourcePatchBank::api(source,f),type=SourcePatchBank::type(f),value=values[f];
+                const auto status=static_cast<uint8_t>((type==10?0xB6:value?0x96:0x86)+api/128);
+                auto& p=sourceMidi_[sourceWrite_++%sourceMidi_.size()];
+                p={true,++sourcePacketToken_,type,api,value,{status,static_cast<uint8_t>(api%128),static_cast<uint8_t>(type==10?value:value?127:0)}};
+            }
+            sourceStatus_[source]=SourceRecallStatus::AppliedLocal;
+        }
+    }
+    SourcePatchBank sourcePatches_{};
+    std::array<int,4> sourcePending_{{-1,-1,-1,-1}};
+    std::array<SourceRecallStatus,4> sourceStatus_{};
+    std::array<SourcePacket,512> sourceMidi_{};
+    unsigned sourceRead_{},sourceWrite_{},sourcePacketToken_{};
+    bool sourceBlocked_{};
     CueLoadBar cueLoad_{};
     std::array<bool,4> topSaveSuppress_{};
     unsigned sampleSavesAccepted_{},sampleSavesRefused_{};
