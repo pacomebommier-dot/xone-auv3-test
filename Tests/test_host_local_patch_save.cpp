@@ -46,6 +46,24 @@ int main(){
         assert(record.config==1&&record.revision==1);
         for(int i=0;i<40;++i)assert(record.values[i]==(i>=28?1:(i>=16?(i%2):(i+17)%128)));
         for(int i=40;i<84;++i)assert(record.values[i]==-2);
+        if(gap==30){
+            // Full practical roundtrip: SAVE via BOT2+TOP, later TOP alone
+            // arms the preexisting native BAR recall and MIDI S7 projection.
+            note(e,52,true,50);note(e,52,false,51);
+            assert(e.samplePatchPending());
+            GridBatch beat{};beat.valid=true;beat.count=1;
+            beat.events[0]={GridKind::Beat,0,1};
+            assert(!e.samplePatchOnGrid(beat,2600).emit&&e.samplePatchPending());
+            GridBatch bar{};bar.valid=true;bar.count=1;
+            bar.events[0]={GridKind::Bar,0,4};
+            const auto midi=e.samplePatchOnGrid(bar,2700);
+            assert(midi.packetCount()==28&&!e.samplePatchPending());
+            for(unsigned i=0;i<midi.packetCount();++i){
+                auto packet=midi.packet(i);
+                assert(packet.musical&&e.canSend(packet));
+                e.sent(packet,0);
+            }
+        }
     }
     // ALL three physical PATCH slots have distinct storage.
     {
