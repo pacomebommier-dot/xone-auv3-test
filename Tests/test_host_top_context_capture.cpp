@@ -12,9 +12,10 @@ int main(){
  // The physical DOWN binds the context as well as the route; the
  // source's route mapping alone may alias across navigation contexts.
  edge(e,52,true,10);edge(e,52,false,20);
- HostEngine::TopIntent a{};assert(e.lastTopIntent(0,a));
- assert(a.physical==32&&a.action==HostEngine::TopAction::FilterReset);
+ HostEngine::TopIntent a{};
+ assert(e.pendingTopPulses()==1&&!e.lastTopIntent(0,a)); // INIT is ACTION, not RESET
  edge(e,53,true,30);e.stop(31*48);edge(e,53,false,40);
+ assert(e.pendingTopPulses()==0);
  assert(!e.lastTopIntent(0,a));assert(!e.lastTopIntent(1,a));
  // Source TOP4 never produces a PATCH recall on the normal socle.
  edge(e,55,true,50);edge(e,55,false,51);
