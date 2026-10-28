@@ -171,6 +171,17 @@
         };
         // S7 TOP ACTION impulses are FIFO and never a persistent NOTE state.
         // Failed ON is conservatively followed by OFF; failed OFF is retried.
+        // Source CUE/LOAD CC931..946, emitted only after actual host BAR.
+        // Callback success = MIDI delivery, never synth PATCH/BASE ACK.
+        const auto flushCueLoad = [&](AUEventSampleTime sample) {
+            if(!sendMIDI)return;
+            for(unsigned n=0;n<16;++n){
+                const auto packet=engine->nextCueLoadPacket();
+                if(!packet.valid)break;
+                const bool ok=sendMIDI(sample,0,3,packet.bytes.data())==noErr;
+                engine->ackCueLoadPacket(packet,ok,sample);
+            }
+        };
         const auto flushTop = [&](AUEventSampleTime sample) {
             if(!sendMIDI)return;
             for(unsigned n=0;n<64;++n) {
@@ -197,6 +208,8 @@
         };
         flushMute(bufferStart); // old failed writes, no fabricated BAR
         flushSoft(bufferStart); // retry only previously applied SOFT notes
+        engine->beginCueLoadRetryPass();
+        flushCueLoad(bufferStart); // retry only a previously committed BAR action
         // Retry only genuine outstanding STOP OFF debts. This precedes any
         // fresh physical MIDI in this buffer and cannot invent a note ON.
         engine->beginStopRetryPass(bufferStart);
@@ -240,6 +253,7 @@
                 scheduler->consume(one, [](xone::host::DueAction) noexcept {});
                 engine->onMusicalGrid(one);
                 flushSoft(bufferStart+one.events[0].offset);
+                flushCueLoad(bufferStart+one.events[0].offset);
                 const auto patch=engine->samplePatchOnGrid(one,bufferStart);
                 for(unsigned n=0;n<patch.packetCount();++n){
                     const auto packet=patch.packet(n);
