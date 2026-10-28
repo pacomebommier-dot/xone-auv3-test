@@ -59,6 +59,11 @@ public:
         if(started_)return false;
         historicalL02Bench_=yes;return true;
     }
+    // Pre-render test seam: exercise source-validated S3 routes without
+    // installing a fictional instrument or mutating the historical NAV header.
+    bool setNavForDiagnostic(const l01::NavImage& image) noexcept {
+        return !started_&&core_.stageNativeNav(image)&&core_.commitNativeNav();
+    }
     void enableNativeMutePage(bool yes) noexcept {mutePageEnabled_=yes;core_.enableNativeMuteBot2(yes);}
     bool mutePageVisible() const noexcept {return mutePageEnabled_&&muteGate_.visible();}
     bool muteGesturePending() const noexcept {return muteBridge_.state().pendingCount()!=0;}
