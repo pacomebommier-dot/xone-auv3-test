@@ -181,6 +181,22 @@ public:
         }
         live_=next;return true;
     }
+    // Native S8 MACHINE (source selected machine 1..24), no modes or BASE.
+    // Stage thirty LIVE changes as one transaction; no partly applied patch.
+    bool recallNativeS8MachinePatch(int machine,const std::array<int,30>& values,
+                                   int config,std::uint32_t expectedLiveRevision) noexcept {
+        if(!diagnosticLive_||machine<0||machine>=24||config<1||config>127||
+           live_.sessionConfig()!=config||live_.revision()!=expectedLiveRevision||
+           longTx_.pending()||touch_.busy()||nav_.hasStage()||touchOwner_!=-1||
+           expectedLiveRevision>LiveState::MaxRevision-30)return false;
+        auto next=live_;
+        for(int field=0;field<30;++field){
+            const int v=values[static_cast<std::size_t>(field)];
+            if(v<0||v>127||(field>=18&&v>1))return false;
+            if(!next.commitDesired(320+42*machine+field,v,next.revision(),config))return false;
+        }
+        live_=next;return true;
+    }
     const BankS6& nativeBank() const noexcept {return nativeBank_;}
     // L01/10: read-only FX-memory snapshots; no persistence implied.
     bool supplyFxMemoryForDiagnostic(int owner,int slot,const FxS6::MemorySnapshot& m)noexcept {
