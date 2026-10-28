@@ -127,6 +127,7 @@ public:
             return false;
         return topPulse_.queueGroup(action.fill,action.page,action.action);
     }
+    std::uint64_t nativeNavRevisionForQualifiedSource() const noexcept {return core_.nativeNav().revision();}
     unsigned pendingActionPulses() const noexcept {return topPulse_.pending();}
     unsigned pendingTopPulses() const noexcept {return topPulse_.pending();}
     TopPulsePacket nextActionPulse() const noexcept {return topPulse_.next();}
