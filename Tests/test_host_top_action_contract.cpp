@@ -10,13 +10,14 @@ static void press(HostEngine& e,int note,int ms){
 }
 int main(){
  HostEngine e;
- // Default SOCLE TOP1..4: FILTER reset intents, never unknown zero.
+ // Source GOLDEN: bare INIT TOP1..3 are transient virtual pulses.
+ // TOP4 is the separate invariant FILTER GLOBAL request, still UNKNOWN safe.
  for(int n=52;n<56;++n)press(e,n,10*(n-52));
- assert(e.topResetsDeferred()==4&&e.topPatchRecallsDeferred()==0);
- for(unsigned i=0;i<4;++i){
-   HostEngine::TopIntent a{};assert(e.lastTopIntent(i,a));
-   assert(a.action==HostEngine::TopAction::FilterReset);
- }
+ assert(e.pendingTopPulses()==3);
+ assert(e.topResetsDeferred()==1&&e.topPatchRecallsDeferred()==0);
+ for(unsigned i=0;i<3;++i){HostEngine::TopIntent a{};assert(!e.lastTopIntent(i,a));}
+ HostEngine::TopIntent top4{};assert(e.lastTopIntent(3,top4));
+ assert(top4.action==HostEngine::TopAction::FilterReset);
  // Context classification is explicit and does not transform an old
  // unconsumed RESET into an arbitrary PATCH callback.
  // Dedicated SAMPLE/MACHINE navigation scenarios remain in S3 tests.
