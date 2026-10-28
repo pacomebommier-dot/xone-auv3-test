@@ -936,6 +936,10 @@ private:
             if(cell>=0&&cell<320&&cell%40>=16&&cell%40<28){
                 const int m=s8Sample_.mode(static_cast<unsigned>(cell/40),static_cast<unsigned>(cell%40-16));
                 if(m>=1&&m<=4)selected={true,m};
+            }else if(cell>=320&&cell<1328&&(cell-320)%42>=18&&(cell-320)%42<30){
+                const int m=s8Machine_.mode(static_cast<unsigned>((cell-320)/42),
+                                            static_cast<unsigned>((cell-320)%42-18));
+                if(m>=1&&m<=4)selected={true,m};
             }
             api=spotApi(cell);
             if(!live.known||live.value>1||!selected.known||selected.value<1||selected.value>4||api<0)return {};
