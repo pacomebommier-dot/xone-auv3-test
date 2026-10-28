@@ -13,7 +13,7 @@ int main() {
         e.receive(0,d,3,0,ms++); // duplicate DOWN suppressed
         e.receive(0,u,3,0,ms++);assert(!e.surfaceHeld(i));
     }
-    HostEngine ccEngine; // use the default S3 NAV for absolute controls
+    xone::host::HostEngine ccEngine; // use the default S3 NAV for absolute controls
     for(int cc=0;cc<128;++cc) {
         uint8_t d[]{0xBE,static_cast<uint8_t>(cc),64};
         const auto result=ccEngine.receive(0,d,3,0,ms++);
