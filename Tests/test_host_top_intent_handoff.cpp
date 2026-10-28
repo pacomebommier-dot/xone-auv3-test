@@ -9,24 +9,26 @@ static void edge(HostEngine& e,int note,bool down,int ms){
 }
 int main(){
  HostEngine e;HostEngine::TopIntent a{},b{};
- assert(!e.consumeTopIntent(0,1,b));
- edge(e,52,true,10);edge(e,52,false,20);
- assert(e.lastTopIntent(0,a));
- assert(!e.consumeTopIntent(0,a.sequence+1,b));
- assert(e.lastTopIntent(0,b));
- assert(e.consumeTopIntent(0,a.sequence,b));
- assert(b.sequence==a.sequence&&b.physical==32);
- assert(!e.consumeTopIntent(0,a.sequence,b));
- edge(e,52,true,30);edge(e,52,false,31);
- assert(e.lastTopIntent(0,a));
- edge(e,52,true,40);edge(e,52,false,41);
- assert(!e.consumeTopIntent(0,a.sequence,b));
- assert(e.lastTopIntent(0,a));
- assert(e.consumeTopIntent(0,a.sequence,b));
- edge(e,53,true,50);edge(e,53,false,51);
- assert(e.lastTopIntent(1,a));
+ // Only TOP4 remains a deferred FILTER GLOBAL intent on normal INIT.
+ // TOP1..3 now produce immediate neutral MIDI action pulses.
+ assert(!e.consumeTopIntent(3,1,b));
+ edge(e,55,true,10);edge(e,55,false,20);
+ assert(e.lastTopIntent(3,a));
+ assert(!e.consumeTopIntent(3,a.sequence+1,b));
+ assert(e.lastTopIntent(3,b));
+ assert(e.consumeTopIntent(3,a.sequence,b));
+ assert(b.sequence==a.sequence&&b.physical==35);
+ assert(!e.consumeTopIntent(3,a.sequence,b));
+ edge(e,55,true,30);edge(e,55,false,31);
+ assert(e.lastTopIntent(3,a));
+ edge(e,55,true,40);edge(e,55,false,41);
+ assert(!e.consumeTopIntent(3,a.sequence,b));
+ assert(e.lastTopIntent(3,a));
+ assert(e.consumeTopIntent(3,a.sequence,b));
+ edge(e,55,true,50);edge(e,55,false,51);
+ assert(e.lastTopIntent(3,a));
  e.stop(52*48);
- assert(!e.consumeTopIntent(1,a.sequence,b));
+ assert(!e.consumeTopIntent(3,a.sequence,b));
  assert(!e.nextStopPacket().emit);
  std::cout<<"PASS TOP one-shot deferred handoff, stale epoch rejection and STOP cancellation\n";
 }
