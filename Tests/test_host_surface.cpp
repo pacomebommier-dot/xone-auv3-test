@@ -13,16 +13,23 @@ int main() {
         e.receive(0,d,3,0,ms++); // duplicate DOWN suppressed
         e.receive(0,u,3,0,ms++);assert(!e.surfaceHeld(i));
     }
+    HostEngine ccEngine; // use the default S3 NAV for absolute controls
     for(int cc=0;cc<128;++cc) {
         uint8_t d[]{0xBE,static_cast<uint8_t>(cc),64};
-        const auto result=e.receive(0,d,3,0,ms++);
-        // Only DJ1/DJ2 (CC20/21) have an explicit S7 type16 route.
+        const auto result=ccEngine.receive(0,d,3,0,ms++);
+        // The first 20 absolute CCs are admissible without LIVE fixture.
+        if(cc<20){
+            assert(result.emit&&result.musical&&result.type==10);
+            assert(result.bytes[2]==64);
+            ccEngine.sent(result,0);
+        }
+        // DJ1/DJ2 (CC20/21) retain their independent S7 type16 route.
         // Their relative value 64 is -64, not an absolute CC or a Thru.
-        if(cc==20||cc==21){
+        else if(cc==20||cc==21){
             assert(result.emit&&result.musical&&result.type==16);
             assert(result.api==947+cc-20);
             assert(result.bytes[0]==0xBD&&result.bytes[1]==51+cc-20&&result.bytes[2]==64);
-            e.sent(result,0);
+            ccEngine.sent(result,0);
         }else assert(!result.emit);
     }
     for(int n=0;n<128;++n) {
