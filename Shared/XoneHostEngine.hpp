@@ -6,6 +6,7 @@
 #include "XoneTopPulseBus.hpp"
 #include "XoneS8SamplePatchBank.hpp"
 #include "XoneS8MachinePatchBank.hpp"
+#include "XoneCueLoadBar.hpp"
 #include "XoneGroupActionGate.hpp"
 #include "XoneSession.hpp"
 #include "../Core/MutePhysicalGate.hpp"
@@ -203,9 +204,24 @@ public:
         request=browserLoadRequest_;browserLoadPending_=false;return true;
     }
     int lastBrowserLoadDeckForDiagnostic() const noexcept {return lastBrowserLoadDeck_;}
+    // 16 neutral CUE/LOAD virtual CC. These report successful MIDI callback
+    // delivery, NEVER a loaded synth preset or an applied XONE PATCH.
+    int cueLoadSent(unsigned group) const noexcept {return cueLoad_.sentSelection(group);}
+    int cueLoadPending(unsigned group) const noexcept {return cueLoad_.pendingSelection(group);}
+    unsigned pendingCueLoad() const noexcept {return cueLoad_.pendingActions();}
+    CueLoadBar::Packet nextCueLoadPacket() const noexcept {return cueLoad_.next();}
+    void beginCueLoadRetryPass() noexcept {cueLoad_.beginRetryPass();}
+    void ackCueLoadPacket(CueLoadBar::Packet packet,bool ok,int64_t sample) noexcept {
+        if(cueLoad_.acknowledge(packet,ok))
+            record(++sequence_,sample,Stage::TxOut,ok?Reason::Sent:Reason::SendFailed,
+                   0,packet.bytes.data(),3,packet.api);
+    }
     const GlobalMuteState& globalMute() const noexcept {return muteBridge_.state();}
     unsigned onMusicalGrid(const GridBatch& b) noexcept {
         unsigned committed=soft_.observe(b); // only authenticated BAR, never timer
+        if(b.valid&&!b.overflow&&b.count<=b.events.size())
+            for(unsigned i=0;i<b.count;++i)if(b.events[i].kind==GridKind::Bar)
+                cueLoad_.onBar();
         if(mutePageEnabled_){
             const unsigned muteCommitted=muteBridge_.observe(b);
             if(muteCommitted)muteMidi_.observe(muteBridge_.state());
@@ -302,6 +318,10 @@ public:
                !muteBaseOwned&&physical>=4&&physical<20&&
                !core_.longNavPending()&&!core_.nativeNav().hasStage())
                 soft_.requestFromRoute(physical,softRoute,softRoot);
+            if(accepted&&!wasHeld&&cmd==0x90&&data[2]!=0&&
+               !muteBaseOwned&&physical>=4&&physical<20&&
+               !core_.longNavPending()&&!core_.nativeNav().hasStage())
+                cueLoad_.request(core_.nativeNav(),static_cast<unsigned>(physical));
             drainCore(seq,sample);
             if(accepted&&physical==2&&(cmd==0x90||cmd==0x80)&&
                wasHeld&&!(cmd==0x90&&data[2]!=0))dj2PushRotCaptured_=false;
@@ -707,6 +727,7 @@ public:
         groupDownEpoch_.fill(0); // STOP invalidates stale GROUP proof
         for(auto& hold:groupHolds_)hold={}; // no ghost long on later UP
         soft_.stop(); // cancels only uncommitted SOFT; applied pages persist
+        cueLoad_.stop(); // cancel pending BAR intents, preserve actual CC-sent state
         topPulse_.stop(); // cancels unattempted pulses; retains every attempted OFF
         topSaveSuppress_.fill(false);
         browserLoadPending_=false;browserSelectionSequence_=0;
@@ -1058,6 +1079,7 @@ private:
     TopPulseBus topPulse_{};
     S8SamplePatchBank s8Sample_{};
     S8MachinePatchBank s8Machine_{};
+    CueLoadBar cueLoad_{};
     std::array<bool,4> topSaveSuppress_{};
     unsigned sampleSavesAccepted_{},sampleSavesRefused_{};
     std::array<std::uint32_t,36> groupDownEpoch_{};
