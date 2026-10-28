@@ -35,17 +35,19 @@ static void save(HostEngine& e,int botDownMs,int topDownMs,int slot){
 int main(){
     for(int gap:{30,150,800}){
         HostEngine e;configured(e,true);
+        assert(e.setS8SampleModeBeforeRendering(0,0,4));
+        assert(e.setS8SampleModeBeforeRendering(0,11,2));
         e.enableNativeMutePage(true);
         save(e,10,10+gap,0);
         assert(e.sampleSavesAccepted()==1&&e.sampleSavesRefused()==0);
         assert(!e.mutePageVisible()&&!e.samplePatchPending());
         HostEngine::TopIntent unintended{};
         assert(!e.lastTopIntent(0,unintended)); // saved TOP must not arm recall
-        xone::l01::BankS6::PatchRecord record{};
-        assert(e.samplePatchForDiagnostic(0,0,record)&&record.valid);
+        S8SamplePatchBank::Patch record{};
+        assert(e.s8SamplePatchForDiagnostic(0,0,record)&&record.valid);
         assert(record.config==1&&record.revision==1);
-        for(int i=0;i<40;++i)assert(record.values[i]==(i>=28?1:(i>=16?(i%2):(i+17)%128)));
-        for(int i=40;i<84;++i)assert(record.values[i]==-2);
+        for(int i=0;i<28;++i)assert(record.values[i]==(i>=16?(i%2):(i+17)%128));
+        assert(e.s8SampleMode(0,0)==4&&e.s8SampleMode(0,11)==2); // config unchanged
         if(gap==30){
             // Full practical roundtrip: SAVE via BOT2+TOP, later TOP alone
             // arms the preexisting native BAR recall and MIDI S7 projection.
@@ -63,6 +65,8 @@ int main(){
                 assert(packet.musical&&e.canSend(packet));
                 e.sent(packet,0);
             }
+            assert(e.s8SampleMode(0,0)==4&&e.s8SampleMode(0,11)==2);
+            for(int i=28;i<40;++i)assert(e.desiredLive(i).value==1);
         }
     }
     // ALL three physical PATCH slots have distinct storage.
@@ -71,8 +75,8 @@ int main(){
         for(int slot=0;slot<3;++slot)save(e,slot*50,slot*50+30,slot);
         assert(e.sampleSavesAccepted()==3);
         for(int slot=0;slot<3;++slot){
-            xone::l01::BankS6::PatchRecord p{};
-            assert(e.samplePatchForDiagnostic(0,slot,p)&&p.valid&&p.revision==1);
+            S8SamplePatchBank::Patch p{};
+            assert(e.s8SamplePatchForDiagnostic(0,slot,p)&&p.valid&&p.revision==1);
         }
     }
     // Unknown LIVE fails atomically: no fabricated default, no TOP RECALL.
@@ -80,8 +84,8 @@ int main(){
         HostEngine e;configured(e,false);
         save(e,10,40,1);
         assert(e.sampleSavesRefused()==1&&e.sampleSavesAccepted()==0);
-        xone::l01::BankS6::PatchRecord record{};
-        assert(!e.samplePatchForDiagnostic(0,1,record));
+        S8SamplePatchBank::Patch record{};
+        assert(e.s8SamplePatchForDiagnostic(0,1,record)&&!record.valid);
         HostEngine::TopIntent intent{};assert(!e.lastTopIntent(1,intent));
     }
     // No TOP: BOT2 remains local MUTE entry (persistent even after 800ms).
@@ -130,5 +134,5 @@ int main(){
         note(e,52,false,21);note(e,13,false,22);
         assert(e.sampleSavesAccepted()==0);
     }
-    std::cout<<"PASS BOT2+TOP1..3 SAMPLE SAVE40, 30/150/800ms, UNKNOWN rejection, combos, STOP, MACHINE refusal\n";
+    std::cout<<"PASS BOT2+TOP1..3 SAMPLE SAVE28, 30/150/800ms, UNKNOWN rejection, combos, STOP, MACHINE refusal\n";
 }
