@@ -68,20 +68,21 @@ int main(){
     for(unsigned page=0;page<8;++page) {
         xone::l01::NavS3 nav;assert(nav.initializeDefault());
         auto n=yellow(page);assert(nav.stage(n)&&nav.commit());
-        QualifiedGroupAction q{false,page,2,20,nav.revision(),true};
+        QualifiedGroupAction q{false,page,2,20,nav.revision(),1,true};
         assert(GroupActionGate::authorize(nav,q,true,false));
         q.sourceOwned=false;assert(!GroupActionGate::authorize(nav,q,true,false));
         q.sourceOwned=true;q.navRevision--;assert(!GroupActionGate::authorize(nav,q,true,false));
         q.navRevision=nav.revision();q.page=(page+1)%8;
         assert(!GroupActionGate::authorize(nav,q,true,false)); // cannot target hidden page
         n=fill(page);assert(nav.stage(n)&&nav.commit());
-        q={true,page,5,20,nav.revision(),true};
+        q={true,page,5,20,nav.revision(),1,true};
         assert(GroupActionGate::authorize(nav,q,true,false));
         q.fill=false;assert(!GroupActionGate::authorize(nav,q,true,false));
     }
     // Genuine host seam: held input alone is never an action.
     HostEngine e;assert(e.setNavForDiagnostic(yellow(5)));physicalDown(e);
-    QualifiedGroupAction g{false,5,2,20,e.nativeNavRevisionForQualifiedSource(),false};
+    QualifiedGroupAction g{false,5,2,20,e.nativeNavRevisionForQualifiedSource(),
+        e.physicalDownEpochForQualifiedSource(20),false};
     assert(!e.acceptQualifiedGroupAction(g)&&e.pendingActionPulses()==0);
     g.sourceOwned=true;
     assert(e.acceptQualifiedGroupAction(g));expect(e.nextActionPulse(),625,true);
@@ -92,11 +93,14 @@ int main(){
     g.navRevision=e.nativeNavRevisionForQualifiedSource();
     g.page=4;assert(!e.acceptQualifiedGroupAction(g));
     g.page=5;g.sourceOwned=false;assert(!e.acceptQualifiedGroupAction(g));
-    e.stop(200);assert(!e.acceptQualifiedGroupAction(g));
+    g.sourceOwned=true;e.stop(200);
+    assert(!e.acceptQualifiedGroupAction(g)); // stale DOWN epoch, despite Held
+    assert(e.physicalDownEpochForQualifiedSource(20)==0);
     // Group action requires a real source-owned hold; a missing receiver
     // is not a reason to invent an alternate CC/note/plugin routing.
     HostEngine f;assert(f.setNavForDiagnostic(fill(7)));physicalDown(f);
-    g={true,7,5,20,f.nativeNavRevisionForQualifiedSource(),true};
+    g={true,7,5,20,f.nativeNavRevisionForQualifiedSource(),
+        f.physicalDownEpochForQualifiedSource(20),true};
     assert(f.acceptQualifiedGroupAction(g));
     expect(f.nextActionPulse(),679,true);
     pulse=f.nextActionPulse();f.ackTopPulse(pulse,false,10);f.stop(20);
