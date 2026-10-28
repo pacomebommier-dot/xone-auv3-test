@@ -2,6 +2,7 @@
 // Native V3: K2/gestures/NAV, known-session CC/LOOP and SMART/MIX/TOUCH/FLASH; specialized S8 remains pending.
 #include "../CoreV3/CoreCoordinatorV3.hpp"
 #include "XoneContinuousInput.hpp"
+#include "XoneSoftMidiBridge.hpp"
 #include "XoneSession.hpp"
 #include "../Core/MutePhysicalGate.hpp"
 #include "XoneMuteMidiProjection.hpp"
@@ -143,11 +144,20 @@ public:
     int lastBrowserLoadDeckForDiagnostic() const noexcept {return lastBrowserLoadDeck_;}
     const GlobalMuteState& globalMute() const noexcept {return muteBridge_.state();}
     unsigned onMusicalGrid(const GridBatch& b) noexcept {
-        if(!mutePageEnabled_)return 0;
-        const unsigned committed=muteBridge_.observe(b);
-        if(committed)muteMidi_.observe(muteBridge_.state());
+        unsigned committed=soft_.observe(b); // only authenticated BAR, never timer
+        if(mutePageEnabled_){
+            const unsigned muteCommitted=muteBridge_.observe(b);
+            if(muteCommitted)muteMidi_.observe(muteBridge_.state());
+            committed+=muteCommitted;
+        }
         return committed;
     }
+    SoftMidiPacket nextSoftPacket(unsigned& cursor) const noexcept {return soft_.next(cursor);}
+    void ackSoftPacket(const SoftMidiPacket& packet,bool callbackSucceeded) noexcept {
+        soft_.confirm(packet,callbackSucceeded);
+    }
+    int appliedSoftChoice(unsigned family,unsigned page) const noexcept {return soft_.active(family,page);}
+    unsigned pendingSoftCount() const noexcept {return soft_.pendingCount();}
     MuteMidiProjection::Packet nextMutePacket(unsigned& cursor) const noexcept {
         return mutePageEnabled_?muteMidi_.next(cursor):MuteMidiProjection::Packet{};
     }
@@ -176,6 +186,8 @@ public:
             if(!valid) {record(seq,sample,Stage::Decision,Reason::Rejected,cable,data,length);return {};}
             const int physical=l01::SurfaceInput::physicalControl(data[1]);
             const bool wasHeld=physical>=0&&core_.surface().held(physical);
+            const auto softRoute=(physical>=4&&physical<20)?core_.nativeNav().active().route(physical):l01::NavRoute{};
+            const int softRoot=core_.nativeNav().active().at(291);
             // BOT2 is also DJ1 PUSH. Ownership is captured on its true DOWN,
             // never reconstructed from a deadline at UP.
             const bool browserBot2Release=physical==1&&wasHeld&&browser_.pushOwned();
@@ -189,6 +201,12 @@ public:
             const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs,muteBaseOwned);
             record(seq,sample,Stage::Decision,accepted?Reason::Integrated:Reason::ClockRejected,cable,data,length);
             if(accepted)resolveDjLoopNavigation(previousNav);
+            // Only real, non-duplicate physical DOWN can arm the 4 choices on
+            // a source-qualified DRUMS/FILL page. No synthetic selection.
+            if(accepted&&!wasHeld&&cmd==0x90&&data[2]!=0&&
+               !muteBaseOwned&&physical>=4&&physical<20&&
+               !core_.longNavPending()&&!core_.nativeNav().hasStage())
+                soft_.requestFromRoute(physical,softRoute,softRoot);
             drainCore(seq,sample);
             if(accepted&&physical==2&&(cmd==0x90||cmd==0x80)&&
                wasHeld&&!(cmd==0x90&&data[2]!=0))dj2PushRotCaptured_=false;
@@ -476,6 +494,7 @@ public:
         for(auto& target:topHold_)target={};
         topIntentValid_.fill(false);
         samplePatch_={};lastSamplePatchBar_=-1;
+        soft_.stop(); // cancels only uncommitted SOFT; applied pages persist
         browserLoadPending_=false;browserSelectionSequence_=0;
         core_.observeBrowserGuardForDiagnostic(false,0,0);
         core_.onHostStop(); // must not fabricate UP or clear held keys
@@ -703,6 +722,7 @@ private:
     }
     l01::CoreCoordinatorV3 core_{};
     ContinuousPickup pickup_{};
+    SoftMidiBridge soft_{};
     DjBrowserWindow browser_{};
     std::array<TopCapture,4> topHold_{};
     std::array<TopIntent,4> topIntents_{};
