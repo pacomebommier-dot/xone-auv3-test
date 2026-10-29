@@ -3,7 +3,7 @@
 #include <iostream>
 using namespace xone::host;
 int main(){
- HostEngine source;SessionImage live{};live.schema=1;live.config=1;live.revision=1;live.desired.fill(-2);
+ HostEngine source;assert(!source.captureMemory(-1,0)&&!source.captureMemory(28,0)&&!source.captureMemory(0,4));SessionImage live{};live.schema=1;live.config=1;live.revision=1;live.desired.fill(-2);
  for(unsigned f=0;f<60;++f)live.desired[static_cast<unsigned>(SourcePatchBank::cell(0,f))]=f%30<18?37:0;
  for(int f=0;f<9;++f)live.desired[static_cast<unsigned>(xone::l01::FxS6::addressFor(0,f))]=f<6?51:0;
  live.desired[1328]=64;live.desired[28]=4;

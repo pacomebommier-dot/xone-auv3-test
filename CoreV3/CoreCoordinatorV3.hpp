@@ -141,7 +141,8 @@ public:
         nativeBank_=nextBank;fx_=nextFx;return true;
     }
     bool captureNativeMemory(int owner,int slot) noexcept {
-        if(!diagnosticLive_||BankS6::memoryIndex(owner,slot)<0||live_.sessionConfig()<1)return false;
+        const int index=BankS6::memoryIndex(owner,slot);
+        if(!diagnosticLive_||index<0||index>=96||live_.sessionConfig()<1)return false;
         BankS6::MemoryImage image{};
         for(int f=0;f<9;++f){auto v=live_.desired(FxS6::addressFor(owner,f));
             if(!v.known)return false;
@@ -150,7 +151,7 @@ public:
         if(!nativeBank_.initialized()&&!nativeBank_.initializeEmpty())return false;
         BankS6::MemoryRecord prior{};
         return readNativeMemory(owner,slot,prior)&&prior.revision<BankS6::MaxRevision-1&&
-            nativeBank_.saveMemory(owner,slot,live_.sessionConfig(),image,prior.revision-memoryRevisionBase_[static_cast<unsigned>(BankS6::memoryIndex(owner,slot))]);
+            nativeBank_.saveMemory(owner,slot,live_.sessionConfig(),image,prior.revision-memoryRevisionBase_[static_cast<unsigned>(index)]);
     }
     // Explicit diagnostic recall of native MEMORY into the native single-writer
     // desired LIVE image. Source caller still has to qualify real gesture routing.
@@ -251,12 +252,14 @@ public:
     }
     // Preserve document revisions without changing the frozen BankS6 corpus.
     bool readNativeMemory(int owner,int slot,BankS6::MemoryRecord& out)const noexcept {
-        if(!nativeBank_.readMemory(owner,slot,out))return false;
-        out.revision+=memoryRevisionBase_[static_cast<unsigned>(BankS6::memoryIndex(owner,slot))];return true;
+        const int index=BankS6::memoryIndex(owner,slot);
+        if(index<0||index>=96||!nativeBank_.readMemory(owner,slot,out))return false;
+        out.revision+=memoryRevisionBase_[static_cast<unsigned>(index)];return true;
     }
     bool readNativePatch(int owner,int slot,BankS6::PatchRecord& out)const noexcept {
-        if(!nativeBank_.readPatch(owner,slot,out))return false;
-        out.revision+=patchRevisionBase_[static_cast<unsigned>(BankS6::patchIndex(owner,slot))];return true;
+        const int index=BankS6::patchIndex(owner,slot);
+        if(index<0||index>=84||!nativeBank_.readPatch(owner,slot,out))return false;
+        out.revision+=patchRevisionBase_[static_cast<unsigned>(index)];return true;
     }
     const BankS6& nativeBank() const noexcept {return nativeBank_;}
     // L01/10: read-only FX-memory snapshots; no persistence implied.
