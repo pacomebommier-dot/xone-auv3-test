@@ -196,17 +196,17 @@ int main() {
     assert([muteUnit allocateRenderResourcesAndReturnError:&error]);
     render=muteUnit.internalRenderBlock;
     const NSUInteger beforeMute=sent;ledSent=0;
-    pump(48,0x9E,37,127);pump(48,0x8E,37,0);assert(ledSent==0); // known underlying red BASE2 (S7 @x4 group3)
+    pump(48,0x9E,37,127);pump(48,0x8E,37,0);assert(ledSent==101);ledSent=0; // 100 binding OFFs + selected red BASE2 before MUTE
     pump(48,0x9E,13,127);
     pump(48,0x8E,13,0);
-    assert(ledSent==64&&ledRecorded[3][0]==0x9E&&ledRecorded[3][1]==108);
-    failLedAt=66; // fail the first pending red ON after green OFF
+    assert(ledSent==17&&ledRecorded[0][0]==0x9E&&ledRecorded[0][1]==108);
+    failLedAt=19; // fail the first pending red ON after green OFF
     pump(48,0x9E,36,127);
     pump(48,0x8E,36,0);
-    assert(ledSent==66&&ledRecorded[64][0]==0x8E&&ledRecorded[64][1]==108&&ledRecorded[65][0]==0x9E&&ledRecorded[65][1]==36);
-    failLedAt=0;pump(48);assert(ledSent==70); // three proven OFFs then desired red ON
-    assert(ledRecorded[66][0]==0x8E&&ledRecorded[66][1]==36&&ledRecorded[69][0]==0x9E&&ledRecorded[69][1]==36);
-    pump(48);assert(ledSent==70); // success clears debt; no duplicate LED ON
+    assert(ledSent==19&&ledRecorded[17][0]==0x8E&&ledRecorded[17][1]==108&&ledRecorded[18][0]==0x9E&&ledRecorded[18][1]==36);
+    failLedAt=0;pump(48);assert(ledSent==23); // three proven OFFs then desired red ON
+    assert(ledRecorded[19][0]==0x8E&&ledRecorded[19][1]==36&&ledRecorded[22][0]==0x9E&&ledRecorded[22][1]==36);
+    pump(48);assert(ledSent==23); // success clears debt; no duplicate LED ON
     assert(sent==beforeMute); // no immediate note output on K2 gesture
     for(unsigned n=0;n<12;++n)pump(8192);
     if(sent!=beforeMute+1||lastStatus!=0x9A||lastNumber!=16||lastValue!=127)
@@ -407,7 +407,7 @@ int main() {
         if(downbeat)*downbeat=0;
         return YES;
     };
-    AUParameter *face=[presetUnit.parameterTree parameterWithAddress:0];assert(face&&presetUnit.parameterTree.allParameters.count==1);face.value=1;
+    AUParameter *face=[presetUnit.parameterTree parameterWithAddress:0];assert(face&&presetUnit.parameterTree.allParameters.count==2);face.value=1;
     assert([presetUnit allocateRenderResourcesAndReturnError:&error]);render=presetUnit.internalRenderBlock;cursor=0;
     const NSUInteger beforePreset=sent;pump(48);assert(sent==beforePreset);
     auto faceValue=presetUnit.parameterTree.implementorValueProvider;assert(faceValue(face)==1);
@@ -427,6 +427,14 @@ int main() {
     AudioUnitRenderActionFlags parameterFlags=0;audio.frameLength=48;
     assert(render(&parameterFlags,&parameterTime,48,0,audio.mutableAudioBufferList,&parameterEvent,nil)==noErr);cursor+=48;
     assert(faceValue(face)==1&&sent==beforePreset+3);
+    AUParameter *refresh=[presetUnit.parameterTree parameterWithAddress:1];assert(refresh);
+    const NSUInteger beforeRefresh=ledSent;refresh.value=1;pump(48);
+    assert(ledSent>=beforeRefresh+100&&sent==beforePreset+3&&faceValue(refresh)==0);
+    const NSUInteger beforeAutomationRefresh=ledSent;
+    expected[0]=cursor;expected[1]=cursor+48;parameterTime.mSampleTime=static_cast<Float64>(cursor);
+    parameterEvent.parameter.eventSampleTime=cursor+12;parameterEvent.parameter.parameterAddress=1;
+    assert(render(&parameterFlags,&parameterTime,48,0,audio.mutableAudioBufferList,&parameterEvent,nil)==noErr);cursor+=48;
+    assert(ledSent>=beforeAutomationRefresh+100&&sent==beforePreset+3);
     [presetUnit deallocateRenderResources];
 
     std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)\n";

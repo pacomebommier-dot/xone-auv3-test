@@ -10,7 +10,7 @@ static void key(HostEngine& e,int note,bool down,int ms){
 }
 static std::vector<MuteLedOutput::Packet> flush(HostEngine& e,int ms){
  e.beginRenderBuffer();e.prepareMuteLeds(ms);unsigned cursor=0;std::vector<MuteLedOutput::Packet> tx;
- for(unsigned i=0;i<64;++i){auto p=e.nextMuteLedPacket(cursor);if(!p.valid)break;tx.push_back(p);e.ackMuteLedPacket(p,true);}
+ for(unsigned i=0;i<136;++i){auto p=e.nextMuteLedPacket(cursor);if(!p.valid)break;tx.push_back(p);e.ackMuteLedPacket(p,true);}
  return tx;
 }
 int main(){
@@ -29,8 +29,9 @@ int main(){
  assert(nav.applyShortMode(4));view=BaseLedView::compose(nav);
  bool unknown=false;for(auto p:view)unknown|=!p.known;assert(unknown); // unresolved FX/MEMORY owners
  HostEngine e;e.enableNativeMutePage(true);
- key(e,36,true,0);key(e,36,false,50);assert(flush(e,50).empty()); // no startup TX
- key(e,13,true,60);key(e,13,false,70);assert(flush(e,70).size()==64);
+ key(e,36,true,0);key(e,36,false,50);auto initial=flush(e,50);assert(initial.size()==101); // 100 proven OFFs + selected red BASE1
+ unsigned lit=0;for(auto p:initial)if(p.on){assert(p.target==0&&p.bytes[1]==36);++lit;}assert(lit==1);
+ key(e,13,true,60);key(e,13,false,70);assert(flush(e,70).size()==17); // cache already known: old red OFF + 16 green ON
  key(e,32,true,80);key(e,32,false,90);assert(e.muteGesturePending()); // MUTE must not select another underlying source
  key(e,13,true,100);key(e,13,false,110);
  auto tx=flush(e,110);bool restored=false;

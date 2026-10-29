@@ -132,6 +132,7 @@ public:
             if(++s.generation==0)++s.generation;
         }
     }
+    int dueSelection(unsigned group)const noexcept {return group<4&&channels_[group].dueReady?channels_[group].due:-1;}
     int sentSelection(unsigned group)const noexcept {
         return group<channels_.size()?channels_[group].applied:-1;
     }

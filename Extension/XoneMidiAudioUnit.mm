@@ -42,11 +42,17 @@
         name:@"PRESET editor" address:0 min:0 max:1 unit:kAudioUnitParameterUnit_Boolean
         unitName:nil flags:kAudioUnitParameterFlag_IsReadable|kAudioUnitParameterFlag_IsWritable
         valueStrings:nil dependentParameters:nil];
-    _nativeParameterTree=[AUParameterTree createTreeWithChildren:@[presetFace]];
+    AUParameter *refresh=[AUParameterTree createParameterWithIdentifier:@"refreshControllerLEDs"
+        name:@"Refresh controller LEDs" address:1 min:0 max:1 unit:kAudioUnitParameterUnit_Boolean
+        unitName:nil flags:kAudioUnitParameterFlag_IsReadable|kAudioUnitParameterFlag_IsWritable
+        valueStrings:nil dependentParameters:nil];
+    _nativeParameterTree=[AUParameterTree createTreeWithChildren:@[presetFace,refresh]];
     __weak XoneMidiAudioUnit *weakUnit=self;
     _nativeParameterTree.implementorValueObserver=^(AUParameter *parameter,AUValue value){
         XoneMidiAudioUnit *unit=weakUnit;
-        if(unit&&parameter.address==0&&std::isfinite(value))unit->_engine.requestPresetPage(value>=0.5f);
+        if(!unit||!std::isfinite(value))return;
+        if(parameter.address==0)unit->_engine.requestPresetPage(value>=0.5f);
+        else if(parameter.address==1&&value>=0.5f)unit->_engine.requestLedRefresh();
     };
     _nativeParameterTree.implementorValueProvider=^AUValue(AUParameter *parameter){
         XoneMidiAudioUnit *unit=weakUnit;
@@ -233,7 +239,7 @@
             engine->prepareMuteLeds(ms);
             if(!sendMIDI)return;
             unsigned cursor=0;
-            for(unsigned n=0;n<64;++n){
+            for(unsigned n=0;n<136;++n){
                 const auto packet=engine->nextMuteLedPacket(cursor);
                 if(!packet.valid)break;
                 const bool success=sendMIDI(sample,0,3,packet.bytes)==noErr;
@@ -316,6 +322,8 @@
                 lastEventSample=sample;deliverGridThrough(sample);
                 if(parameter.parameterAddress==0&&std::isfinite(parameter.value)){
                     if(parameter.value>=0.5f)engine->showPresetPage();else engine->leavePresetPage();
+                }else if(parameter.parameterAddress==1&&std::isfinite(parameter.value)&&parameter.value>=0.5f){
+                    engine->refreshLeds();flushMuteLeds(sample,static_cast<int64_t>(*elapsedMs+1000.0*(sample-bufferStart)/rate));
                 }
                 continue;
             }

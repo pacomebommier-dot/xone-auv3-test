@@ -56,6 +56,7 @@ public:
     unsigned pendingCount()const noexcept {
         unsigned n=0;for(int x:pending_)if(x>=0)++n;return n;
     }
+    int pendingChoice(unsigned owner)const noexcept {return owner<16?pending_[owner]:-1;}
     int active(unsigned family,unsigned page)const noexcept {
         return family<2&&page<8?active_[family*8+page]:-1;
     }

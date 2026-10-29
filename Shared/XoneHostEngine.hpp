@@ -330,7 +330,7 @@ public:
         if(index<0||(owner<12&&alternativeSourceBusy(owner/3))||!core_.captureNativeMemory(owner,slot))return false;
         memoryEngaged_[static_cast<unsigned>(index)]=true;return true;
     }
-    void observeTransport(bool running) noexcept {transportStopped_=!running;}
+    void observeTransport(bool running) noexcept {if(running&&transportStopped_)muteLeds_.invalidate();transportStopped_=!running;}
     void forgetTransport() noexcept {transportStopped_=false;}
     bool requestMemoryRecall(int owner,int slot) noexcept { documentDirty_=true;
         if(!memoryEngaged(owner,slot)||(owner<12&&alternativeSourceBusy(owner/3)))return false;
@@ -449,7 +449,116 @@ public:
     void ackMutePacket(unsigned target,bool callbackSucceeded) noexcept {
         muteMidi_.confirm(target,callbackSucceeded);
     }
-    void prepareMuteLeds(int64_t ms) noexcept {muteLeds_.observe(globalMute(),mutePageVisible(),ms,BaseLedView::compose(core_.nativeNav()));}
+    MuteLedOutput::Image ledImage()const noexcept {
+        MuteLedOutput::Image image{};const auto& nav=core_.nativeNav();if(!nav.stable()||nav.hasStage())return image;
+        const auto& n=nav.active();const auto base=BaseLedView::compose(nav);
+        for(unsigned i=0;i<16;++i)image[i]=base[i];
+        const auto set=[&](unsigned i,MuteLedColor color,bool blink=false){image[i]={color,blink,true};};
+        const int config=core_.nativeLive().sessionConfig();
+        for(unsigned i=0;i<32;++i){const int physical=static_cast<int>(i)+4;const auto route=n.route(physical);
+            if(route.address==-1&&route.position==-1){set(i,MuteLedColor::Off);continue;}
+            if(route.address<0||route.position<0)continue;
+            const int kind=route.address/1024,family=(route.address%1024)/32,page=route.address%32,slot=route.position;
+            int cell=-1,modeCell=-1;
+            if(kind==3&&l01::LiveState::spotAddresses(route.address,slot,cell,modeCell)){
+                auto mode=modeCell>=0?core_.nativeLive().desired(modeCell):l01::LiveRead{true,1};
+                if(cell<320&&cell%40>=16&&cell%40<28){const int m=s8SampleMode(cell/40,cell%40-16);if(m>=1&&m<=4)mode={true,m};}
+                else if(cell>=320&&cell<1328&&(cell-320)%42>=18&&(cell-320)%42<30){
+                    const int machine=(cell-320)/42,m=s8MachineMode(machine,(cell-320)%42-18);
+                    if(m>=1&&m<=4)mode={true,m};else if(machine<8&&activeAlternative(static_cast<unsigned>(machine/2))>=0)mode={};
+                }
+                const auto value=core_.nativeLive().desired(cell);
+                if(value.known&&value.value<=1&&mode.known&&mode.value>=1&&mode.value<=4){
+                    MuteLedColor color=MuteLedColor::Red;
+                    if(family>=9&&family<=12)color=static_cast<MuteLedColor>(1+(family-9)%3);
+                    else if(mode.value==2||family==5||family==14)color=MuteLedColor::Green;
+                    else if(mode.value==3||family==4)color=MuteLedColor::Yellow;
+                    set(i,value.value?color:MuteLedColor::Off);
+                }
+            }else if(kind==9&&(family==7||family==8)&&page==0&&slot<6){
+                const auto v=core_.nativeLive().desired(1744+12*(family-7)+slot);
+                if(v.known)set(i,v.value==63?MuteLedColor::Off:static_cast<MuteLedColor>(family-6));
+            }
+            int memoryOwner=-1,memorySlot=-1;
+            if(deriveMemory(nav,physical,memoryOwner,memorySlot)){
+                set(i,memoryEngaged(memoryOwner,memorySlot)?MuteLedColor::Red:MuteLedColor::Off);
+                if(pendingMemorySlot(static_cast<unsigned>(memoryOwner))==memorySlot)set(i,MuteLedColor::Green,true);
+            }
+            if(physical>=4&&physical<=16&&(physical-4)%4==0&&slot==(physical-4)/4){
+                const int root=n.at(291);int owner=-1;
+                if(root>=0&&root<=1){
+                    if(family==3+root&&page>=5&&page<=8&&kind==(page==8?6+root:5))owner=4*root+page-5;
+                    else if(kind==8&&family==5+root&&page>=1&&page<=8)owner=8+page-1;
+                }
+                if(owner>=0){const int active=soft_.active(static_cast<unsigned>(owner/8),static_cast<unsigned>(owner%8));
+                    if(active>=0)set(i,active==slot?MuteLedColor::Green:MuteLedColor::Off);
+                    if(soft_.pendingChoice(static_cast<unsigned>(owner))==slot)set(i,MuteLedColor::Green,true);
+                }
+            }
+            unsigned cueGroup=0,cueIndex=0;
+            if(CueLoadBar::derive(nav,static_cast<unsigned>(physical),cueGroup,cueIndex)){
+                set(i,cueLoad_.sentSelection(cueGroup)==static_cast<int>(cueIndex)?MuteLedColor::Green:MuteLedColor::Off);
+                if(cueLoad_.pendingSelection(cueGroup)==static_cast<int>(cueIndex)||cueLoad_.dueSelection(cueGroup)==static_cast<int>(cueIndex))set(i,MuteLedColor::Yellow,true);
+            }
+            if(kind==11&&slot<3){
+                bool valid=false,current=false,known=true,compatible=true;int selected=-1;const bool machine=n.contextMode==7&&n.at(292)==7;
+                if(machine)selected=n.at(314)-1;else if(family==1)selected=page-1;
+                if(selected>=0&&selected<(machine?24:8)){
+                    if(machine&&selected<8){SourcePatchBank::Patch patch{};
+                        const bool exists=readSourcePatch(static_cast<unsigned>(selected/2),static_cast<unsigned>(slot),patch);compatible=!exists||patch.config==config;valid=exists&&compatible;current=valid;
+                        if(valid)for(unsigned f=0;f<60;++f){const auto v=core_.nativeLive().desired(SourcePatchBank::cell(static_cast<unsigned>(selected/2),f));if(!v.known)known=false;else if(v.value!=patch.values[f])current=false;}
+                    }else if(machine){S8MachinePatchBank::Patch patch{};valid=s8Machine_.read(static_cast<unsigned>(selected),static_cast<unsigned>(slot),patch)&&patch.valid&&patch.config==config;compatible=!patch.valid||patch.config==config;current=valid;
+                        if(valid)for(unsigned f=0;f<30;++f){const auto v=core_.nativeLive().desired(320+42*selected+static_cast<int>(f));if(!v.known)known=false;else if(v.value!=patch.values[f])current=false;}
+                    }else {S8SamplePatchBank::Patch patch{};valid=s8Sample_.read(static_cast<unsigned>(selected),static_cast<unsigned>(slot),patch)&&patch.valid&&patch.config==config;compatible=!patch.valid||patch.config==config;current=valid;
+                        if(valid)for(unsigned f=0;f<28;++f){const auto v=core_.nativeLive().desired(40*selected+static_cast<int>(f));if(!v.known)known=false;else if(v.value!=patch.values[f])current=false;}
+                        if(!valid&&compatible){l01::BankS6::PatchRecord legacy{};valid=core_.readNativePatch(selected,slot,legacy)&&legacy.valid&&legacy.config==config;compatible=!legacy.valid||legacy.config==config;current=valid;
+                            if(valid)for(unsigned f=0;f<28;++f){const auto v=core_.nativeLive().desired(40*selected+static_cast<int>(f));if(!v.known)known=false;else if(v.value!=legacy.values[f])current=false;}}
+                    }
+                    if(!compatible||(valid&&current&&!known))image[i]={};else set(i,!valid?MuteLedColor::Green:current?MuteLedColor::Red:MuteLedColor::Yellow);
+                }
+            }
+        }
+        if(n.at(292)==1&&n.presetFlag==1&&!mutePageVisible()){
+            for(unsigned slot=0;slot<4;++slot){set(slot,!presetEngaged(slot)?MuteLedColor::Green:presetMusicallyValid(slot)?MuteLedColor::Red:MuteLedColor::Yellow);
+                if(pendingPreset()==static_cast<int>(slot))set(slot,MuteLedColor::Yellow,true);}
+            set(4,MuteLedColor::Green,initPending_);
+            for(unsigned i=5;i<8;++i)set(i,MuteLedColor::Off);
+            for(unsigned group=0;group<4;++group)set(8+group,presetInstrumentGroup_==static_cast<int>(group)?MuteLedColor::Red:MuteLedColor::Off);
+            for(unsigned slot=0;slot<4;++slot){image[12+slot]={};if(presetInstrumentGroup_<0)continue;
+                const auto group=static_cast<unsigned>(presetInstrumentGroup_);const int id=alternativeBank_.binding(group,slot);
+                if(id<0)continue;
+                set(12+slot,MuteLedColor::Off);const unsigned peer=group^1u;
+                if(activeAlternative(group)==id)set(12+slot,MuteLedColor::Green);
+                else if(activeAlternative(peer)==id)set(12+slot,MuteLedColor::Yellow);
+                else if(pendingAlternative(group)==id)set(12+slot,MuteLedColor::Green,true);
+                else if(pendingAlternative(peer)==id)set(12+slot,MuteLedColor::Yellow);
+            }
+        }
+        set(32,redActive_?MuteLedColor::Red:MuteLedColor::Off);
+        set(33,(n.at(292)==7?n.at(315):n.at(291))==1?MuteLedColor::Yellow:MuteLedColor::Off);
+        if(mutePageVisible()){const auto mute=MuteLedView::compose(globalMute());for(unsigned i=0;i<16;++i)set(i,mute[i].color,mute[i].blinking);}
+        return image;
+    }
+    void pickupLedFeedback(int cc,int64_t ms) noexcept {
+        if(cc<4||cc>15)return;
+        const auto route=core_.nativeNav().active().route(16+cc);
+        int cell=-1,modeCell=-1;
+        if(route.address<0||route.address/1024!=3||!l01::LiveState::spotAddresses(route.address,route.position,cell,modeCell))return;
+        const int family=(route.address%1024)/32;int mode=1;
+        if(family==1||family==2){auto v=core_.nativeLive().desired(modeCell);mode=v.known?v.value:-2;
+            if(family==1){const int m=s8SampleMode(cell/40,cell%40-16);if(m>=1&&m<=4)mode=m;}
+            else {const int machine=(cell-320)/42,m=s8MachineMode(machine,(cell-320)%42-18);
+                if(m>=1&&m<=4)mode=m;else if(machine<8&&activeAlternative(static_cast<unsigned>(machine/2))>=0)mode=-2;}
+        }
+        if(mode<1||mode>4)return;
+        muteLeds_.flash(static_cast<unsigned>(cc+12),mode==2?MuteLedColor::Green:mode==3?MuteLedColor::Yellow:MuteLedColor::Red,ms);
+    }
+    void requestLedRefresh() noexcept {ledRefreshRequest_.store(true,std::memory_order_release);}
+    void refreshLeds() noexcept {muteLeds_.invalidate();}
+    void prepareMuteLeds(int64_t ms) noexcept {
+        if(ledNavRevision_!=core_.nativeNav().revision()){muteLeds_.cancelFlashes();ledNavRevision_=core_.nativeNav().revision();}
+        muteLeds_.observeFull(ledImage(),ms);
+    }
     MuteLedOutput::Packet nextMuteLedPacket(unsigned& cursor) const noexcept {return muteLeds_.next(cursor);}
     void ackMuteLedPacket(const MuteLedOutput::Packet& packet,bool success) noexcept {muteLeds_.confirm(packet,success);}
     static constexpr uint32_t TraceCapacity=256;
@@ -903,6 +1012,7 @@ public:
     // Render boundaries are the sole application/publication points.
     void beginRenderBuffer() noexcept {
         muteLeds_.beginBuffer();
+        if(ledRefreshRequest_.exchange(false,std::memory_order_acq_rel))muteLeds_.invalidate();
         started_=true;
         const int faceRequest=presetFaceRequest_.exchange(-1,std::memory_order_acq_rel);
         if(faceRequest==1)showPresetPage();else if(faceRequest==0)leavePresetPage();
@@ -1018,7 +1128,7 @@ public:
     // MIDI output must never consume a pending STOP NoteOff permanently.
     void beginStopRetryPass(int64_t sample) noexcept {stopRead_=0;stopSample_=sample;}
     unsigned pendingStopOffs() const noexcept {return stopPendingCount_;}
-    void stop(int64_t sample) noexcept { documentDirty_=true;
+    void stop(int64_t sample) noexcept { muteLeds_.cancelFlashes(); documentDirty_=true;
         started_=true;transportStopped_=true;presetFaceRequest_.store(-1,std::memory_order_release);
         alternativeFlight_={};alternatives_.stop();alternativeBaseValid_.fill(false);
         for(auto& selector:alternativeSelectors_)selector={};
@@ -1267,7 +1377,7 @@ private:
     l01::MutePhysicalGate muteGate_{};
     MuteBarBridge muteBridge_{};
     MuteMidiProjection muteMidi_{};
-    MuteLedOutput muteLeds_{};
+    MuteLedOutput muteLeds_{};std::uint64_t ledNavRevision_{};std::atomic<bool> ledRefreshRequest_{false};
     struct SpotHold {int cell{-1},api{-1},mode{},previous{};int64_t downMs{};};
     static int spotApi(int cell) noexcept {
         if(cell<320&&cell%40>=16&&cell%40<28)return 12*(cell/40)+cell%40-16;
@@ -1353,6 +1463,7 @@ private:
         // the next movement does not spuriously wait for a second pickup.
         if(core_.nativeLive().revision()>=l01::LiveState::MaxRevision)return {};
         const int value=pickup_.consider(cc,target.api,live.known?live.value:raw,raw,ms);
+        pickupLedFeedback(cc,ms);
         if(value<0){record(seq,sample,Stage::Decision,Reason::PickupWait,0,nullptr,0);return {};}
         const bool loop=(target.api>=569&&target.api<=571)||target.api==573;
         auto projection=core_.output();
