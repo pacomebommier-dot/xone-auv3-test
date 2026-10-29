@@ -14,6 +14,7 @@ public:
   unsigned target{};
   std::uint8_t bytes[3]{};
  };
+ void invalidate() noexcept {uncertain_.fill(true);dirty_.fill(true);}
  void observe(const GlobalMuteState& state) noexcept {
   for(unsigned i=0;i<GlobalMuteState::Targets;++i){
    desired_[i]=state.effectivelyMuted(i)?1:0;

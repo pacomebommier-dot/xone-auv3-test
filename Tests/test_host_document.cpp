@@ -19,8 +19,11 @@ int main(){
  SourcePatchBank::Patch patch{};assert(round.source.read(0,2,patch)&&patch.values[0]==37);
  assert(round.memories[3].valid&&round.memories[3].values[0]==51&&round.presets[2].valid);
  round.current.cueSelections[0]=2;
- HostEngine restored;assert(restored.requestDocumentRestore(round));assert(restored.documentForHost().presets[2].valid);
+ HostEngine restored;restored.enableNativeMutePage(true);assert(restored.requestDocumentRestore(round));assert(restored.documentForHost().presets[2].valid);
  restored.beginRenderBuffer();assert(restored.desiredLive(1328).value==64&&restored.observed()==-2);
+ unsigned muteCursor=0,muteCount=0;
+ while(true){auto p=restored.nextMutePacket(muteCursor);if(!p.valid)break;assert(p.bytes[0]==0x8A&&p.bytes[2]==0);restored.ackMutePacket(p.target,true);++muteCount;}
+ assert(muteCount==16); // imported applied OFFs are not silently considered already sent
  assert(!restored.nextCueLoadPacket().valid);restored.endRenderBuffer();assert(restored.documentForHost().current.cueSelections[0]==2);
  assert(restored.readSourcePatch(0,2,patch)&&patch.values[0]==37);
  xone::l01::BankS6::MemoryRecord memory{};assert(restored.readMemory(0,3,memory)&&memory.valid&&memory.values[0]==51&&memory.revision==2);

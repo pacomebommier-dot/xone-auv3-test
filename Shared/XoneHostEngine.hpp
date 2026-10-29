@@ -1616,7 +1616,7 @@ private:
         samplePatch_={};pairedTopSource_=-1;alternativeFlight_={};alternativeBaseValid_.fill(false);
         pendingPresetSlot_=-1;initPending_=false;redActive_=false;redHeld_=false;redImage_.valid=false;
         sourceRead_=sourceWrite_;sourceBlocked_=false;core_.output()=l01::OutputS4{};core_.enableTestMidiProjection(true);
-        pickup_=ContinuousPickup{};muteLeds_.invalidate();muteMidi_.observe(globalMute());
+        pickup_=ContinuousPickup{};muteLeds_.invalidate();muteMidi_.invalidate();muteMidi_.observe(globalMute());
         for(unsigned cell=0;cell<d.live.desired.size();++cell){if(!GlobalSnapshot::inScope(cell))continue;int type=10;const int api=globalApi(cell,type);int value=d.live.desired[cell];
             if(cell>=1337&&cell<=1339){const int m=d.live.desired[1341];if(value<0||m<0)continue;value=(value*m+63)/127;}
             if(api<0||value<0)continue;
