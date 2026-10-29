@@ -1,0 +1,13 @@
+# Bloc5 — intégration universelle — préparation logicielle du29/10/2026
+
+Le parcours neuf est exécuté sans restore diagnostic, fixture ou NAV synthétique : vrais octets K2 de CUE4/BASE, SMART local, capture/rappel MEMORY au BEAT, MACHINE et SAVE/RECALL paire PATCH60 au BAR, PRESET via l’intention UI du rendu, RED avec échec de callback et reprise, STOP avec vrai UP tardif, encode/decode V2 et contrôle des banques réouvertes. Le BAR/BEAT provient de HostGrid et du contexte hôte simulé, pas d’un timer libre. Les autres owners, MIX UNKNOWN initial, modes S8 UNKNOWN et observations inconnues sont vérifiés.
+
+Ce test vérifie aussi la frontière des contextes : CC16 dans MACHINE ne possède pas la même cible que dans GLOBAL. Le parcours sort explicitement de MACHINE avant le fader global. TOP arme au vrai UP ; le scénario STOP distingue intention déjà pending et nouvelle tenue physique. Aucune assertion valide n’est remplacée par une réussite instrumentale fictive.
+
+Un stress déterministe4096 buffers de128frames combine CC, demandes de quatre sources, navigation PRESET/MUTE, RED, SMART, grilles et échecs nominaux injectés puis reprises. Garde des allocations C++ new pendant le chemin de rendu testé, files bornées sans overflow, vrais UP et dettes STOP fermées. Durées moyenne/p99/max consignées sans seuil temporel arbitraire dépendant du runner. Ce n’est ni une mesure AUM/iPhone, ni une certification audio temps réel ou de toutes les allocations du framework hôte.
+
+L’interface AU raccorde les deux paramètres existants : Éditeur PRESET et Rafraîchir les LED. Le diagnostic et la simulation sont repliés et explicitement séparés ; aucune fixture au boot. La vue ne lit pas le core : paramètres publiés et trace SPSC uniquement. Le timer UI est retiré lorsque la vue disparaît, sans arrêter le moteur. L’affichage UIKit est à vérifier sur appareil ; le build iOS de CI contrôle sa compilation.
+
+La recette RECETTE_AUM_V02.md est mise à jour sur le code intégré et le parcours sans fixture. Le workflow Apple existant la copie déjà avec K2_SIM et son README ; le ZIP source conserve aussi RESULTATS_AUM_V0.csv, les sources et les tests. Aucun changement de runner, signature fictive ou .aum fabriqué. L’IPA non signée et sa somme SHA256 sont celles du run PASS ; signature et campagne réelle restent nécessaires.
+
+Le Bloc5 reste NON_TESTE_AUM jusqu’aux relevés réels. Les éditeurs de profils S8 ne sont pas exposés par cette interface minimale : leurs API et leur document natif existent, les valeurs et bindings non configurés demeurent inconnus/refusés. Cela ne remet pas les opérations internes validées en attente d’un choix de synthé.
