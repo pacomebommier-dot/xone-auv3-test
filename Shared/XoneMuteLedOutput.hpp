@@ -8,6 +8,7 @@ namespace xone::host {
 class MuteLedOutput {
 public:
  struct Packet {bool valid{};unsigned target{},color{};bool on{};std::uint8_t bytes[3]{};};
+ void invalidate() noexcept {known_.fill(0);owned_=true;}
  void beginBuffer() noexcept {failed_.fill(false);}
  void observe(const GlobalMuteState& mute,bool visible,std::int64_t ms,const BaseLedView::Image& context={}) noexcept {
   if(visible&&!visible_){known_.fill(0);owned_=true;}

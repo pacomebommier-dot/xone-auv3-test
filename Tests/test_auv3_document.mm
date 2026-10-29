@@ -2,6 +2,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import "../Extension/XoneMidiAudioUnit.h"
 #include "../Shared/XoneValidationFixture.hpp"
+#include "../Shared/XoneDocument.hpp"
 #include "../Shared/XoneCueLoadBar.hpp"
 #include "../Core/NativeSlices.hpp"
 #include <cassert>
@@ -119,7 +120,15 @@ int main() {
     [unit deallocateRenderResources];
     // A new real AU subclass instance receives the saved document, not the old engine.
     XoneMidiAudioUnit *reopened=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
-    assert(reopened && !error);reopened.MIDIOutputEventBlock=testOutput;
+    assert(reopened && !error);
+    __block unsigned replayed=0,mixReplayed=0;
+    reopened.MIDIOutputEventBlock=^OSStatus(AUEventSampleTime time,uint8_t cable,NSInteger length,const uint8_t *data){
+        assert(time>=0&&time<48&&cable==0&&length==3);
+        if((data[0]&15)==14)return noErr;
+        assert((data[0]&15)>=6&&(data[0]&15)<=13);++replayed;
+        if(data[0]==0xBA&&data[1]==48&&data[2]==100)++mixReplayed;
+        return noErr;
+    };
     assert([reopened.inputBusses[0] setFormat:format error:&error]);
     assert([reopened.outputBusses[0] setFormat:format error:&error]);
     reopened.fullState=state; // generic API restore, document API readback
@@ -129,6 +138,15 @@ int main() {
     assert(reopenedRender(&flags,&timestamp,48,0,audio.mutableAudioBufferList,nullptr,nil)==noErr && sent==18);
     NSData *reloaded=reopened.fullStateForDocument[@"XONE_LAST_LIVE_V1"];
     assert(xone::host::decodeSession(static_cast<const uint8_t *>(reloaded.bytes),reloaded.length,decoded)&&decoded.desired[1328]==100);
+    assert(replayed==5&&mixReplayed==1); // V2 replays five known nominal values, no historical pulse.
+    NSData *documentData=state[@"XONE_DOCUMENT_V2"];assert([documentData isKindOfClass:[NSData class]]);
+    xone::host::DocumentImage documentImage{};
+    assert(xone::host::decodeDocument((const uint8_t *)documentData.bytes,documentData.length,documentImage));
+    assert(documentImage.live.desired[1328]==100);
+    NSMutableData *badDocument=[documentData mutableCopy];((uint8_t *)badDocument.mutableBytes)[20]^=1;
+    reopened.fullState=@{@"XONE_DOCUMENT_V2":badDocument,@"XONE_LAST_LIVE_V1":saved}; // malformed V2 never falls back to V1
+    NSData *stillGood=reopened.fullState[@"XONE_DOCUMENT_V2"];
+    assert(xone::host::decodeDocument((const uint8_t *)stillGood.bytes,stillGood.length,documentImage)&&documentImage.live.desired[1328]==100);
     [reopened deallocateRenderResources];
     std::cout<<"AU fixture callback retained="<<(testOutput!=nil)<<" deallocated-unit callback="<<(unit.MIDIOutputEventBlock!=nil)<<"\n";
     // LONG is crossed by an event inside the buffer, before the end-buffer timer.

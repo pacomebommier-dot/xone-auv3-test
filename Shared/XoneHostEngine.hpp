@@ -14,6 +14,8 @@
 #include "XoneAlternativeBank.hpp"
 #include "XoneGroupActionGate.hpp"
 #include "XoneSession.hpp"
+#include "XoneDocument.hpp"
+#include <memory>
 #include "../Core/MutePhysicalGate.hpp"
 #include "XoneMuteMidiProjection.hpp"
 #include "XoneMuteLedOutput.hpp"
@@ -67,6 +69,7 @@ public:
         core_.enableTestMidiProjection(true);
         core_.enableDiagnosticTouchNav(true); // source @zk/@zl selection, not SPOT TOUCH output
         core_.enableDiagnosticQualifiedNav(true); // source-qualified SHORT/LONG NAV only
+        documents_->ui.image=captureDocument();
         // Opt-in native BOT2 overlay; legacy diagnostic harness retains NAV role1.
     }
     // Historical CH1 remap is an opt-in test seam, never production MIDI API.
@@ -135,7 +138,7 @@ public:
         return voice>=0&&slot>=0&&s8Sample_.read(static_cast<unsigned>(voice),
                                                   static_cast<unsigned>(slot),out);
     }
-    bool setS8SampleModeBeforeRendering(int voice,int index,int mode) noexcept {
+    bool setS8SampleModeBeforeRendering(int voice,int index,int mode) noexcept { documentDirty_=true;
         return !started_&&voice>=0&&index>=0&&
             s8Sample_.setMode(static_cast<unsigned>(voice),static_cast<unsigned>(index),mode);
     }
@@ -144,13 +147,13 @@ public:
                                                 static_cast<unsigned>(index)):-2;
     }
     bool samplePatchForDiagnostic(int owner,int slot,l01::BankS6::PatchRecord& out)const noexcept {
-        return core_.nativeBank().readPatch(owner,slot,out);
+        return core_.readNativePatch(owner,slot,out);
     }
     bool s8MachinePatchForDiagnostic(int machine,int slot,S8MachinePatchBank::Patch& out)const noexcept {
         return machine>=0&&slot>=0&&s8Machine_.read(static_cast<unsigned>(machine),
                                                     static_cast<unsigned>(slot),out);
     }
-    bool setS8MachineModeBeforeRendering(int machine,int index,int mode) noexcept {
+    bool setS8MachineModeBeforeRendering(int machine,int index,int mode) noexcept { documentDirty_=true;
         return !started_&&machine>=0&&index>=0&&
             s8Machine_.setMode(static_cast<unsigned>(machine),static_cast<unsigned>(index),mode);
     }
@@ -238,11 +241,11 @@ public:
         if(source>=4)return false;
         presetInstrumentGroup_=lastInstrumentGroup_=static_cast<int>(source);return true;
     }
-    bool configureAlternativeBase(unsigned pool,unsigned instrument,const SourcePatchBank::Values& values,int config) noexcept {
+    bool configureAlternativeBase(unsigned pool,unsigned instrument,const SourcePatchBank::Values& values,int config) noexcept { documentDirty_=true;
         return alternativeBank_.configureBase(pool,instrument,config,values);
     }
-    bool bindAlternativeSlot(unsigned source,unsigned slot,int instrument) noexcept {return alternativeBank_.bind(source,slot,instrument);}
-    bool configureAlternativeMode(unsigned pool,unsigned instrument,unsigned index,int mode) noexcept {return alternativeBank_.setMode(pool,instrument,index,mode);}
+    bool bindAlternativeSlot(unsigned source,unsigned slot,int instrument) noexcept { documentDirty_=true;return alternativeBank_.bind(source,slot,instrument);}
+    bool configureAlternativeMode(unsigned pool,unsigned instrument,unsigned index,int mode) noexcept { documentDirty_=true;return alternativeBank_.setMode(pool,instrument,index,mode);}
     AlternativeArbiter::Request requestAlternative(unsigned source,unsigned slot,std::uint64_t arbitration=0) noexcept {
         using Request=AlternativeArbiter::Request;
         if(source>=4||slot>=4||alternativeFlight_.valid)return Request::Rejected;
@@ -261,24 +264,24 @@ public:
     }
     void requestPresetPage(bool show) noexcept {presetFaceRequest_.store(show?1:0,std::memory_order_release);}
     bool presetPageVisibleForHost()const noexcept {return publishedPresetFace_.load(std::memory_order_acquire);}
-    bool showPresetPage() noexcept {
+    bool showPresetPage() noexcept { documentDirty_=true;
         if(core_.nativeNav().active().at(292)==1&&core_.nativeNav().active().presetFlag==1&&!mutePageVisible())return true;
         const auto before=presetSignature();auto n=core_.nativeNav().active();n.at(292)=1;n.presetFlag=1;
         if(!l01::NavS3::regenerate(n)||!core_.stageNativeNav(n)||!core_.commitNativeNav())return false;
         muteGate_.restoreVisible(false);presetInstrumentGroup_=lastInstrumentGroup_;invalidatePresetsIfChanged(before);return true;
     }
-    bool leavePresetPage() noexcept {
+    bool leavePresetPage() noexcept { documentDirty_=true;
         if(core_.nativeNav().active().at(292)!=1||core_.nativeNav().active().presetFlag!=1)return true;
         const auto before=presetSignature();auto n=core_.nativeNav().active();n.at(292)=n.contextMode;n.presetFlag=0;
         if(!l01::NavS3::regenerate(n)||!core_.stageNativeNav(n)||!core_.commitNativeNav())return false;
         invalidatePresetsIfChanged(before);return true;
     }
     // INIT uses a separately supplied local reference, never a fabricated RESET zero.
-    bool configureGlobalInit(const GlobalSnapshot& reference) noexcept {
+    bool configureGlobalInit(const GlobalSnapshot& reference) noexcept { documentDirty_=true;
         if(initPending_||!reference.admissible(core_.nativeLive().sessionConfig()))return false;
         globalInit_=reference;return true;
     }
-    bool requestGlobalInit() noexcept {
+    bool requestGlobalInit() noexcept { documentDirty_=true;
         if(!globalInit_.admissible(core_.nativeLive().sessionConfig()))return false;
         if(transportStopped_)return applyGlobal(globalInit_,false);
         if(!musicalScheduler_.replace(4,0,ScheduleWhen::NextBeat))return false;
@@ -289,14 +292,14 @@ public:
     int pendingPreset()const noexcept {return pendingPresetSlot_>=0?pendingPresetSlot_:(alternativeFlight_.valid&&alternativeFlight_.global?alternativeFlight_.presetSlot:-1);}
     bool redActive()const noexcept {return redActive_;}
     bool alternativeSwitchPending()const noexcept {return alternativeFlight_.valid;}
-    bool capturePreset(unsigned slot) noexcept {
+    bool capturePreset(unsigned slot) noexcept { documentDirty_=true;
         if(slot>=4||redActive_)return false;
         const bool before=presetEngaged_[slot];presetEngaged_[slot]=true;
         const auto image=captureGlobal();
         if(!image.admissible(core_.nativeLive().sessionConfig())){presetEngaged_[slot]=before;return false;}
         presets_[slot]=image;presetValid_[slot]=false;return true;
     }
-    bool requestPresetRecall(unsigned slot) noexcept {
+    bool requestPresetRecall(unsigned slot) noexcept { documentDirty_=true;
         if(slot>=4||!presets_[slot].admissible(core_.nativeLive().sessionConfig()))return false;
         if(transportStopped_){
             applyingPresetSlot_=static_cast<int>(slot);const bool applied=applyGlobal(presets_[slot],false);applyingPresetSlot_=-1;
@@ -307,13 +310,13 @@ public:
         }
         presetValid_[slot]=true;return true;
     }
-    bool captureRed() noexcept {
+    bool captureRed() noexcept { documentDirty_=true;
         if(redActive_)return false;
         const auto image=captureGlobal();
         if(!image.admissible(core_.nativeLive().sessionConfig()))return false;
         redImage_=image;redActive_=true;return true;
     }
-    bool restoreRed() noexcept {
+    bool restoreRed() noexcept { documentDirty_=true;
         if(!redActive_||!applyGlobal(redImage_,true))return false;
         redActive_=false;redImage_.valid=false;return true;
     }
@@ -322,23 +325,23 @@ public:
         out=presets_[slot];return out.valid;
     }
     // Native commands use contractual owner IDs, not external destinations.
-    bool captureMemory(int owner,int slot) noexcept {
+    bool captureMemory(int owner,int slot) noexcept { documentDirty_=true;
         const int index=l01::BankS6::memoryIndex(owner,slot);
         if(index<0||(owner<12&&alternativeSourceBusy(owner/3))||!core_.captureNativeMemory(owner,slot))return false;
         memoryEngaged_[static_cast<unsigned>(index)]=true;return true;
     }
     void observeTransport(bool running) noexcept {transportStopped_=!running;}
     void forgetTransport() noexcept {transportStopped_=false;}
-    bool requestMemoryRecall(int owner,int slot) noexcept {
+    bool requestMemoryRecall(int owner,int slot) noexcept { documentDirty_=true;
         if(!memoryEngaged(owner,slot)||(owner<12&&alternativeSourceBusy(owner/3)))return false;
         l01::BankS6::MemoryRecord saved{};
-        if(!core_.nativeBank().readMemory(owner,slot,saved)||!saved.valid||saved.config!=core_.nativeLive().sessionConfig())return false;
+        if(!core_.readNativeMemory(owner,slot,saved)||!saved.valid||saved.config!=core_.nativeLive().sessionConfig())return false;
         if(!transportStopped_&&!musicalScheduler_.replace(2,static_cast<uint16_t>(owner),ScheduleWhen::NextBeat))return false;
         memoryPending_[static_cast<unsigned>(owner)]={slot,saved.config,saved.values};
         if(transportStopped_)applyMemoryRecall(static_cast<unsigned>(owner));
         return true;
     }
-    bool requestSourceRecall(unsigned source,unsigned choice) noexcept {
+    bool requestSourceRecall(unsigned source,unsigned choice) noexcept { documentDirty_=true;
         if(source>=4||choice>3||alternativeSourceBusy(static_cast<int>(source)))return false;
         if(!transportStopped_&&!musicalScheduler_.replace(1,static_cast<uint16_t>(source),ScheduleWhen::NextBar))return false;
         sourcePending_[source]=static_cast<int>(choice);sourcePendingAlternative_[source]=activeAlternative(source);sourceStatus_[source]=SourceRecallStatus::Pending;
@@ -349,9 +352,9 @@ public:
         int index=l01::BankS6::memoryIndex(owner,slot);return index>=0&&memoryEngaged_[static_cast<unsigned>(index)];
     }
     int pendingMemorySlot(unsigned owner)const noexcept {return owner<28?memoryPending_[owner].slot:-1;}
-    bool readMemory(int owner,int slot,l01::BankS6::MemoryRecord& out)const noexcept {return core_.nativeBank().readMemory(owner,slot,out);}
+    bool readMemory(int owner,int slot,l01::BankS6::MemoryRecord& out)const noexcept {return core_.readNativeMemory(owner,slot,out);}
     // Render-thread local source API. An external adapter is never treated as loaded.
-    bool saveSourcePatch(unsigned source,unsigned slot) noexcept {
+    bool saveSourcePatch(unsigned source,unsigned slot) noexcept { documentDirty_=true;
         if(source>=4||slot>=3||sourcePending_[source]>=0||redActive_)return false;
         SourcePatchBank::Values values{};
         for(unsigned f=0;f<values.size();++f){
@@ -402,7 +405,7 @@ public:
                    0,packet.bytes.data(),3,packet.api);
     }
     const GlobalMuteState& globalMute() const noexcept {return muteBridge_.state();}
-    unsigned onMusicalGrid(const GridBatch& b) noexcept {
+    unsigned onMusicalGrid(const GridBatch& b) noexcept { documentDirty_=true;
         if(b.valid&&!b.overflow&&b.count<=b.events.size())started_=true;
         unsigned committed=soft_.observe(b); // only authenticated BAR, never timer
         if(b.valid&&!b.overflow&&b.count<=b.events.size()){
@@ -452,7 +455,7 @@ public:
     static constexpr uint32_t TraceCapacity=256;
     static_assert(std::atomic<uint32_t>::is_always_lock_free,"RT trace requires lock-free indices");
     // Called only by render thread. Host cable is NOT an authenticated device ID.
-    Result receive(uint8_t cable,const uint8_t* data,size_t length,int64_t sample,int64_t gestureMs=0) noexcept {
+    Result receive(uint8_t cable,const uint8_t* data,size_t length,int64_t sample,int64_t gestureMs=0) noexcept { documentDirty_=true;
         const auto before=presetSignature();const auto applied=globalApplySerial_;redDirectGesture_=false;
         auto result=receiveImpl(cable,data,length,sample,gestureMs);
         if(cable==0&&data&&length==3&&(data[0]&15)==14&&((data[0]&0xf0)==0x80||(data[0]&0xf0)==0x90)&&
@@ -826,7 +829,7 @@ public:
                 // Historical S6 pre-render fixture path, explicitly isolated
                 // from the S8 banks used by actual physical SAVE.
                 l01::BankS6::PatchRecord patch{};
-                if(!core_.nativeBank().readPatch(request.owner,request.slot,patch)||!patch.valid||
+                if(!core_.readNativePatch(request.owner,request.slot,patch)||!patch.valid||
                    patch.revision!=request.revision||
                    patch.config!=core_.nativeLive().sessionConfig())return {};
                 for(int field=0;field<28;++field)values[static_cast<std::size_t>(field)]=patch.values[static_cast<std::size_t>(field)];
@@ -872,10 +875,25 @@ public:
         }
         return {};
     }
+    bool requestDocumentRestore(const DocumentImage& image) noexcept {
+        auto candidate=image;
+        if(!validDocument(candidate)||requestedToken_==UINT32_MAX)return false;
+        documents_->ui={candidate,++requestedToken_};restoreEpoch_.store(requestedToken_,std::memory_order_release);
+        documents_->restores.publish(documents_->ui);return true;
+    }
+    DocumentImage documentForHost() noexcept {
+        DocumentFrame next{};
+        if(documents_->snapshots.take(next)&&next.token>=requestedToken_)documents_->ui=next;
+        return documents_->ui.image;
+    }
     // UI/host thread only, serialized externally. Do not call core from these methods.
     bool requestSessionRestore(const SessionImage& image) noexcept {
         if(!validSession(image)||requestedToken_==0xFFFFFFFFu)return false;
-        uiSession_={image,++requestedToken_};restores_.publish(uiSession_);return true;
+        uiSession_={image,++requestedToken_};
+        documents_->ui.image.live=image;documents_->ui.image.current.live=image;
+        for(unsigned c=0;c<image.desired.size();++c)if(!GlobalSnapshot::inScope(c))documents_->ui.image.current.live.desired[c]=-2;
+        documents_->ui.image.current.memoryEngaged.fill(false);documents_->ui.image.current.presetEngaged.fill(false);
+        restoreEpoch_.store(requestedToken_,std::memory_order_release);restores_.publish(uiSession_);return true;
     }
     SessionImage sessionForHost() noexcept {
         SessionFrame next{};
@@ -888,17 +906,21 @@ public:
         started_=true;
         const int faceRequest=presetFaceRequest_.exchange(-1,std::memory_order_acq_rel);
         if(faceRequest==1)showPresetPage();else if(faceRequest==0)leavePresetPage();
-        if(alternativeFlight_.valid&&alternativeFlight_.waiting==0&&!restores_.hasUpdate())finishAlternativeChange();
-        else if(transportStopped_&&!alternativeFlight_.valid&&!restores_.hasUpdate()){
+        if(alternativeFlight_.valid&&alternativeFlight_.waiting==0&&!restores_.hasUpdate()&&!documents_->restores.hasUpdate())finishAlternativeChange();
+        else if(transportStopped_&&!alternativeFlight_.valid&&!restores_.hasUpdate()&&!documents_->restores.hasUpdate()){
             bool pending=false;for(int target:alternatives_.pending())if(target>=0)pending=true;
             if(pending)beginAlternativeChange();
         }
         // A session must not replace an active SOFT owner while its MIDI
         // NoteOff may still be due (this debt is outside OutputS4).
-        if(!restores_.hasUpdate()||core_.output().outstanding()!=0||soft_.hasOutstandingNotes()||topPulse_.hasOwedOff())return;
+        if((!restores_.hasUpdate()&&!documents_->restores.hasUpdate())||core_.nativeNav().hasStage()||core_.output().outstanding()!=0||soft_.hasOutstandingNotes()||topPulse_.hasOwedOff())return;
         for(std::size_t i=0;i<36;++i)if(core_.surface().held(i))return;
+        DocumentFrame document{};
+        if(documents_->restores.take(document)&&document.token==restoreEpoch_.load(std::memory_order_acquire)){
+            if(applyDocument(document.image)){appliedToken_=document.token;documentDirty_=true;}
+        }
         SessionFrame next{};
-        if(restores_.take(next)&&core_.restoreNativeSessionForDiagnostic(next.image)){
+        if(restores_.take(next)&&next.token==restoreEpoch_.load(std::memory_order_acquire)&&core_.restoreNativeSessionForDiagnostic(next.image)){
             appliedToken_=next.token;pickup_=ContinuousPickup{};
             core_.output()=l01::OutputS4{};core_.enableTestMidiProjection(true);
             samplePatch_={};pairedTopSource_=-1; // a restored session cannot execute an old queued recall
@@ -913,6 +935,9 @@ public:
     void endRenderBuffer() noexcept {
         publishedPresetFace_.store(core_.nativeNav().active().at(292)==1&&core_.nativeNav().active().presetFlag==1&&!mutePageVisible(),std::memory_order_release);
         const auto revision=core_.nativeLive().revision();
+        if(documentDirty_||revision!=publishedRevision_||appliedToken_!=publishedToken_){
+            documents_->snapshots.publish({captureDocument(),appliedToken_});documentDirty_=false;
+        }
         if(revision==publishedRevision_&&appliedToken_==publishedToken_)return;
         snapshots_.publish({core_.nativeLive().snapshot(),appliedToken_});
         publishedRevision_=revision;publishedToken_=appliedToken_;
@@ -993,7 +1018,7 @@ public:
     // MIDI output must never consume a pending STOP NoteOff permanently.
     void beginStopRetryPass(int64_t sample) noexcept {stopRead_=0;stopSample_=sample;}
     unsigned pendingStopOffs() const noexcept {return stopPendingCount_;}
-    void stop(int64_t sample) noexcept {
+    void stop(int64_t sample) noexcept { documentDirty_=true;
         started_=true;transportStopped_=true;presetFaceRequest_.store(-1,std::memory_order_release);
         alternativeFlight_={};alternatives_.stop();alternativeBaseValid_.fill(false);
         for(auto& selector:alternativeSelectors_)selector={};
@@ -1055,7 +1080,7 @@ public:
     // Render-thread-only inspection; UI reads the SPSC trace, never core state.
     int navMode() const noexcept {return core_.nativeNav().active().at(292);}
     bool longNavPending() const noexcept {return core_.longNavPending();}
-    void advance(int64_t ms,int64_t sample) noexcept {
+    void advance(int64_t ms,int64_t sample) noexcept { documentDirty_=true;
         const auto signatureBeforeTimer=presetSignature();
         started_=true;
         const bool wasMuteVisible=mutePageVisible();
@@ -1189,7 +1214,7 @@ private:
             // Explicit pre-render S6 fixtures remain available for historical
             // compatibility tests; normal physical SAVE never writes S6.
             l01::BankS6::PatchRecord historical{};
-            if(!core_.nativeBank().readPatch(owner,slot,historical)||!historical.valid||
+            if(!core_.readNativePatch(owner,slot,historical)||!historical.valid||
                historical.config!=core_.nativeLive().sessionConfig())return;
             samplePatch_={owner,slot,historical.revision,false};
         }
@@ -1547,6 +1572,60 @@ private:
         if(alternativeFlight_.valid&&alternativeFlight_.global&&!alternativeFlight_.redRestore){alternativeFlight_={};alternatives_.stop();}
         musicalScheduler_.cancel(3,0);musicalScheduler_.cancel(4,0);
     }
+    DocumentImage captureDocument()const noexcept {
+        DocumentImage d{};d.live=core_.nativeLive().snapshot();d.current=captureGlobal();
+        // SOFT choices are persistent selection; sounding gates are transient.
+        d.current.soft.sounding.fill(false);
+        for(const auto& hold:spots_)if(hold.cell>=0&&(hold.mode==3||hold.mode==4)){
+            d.live.desired[static_cast<unsigned>(hold.cell)]=static_cast<int16_t>(hold.previous);
+            d.current.live.desired[static_cast<unsigned>(hold.cell)]=static_cast<int16_t>(hold.previous);
+        }
+        d.sample=s8Sample_;d.machine=s8Machine_;d.source=sourcePatches_;d.alternative=alternativeBank_;
+        d.presets=presets_;d.init=globalInit_;
+        for(int owner=0;owner<28;++owner){
+            for(int slot=0;slot<(owner<12?4:3);++slot){l01::BankS6::MemoryRecord m{};
+                if(core_.readNativeMemory(owner,slot,m))d.memories[static_cast<unsigned>(l01::BankS6::memoryIndex(owner,slot))]=m;}
+            for(int slot=0;slot<3;++slot){l01::BankS6::PatchRecord p{};
+                if(core_.readNativePatch(owner,slot,p))d.legacyPatches[static_cast<unsigned>(3*owner+slot)]=p;}
+        }
+        return d;
+    }
+    bool applyDocument(DocumentImage& d)noexcept {
+        if(!validDocument(d))return false;
+        l01::BankS6 bank{};bank.initializeEmpty();
+        std::array<std::uint32_t,96> memoryBases{};std::array<std::uint32_t,84> patchBases{};
+        for(int owner=0;owner<28;++owner){
+            for(int slot=0;slot<(owner<12?4:3);++slot){const auto& m=d.memories[static_cast<unsigned>(l01::BankS6::memoryIndex(owner,slot))];
+                if(m.valid){if(!bank.saveMemory(owner,slot,m.config,m.values,0))return false;memoryBases[static_cast<unsigned>(l01::BankS6::memoryIndex(owner,slot))]=m.revision-1;}}
+            for(int slot=0;slot<3;++slot){const auto& p=d.legacyPatches[static_cast<unsigned>(3*owner+slot)];
+                if(p.valid){if(!bank.savePatch(owner,slot,p.config,p.values,0))return false;patchBases[static_cast<unsigned>(3*owner+slot)]=p.revision-1;}}
+        }
+        AlternativeArbiter arbiter{};AlternativeArbiter::Ready ready{};ready.fill(true);
+        if(!arbiter.finalize(arbiter.prepareRecall(d.current.alternatives,ready),true))return false;
+        auto soft=SoftMidiBridge{};auto mute=muteBridge_;
+        auto appliedSoft=d.current.soft;appliedSoft.sounding.fill(false);
+        if(!soft.restoreApplied(appliedSoft)||!mute.restoreApplied(d.current.mute,true))return false;
+        if(!core_.commitNativeDocument(d.live,d.current.nav,bank,memoryBases,patchBases))return false;
+        s8Sample_=d.sample;s8Machine_=d.machine;sourcePatches_=d.source;alternativeBank_=d.alternative;alternatives_=arbiter;
+        presets_=d.presets;globalInit_=d.init;soft_=soft;muteBridge_=mute;muteGate_.restoreVisible(d.current.muteVisible);
+        cueLoad_=CueLoadBar{}; // desired selection is rebuilt below; no historical service pulse
+        cueLoad_.restoreDocumentSelections(d.current.cueSelections);
+        memoryEngaged_=d.current.memoryEngaged;presetEngaged_=d.current.presetEngaged;presetValid_.fill(false);
+        musicalScheduler_.stop();sourcePending_.fill(-1);sourceStatus_.fill(SourceRecallStatus::None);
+        for(auto& pending:memoryPending_)pending={};
+        samplePatch_={};pairedTopSource_=-1;alternativeFlight_={};alternativeBaseValid_.fill(false);
+        pendingPresetSlot_=-1;initPending_=false;redActive_=false;redHeld_=false;redImage_.valid=false;
+        sourceRead_=sourceWrite_;sourceBlocked_=false;core_.output()=l01::OutputS4{};core_.enableTestMidiProjection(true);
+        pickup_=ContinuousPickup{};muteLeds_.invalidate();muteMidi_.observe(globalMute());
+        for(unsigned cell=0;cell<d.live.desired.size();++cell){if(!GlobalSnapshot::inScope(cell))continue;int type=10;const int api=globalApi(cell,type);int value=d.live.desired[cell];
+            if(cell>=1337&&cell<=1339){const int m=d.live.desired[1341];if(value<0||m<0)continue;value=(value*m+63)/127;}
+            if(api<0||value<0)continue;
+            SourcePacket packet{};packet.valid=true;packet.token=++sourcePacketToken_;packet.type=type;packet.api=api;packet.value=value;
+            packet.bytes={static_cast<uint8_t>((type==10?0xB6:value?0x96:0x86)+api/128),static_cast<uint8_t>(api%128),static_cast<uint8_t>(type==10?value:value?127:0)};
+            sourceMidi_[sourceWrite_++%sourceMidi_.size()]=packet;
+        }
+        return true;
+    }
     GlobalSnapshot captureGlobal()const noexcept {
         GlobalSnapshot image{};image.live=core_.nativeLive().snapshot();image.nav=core_.nativeNav().active();
         for(unsigned cell=0;cell<image.live.desired.size();++cell)
@@ -1647,7 +1726,7 @@ private:
         memoryEngaged_=image.memoryEngaged;presetEngaged_=image.presetEngaged;
         for(unsigned owner=0;owner<28;++owner)for(int slot=0;slot<(owner<12?4:3);++slot){
             l01::BankS6::MemoryRecord record{};
-            if(!core_.nativeBank().readMemory(static_cast<int>(owner),slot,record)||!record.valid||record.config!=target.config)
+            if(!core_.readNativeMemory(static_cast<int>(owner),slot,record)||!record.valid||record.config!=target.config)
                 memoryEngaged_[static_cast<unsigned>(l01::BankS6::memoryIndex(static_cast<int>(owner),slot))]=false;
         }
         for(auto& hold:spots_)hold={};
@@ -1772,6 +1851,8 @@ private:
     std::atomic<bool> publishedPresetFace_{false};
     bool started_{};
     bool historicalL02Bench_{};
+    std::unique_ptr<DocumentExchange> documents_{std::make_unique<DocumentExchange>()};
+    std::atomic<uint32_t> restoreEpoch_{0};bool documentDirty_{true};
     SessionMailbox restores_{},snapshots_{};
     SessionFrame uiSession_{}; // UI owns cache and request generation.
     uint32_t requestedToken_{}; // UI only

@@ -32,6 +32,14 @@ public:
   if(source>=Sources||slot>=Slots)return false;
   p=bank_[source*Slots+slot];return p.valid;
  }
+    // Explicit document fields, never object bytes/padding or output caches.
+    template<class Archive> bool archive(Archive& a) noexcept {
+        for(auto& p:bank_){a(p.valid);a(p.config);a(p.revision);a(p.values);
+            if(p.valid){if(p.config<1||p.config>127||p.revision<1||p.revision>16777212u||!validate(p.values))return false;}
+            else {if(p.revision!=0||p.config!=-2)return false;for(int v:p.values)if(v!=-2)return false;}
+        }
+        return a.ok();
+    }
 private:
  std::array<Patch,Sources*Slots> bank_{};
 };

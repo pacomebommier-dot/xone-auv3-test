@@ -48,6 +48,24 @@ public:
  void remember(unsigned pool,unsigned instrument,const Values& current) noexcept {
   if(pool<2&&instrument<4)records_[4*pool+instrument].last=current;
  }
+ template<class Archive> bool archive(Archive& a) noexcept {
+  a(bindings_);for(const auto& row:bindings_){for(unsigned i=0;i<4;++i){
+   if(row[i]<-1||row[i]>3)return false;
+   for(unsigned j=0;j<i;++j)if(row[i]>=0&&row[i]==row[j])return false;
+  }}
+  for(auto& r:records_){
+   const auto patch=[&](Patch& p){a(p.valid);a(p.config);a(p.revision);a(p.values);
+    if(p.valid)return p.config>=1&&p.config<=127&&p.revision>=1&&p.revision<=16777212u&&SourcePatchBank::validate(p.values);
+    if(p.config!=-2||p.revision!=0)return false;
+    for(int v:p.values)if(v!=-2)return false;
+    return true;};
+   if(!patch(r.base))return false;
+   for(auto& p:r.patches)if(!patch(p)||(p.valid&&(!r.base.valid||p.config!=r.base.config)))return false;
+   a(r.modes);for(int v:r.modes)if(v!=-2&&(v<1||v>4))return false;
+   a(r.last);for(unsigned f=0;f<60;++f)if(r.last[f]!=-2&&(r.last[f]<0||r.last[f]>127||(f%30>=18&&r.last[f]>1)))return false;
+  }
+  return a.ok();
+ }
 private:
  struct Record {Patch base{};std::array<Patch,3> patches{};std::array<int,24> modes{};Values last{};
   Record()noexcept{modes.fill(-2);last.fill(-2);}};

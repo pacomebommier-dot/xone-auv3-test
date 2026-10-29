@@ -122,18 +122,20 @@ public:
     }
     bool saveNativePatchForDiagnostic(int owner,int slot,int config,
             const BankS6::PatchImage& image,std::uint32_t expectedSlotRevision) noexcept {
-        if(!diagnosticLive_)return false;
-        return nativeBank_.savePatch(owner,slot,config,image,expectedSlotRevision);
+        const int index=BankS6::patchIndex(owner,slot);BankS6::PatchRecord prior{};
+        if(!diagnosticLive_||index<0||!readNativePatch(owner,slot,prior)||prior.revision!=expectedSlotRevision||prior.revision>=BankS6::MaxRevision-1)return false;
+        return nativeBank_.savePatch(owner,slot,config,image,expectedSlotRevision-patchRevisionBase_[static_cast<unsigned>(index)]);
     }
     bool saveNativeMemoryForDiagnostic(int owner,int slot,int config,
             const BankS6::MemoryImage& image,std::uint32_t expectedSlotRevision) noexcept {
-        if(!diagnosticLive_)return false;
+        const int index=BankS6::memoryIndex(owner,slot);BankS6::MemoryRecord prior{};
+        if(!diagnosticLive_||index<0||!readNativeMemory(owner,slot,prior)||prior.revision!=expectedSlotRevision||prior.revision>=BankS6::MaxRevision-1)return false;
         auto nextBank=nativeBank_;
-        if(!nextBank.saveMemory(owner,slot,config,image,expectedSlotRevision))return false;
+        if(!nextBank.saveMemory(owner,slot,config,image,expectedSlotRevision-memoryRevisionBase_[static_cast<unsigned>(index)]))return false;
         BankS6::MemoryRecord m{};
         if(!nextBank.readMemory(owner,slot,m))return false;
         FxS6::MemorySnapshot f{};
-        f.supplied=true;f.valid=m.valid;f.config=m.config;f.revision=m.revision;f.values=m.values;
+        f.supplied=true;f.valid=m.valid;f.config=m.config;f.revision=m.revision+memoryRevisionBase_[static_cast<unsigned>(index)];f.values=m.values;
         auto nextFx=fx_;
         if(!nextFx.publishNativeMemory(owner,slot,f))return false;
         nativeBank_=nextBank;fx_=nextFx;return true;
@@ -147,8 +149,8 @@ public:
         if(!BankS6::validateMemory(image))return false;
         if(!nativeBank_.initialized()&&!nativeBank_.initializeEmpty())return false;
         BankS6::MemoryRecord prior{};
-        return nativeBank_.readMemory(owner,slot,prior)&&
-            nativeBank_.saveMemory(owner,slot,live_.sessionConfig(),image,prior.revision);
+        return readNativeMemory(owner,slot,prior)&&prior.revision<BankS6::MaxRevision-1&&
+            nativeBank_.saveMemory(owner,slot,live_.sessionConfig(),image,prior.revision-memoryRevisionBase_[static_cast<unsigned>(BankS6::memoryIndex(owner,slot))]);
     }
     // Explicit diagnostic recall of native MEMORY into the native single-writer
     // desired LIVE image. Source caller still has to qualify real gesture routing.
@@ -167,7 +169,7 @@ public:
         if(!diagnosticLive_ || owner<0 || owner>=8 || longTx_.pending() ||
            touch_.busy() || nav_.hasStage() || touchOwner_!=-1 || liveRevision!=live_.revision())return false;
         BankS6::PatchRecord record{};
-        if(!nativeBank_.readPatch(owner,slot,record) || !record.valid ||
+        if(!readNativePatch(owner,slot,record) || !record.valid ||
            record.revision!=bankRevision || record.config!=live_.sessionConfig() ||
            !BankS6::validatePatch(owner,record.values))return false;
         auto next=live_;
@@ -237,6 +239,24 @@ public:
         if(!nextLive.restoreSession(image))return false;
         if(!(navigation==nextNav.active())&&(!nextNav.stage(navigation)||!nextNav.commit()||!nextS3.observeNav(navigation.at(292),true)))return false;
         live_=nextLive;nav_=nextNav;s3_=nextS3;return true;
+    }
+    bool commitNativeDocument(LiveState::SessionImage image,const NavImage& nav,const BankS6& bank,
+            const std::array<std::uint32_t,96>& memoryBases,const std::array<std::uint32_t,84>& patchBases) noexcept {
+        if(!diagnosticLive_||live_.revision()>=LiveState::MaxRevision||!NavS3::validate(nav)||nav_.hasStage())return false;
+        image.revision=live_.revision()+1;
+        auto nextLive=live_;auto nextNav=nav_;auto nextS3=s3_;
+        if(!nextLive.restoreSession(image))return false;
+        if(!(nav==nextNav.active())&&(!nextNav.stage(nav)||!nextNav.commit()||!nextS3.observeNav(nav.at(292),true)))return false;
+        live_=nextLive;nav_=nextNav;s3_=nextS3;nativeBank_=bank;memoryRevisionBase_=memoryBases;patchRevisionBase_=patchBases;fx_=FxS6{};return true;
+    }
+    // Preserve document revisions without changing the frozen BankS6 corpus.
+    bool readNativeMemory(int owner,int slot,BankS6::MemoryRecord& out)const noexcept {
+        if(!nativeBank_.readMemory(owner,slot,out))return false;
+        out.revision+=memoryRevisionBase_[static_cast<unsigned>(BankS6::memoryIndex(owner,slot))];return true;
+    }
+    bool readNativePatch(int owner,int slot,BankS6::PatchRecord& out)const noexcept {
+        if(!nativeBank_.readPatch(owner,slot,out))return false;
+        out.revision+=patchRevisionBase_[static_cast<unsigned>(BankS6::patchIndex(owner,slot))];return true;
     }
     const BankS6& nativeBank() const noexcept {return nativeBank_;}
     // L01/10: read-only FX-memory snapshots; no persistence implied.
@@ -421,6 +441,7 @@ private:
     NavS3 nav_{};bool shortNavDiagnostic_{};bool qualifiedNavDiagnostic_{};bool muteBot2Exclusive_{};
     S3LongTransaction longTx_{};S3TouchNav touch_{};bool diagnosticTouch_{};int touchOwner_{-1};
     int machineLastLow_{-1},machineLastHigh_{-1};
+    std::array<std::uint32_t,96> memoryRevisionBase_{};std::array<std::uint32_t,84> patchRevisionBase_{};
     LiveState live_{};bool diagnosticLive_{};FxS6 fx_{};BankS6 nativeBank_{};std::uint32_t fxOrigin_{};
     OutputS4 projection_{};
     xone::Engine structural_{};

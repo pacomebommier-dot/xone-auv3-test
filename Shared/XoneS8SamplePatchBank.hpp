@@ -47,6 +47,15 @@ public:
     int mode(unsigned voice,unsigned spot)const noexcept {
         return voice<Voices&&spot<ModeCount?modes_[voice][spot]:Unknown;
     }
+    // Explicit document fields, never object bytes/padding or output caches.
+    template<class Archive> bool archive(Archive& a) noexcept {
+        for(auto& p:patches_){a(p.valid);a(p.config);a(p.revision);a(p.values);
+            if(p.valid){if(p.config<1||p.config>127||p.revision<1||p.revision>16777212u||!validate(p.values))return false;}
+            else {if(p.revision!=0||p.config!=0)return false;for(int v:p.values)if(v!=-2)return false;}
+        }
+        a(modes_);for(const auto& row:modes_)for(int v:row)if(v!=-2&&(v<1||v>4))return false;
+        return a.ok();
+    }
 private:
     std::array<Patch,Voices*Slots> patches_{};
     std::array<Modes,Voices> modes_{};

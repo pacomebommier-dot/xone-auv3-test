@@ -44,23 +44,24 @@ inline bool decodeSession(const uint8_t* bytes,std::size_t size,SessionImage& ou
 struct SessionFrame {SessionImage image{};uint32_t token{};};
 // Three slots ensure producer never writes a slot currently copied by consumer.
 // Exactly one producer and one consumer. UI callers are serialized by AU wrapper.
-class SessionMailbox {
+template<class Frame> class StateMailbox {
 public:
     static_assert(std::atomic<uint32_t>::is_always_lock_free,"session hand-off requires lock-free exchange");
-    void publish(const SessionFrame& f) noexcept {
+    void publish(const Frame& f) noexcept {
         slots_[back_]=f;
         back_=middle_.exchange(back_|Dirty,std::memory_order_acq_rel)&Index;
     }
     bool hasUpdate()const noexcept{return (middle_.load(std::memory_order_acquire)&Dirty)!=0;}
-    bool take(SessionFrame& f) noexcept {
+    bool take(Frame& f) noexcept {
         if(!hasUpdate())return false;
         front_=middle_.exchange(front_,std::memory_order_acq_rel)&Index;
         f=slots_[front_];return true;
     }
 private:
     static constexpr uint32_t Dirty=4,Index=3;
-    std::array<SessionFrame,3> slots_{};
+    std::array<Frame,3> slots_{};
     std::atomic<uint32_t> middle_{1};
     uint32_t back_{0},front_{2};
 };
+using SessionMailbox=StateMailbox<SessionFrame>;
 }

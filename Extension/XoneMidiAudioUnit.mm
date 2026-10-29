@@ -91,15 +91,26 @@
         NSMutableDictionary *state = [[super fullState] mutableCopy];
         if (!state) state = [NSMutableDictionary dictionary];
         [state removeObjectForKey:@"XONE_LAST_LIVE_V1"];
+        [state removeObjectForKey:@"XONE_DOCUMENT_V2"];
         xone::host::SessionBytes bytes{};
         const auto image = _engine.sessionForHost();
         if (xone::host::encodeSession(image, bytes))
             state[@"XONE_LAST_LIVE_V1"] = [NSData dataWithBytes:bytes.data() length:bytes.size()];
+        xone::host::DocumentBytes document;
+        if(xone::host::encodeDocument(_engine.documentForHost(),document))
+            state[@"XONE_DOCUMENT_V2"]=[NSData dataWithBytes:document.data() length:document.size()];
         return state;
     }
 }
 - (void)setFullState:(NSDictionary<NSString *,id> *)state {
     @synchronized (self) {
+        id document=state[@"XONE_DOCUMENT_V2"];
+        if(document){
+            if(![document isKindOfClass:[NSData class]])return;
+            NSData *data=(NSData *)document;xone::host::DocumentImage image{};
+            if(!xone::host::decodeDocument((const uint8_t *)data.bytes,data.length,image)||!_engine.requestDocumentRestore(image))return;
+            [super setFullState:state];return;
+        }
         id payload = state[@"XONE_LAST_LIVE_V1"];
         if (payload) {
             if (![payload isKindOfClass:[NSData class]]) return;

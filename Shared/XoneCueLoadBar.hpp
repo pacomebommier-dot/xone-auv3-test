@@ -42,14 +42,20 @@ public:
     }
     std::array<int,4> desiredSelections()const noexcept {
         std::array<int,4> result{};
-        for(unsigned group=0;group<4;++group){const auto& s=channels_[group];result[group]=s.dueReady?s.due:s.applied;}
+        for(unsigned group=0;group<4;++group){const auto& s=channels_[group];result[group]=s.dueReady?s.due:(s.applied>=0?s.applied:restored_[group]);}
         return result;
+    }
+    // Document metadata is desired only, never a sent cache or a LOAD action.
+    bool restoreDocumentSelections(const std::array<int,4>& choices) noexcept {
+        auto candidate=*this;if(!candidate.restoreSelections(choices))return false;
+        for(unsigned g=0;g<4;++g){candidate.channels_[g]=Channel{};candidate.restored_[g]=choices[g];}
+        *this=candidate;return true;
     }
     bool restoreSelections(const std::array<int,4>& choices) noexcept {
         for(unsigned group=0;group<4;++group)if(choices[group]!=-1&&
             (choices[group]<0||choices[group]>7||((group&1)==0?choices[group]>3:choices[group]<4)))return false;
         for(unsigned group=0;group<4;++group){auto& s=channels_[group];
-            s.due=choices[group];s.dueReady=s.applied!=choices[group];s.blocked=false;
+            restored_[group]=-1;s.due=choices[group];s.dueReady=s.applied!=choices[group];s.blocked=false;
             if(++s.generation==0)++s.generation;
         }
         return true; // live pending gestures are preserved, never loaded from an image
@@ -110,7 +116,7 @@ public:
            expected.api!=packet.api||expected.value!=packet.value)return false;
         if(!callbackSucceeded){s.blocked=true;return true;}
         if(packet.value==0){s.applied=-1;if(s.due<0)s.dueReady=false;return true;} // OFF ACK before ON
-        s.applied=s.due;s.due=-1;s.dueReady=false;s.blocked=false;return true;
+        restored_[packet.group]=-1;s.applied=s.due;s.due=-1;s.dueReady=false;s.blocked=false;return true;
     }
     void cancelUnstarted(unsigned group) noexcept {if(group<4)channels_[group].pending=-1;}
     void cancelPending(unsigned group) noexcept {
@@ -138,6 +144,7 @@ public:
         return n;
     }
 private:
+    std::array<int,4> restored_{{-1,-1,-1,-1}};
     std::array<Channel,4> channels_{};
 };
 } // namespace xone::host
