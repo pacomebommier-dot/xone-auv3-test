@@ -66,6 +66,8 @@ int main(){
   assert(cue.ledImage()[static_cast<unsigned>(control-4)].color==MuteLedColor::Yellow&&cue.ledImage()[static_cast<unsigned>(control-4)].blinking);
   cue.onMusicalGrid(bar);auto packet=cue.nextCueLoadPacket();assert(packet.valid);cue.ackCueLoadPacket(packet,false,3);assert(cue.ledImage()[static_cast<unsigned>(control-4)].blinking);
   cue.beginCueLoadRetryPass();packet=cue.nextCueLoadPacket();cue.ackCueLoadPacket(packet,true,4);assert(cue.ledImage()[static_cast<unsigned>(control-4)].color==MuteLedColor::Green&&!cue.ledImage()[static_cast<unsigned>(control-4)].blinking);
+  cue.endRenderBuffer();HostEngine reopened;assert(reopened.requestDocumentRestore(cue.documentForHost()));reopened.beginRenderBuffer();
+  assert(!reopened.ledImage()[static_cast<unsigned>(control-4)].known&&!reopened.nextCueLoadPacket().valid);
  }
  std::cout<<"PASS 34 LED bindings, UNKNOWN, blink/flash/retry, PRESET RED PATCH and alternative ownership\n";
 }

@@ -498,6 +498,7 @@ public:
             unsigned cueGroup=0,cueIndex=0;
             if(CueLoadBar::derive(nav,static_cast<unsigned>(physical),cueGroup,cueIndex)){
                 set(i,cueLoad_.sentSelection(cueGroup)==static_cast<int>(cueIndex)?MuteLedColor::Green:MuteLedColor::Off);
+                if(cueLoad_.desiredSelections()[cueGroup]==static_cast<int>(cueIndex)&&cueLoad_.sentSelection(cueGroup)<0&&cueLoad_.pendingSelection(cueGroup)<0&&cueLoad_.dueSelection(cueGroup)<0)image[i]={};
                 if(cueLoad_.pendingSelection(cueGroup)==static_cast<int>(cueIndex)||cueLoad_.dueSelection(cueGroup)==static_cast<int>(cueIndex))set(i,MuteLedColor::Yellow,true);
             }
             if(kind==11&&slot<3){
