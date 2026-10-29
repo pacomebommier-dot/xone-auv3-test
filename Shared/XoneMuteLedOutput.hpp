@@ -14,7 +14,9 @@ public:
  void flash(unsigned position,MuteLedColor color,std::int64_t now) noexcept {
   const auto c=static_cast<unsigned>(color);
   if(position>=32||c<1||c>3||now<0||now>INT64_MAX-100)return;
-  flash_[position]=static_cast<std::uint8_t>(1u<<(c-1));until_[position]=now+100;
+  const auto bit=static_cast<std::uint8_t>(1u<<(c-1));
+  flash_[position]=(known_[position]==7&&sent_[position]==bit)?0:bit;
+  until_[position]=now+100;
  }
  void observeFull(const Image& context,std::int64_t ms) noexcept {
   owned_=true;count_=34;bool changed=false;

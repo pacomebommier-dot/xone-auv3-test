@@ -18,6 +18,9 @@ int main(){
  out.flash(16,MuteLedColor::Green,320);out.cancelFlashes();out.observeFull(image,320);assert(flush(out).empty());
  image[33].color=MuteLedColor::Green;out.observeFull(image,400);unsigned cursor=0;auto failed=out.next(cursor);assert(failed.valid&&failed.target==33);out.confirm(failed,false);assert(flush(out).empty());
  out.beginBuffer();tx=flush(out);assert(tx.size()==4&&!tx[0].on&&tx.back().on&&tx.back().bytes[1]==23);
+ // Golden pickup flash inverts a proven identical color for100ms.
+ out.flash(16,MuteLedColor::Yellow,500);out.observeFull(image,500);tx=flush(out);assert(tx.size()==1&&!tx[0].on&&tx[0].bytes[1]==84);
+ out.observeFull(image,600);tx=flush(out);assert(tx.size()==1&&tx[0].on&&tx[0].bytes[1]==84);
  HostEngine preset;assert(preset.showPresetPage());auto view=preset.ledImage();for(unsigned i=0;i<4;++i)assert(view[i].known&&view[i].color==MuteLedColor::Green);
  assert(!view[12].known&&view[32].known&&view[32].color==MuteLedColor::Off);
  assert(preset.capturePreset(0));assert(preset.ledImage()[0].color==MuteLedColor::Yellow);assert(preset.requestPresetRecall(0));assert(preset.ledImage()[0].blinking);
