@@ -3,6 +3,7 @@
 #import "../Extension/XoneMidiAudioUnit.h"
 #include "../Shared/XoneValidationFixture.hpp"
 #include "../Shared/XoneDocument.hpp"
+#include "../Shared/XoneResetDefaults.hpp"
 #include "../Shared/XoneCueLoadBar.hpp"
 #include "../Core/NativeSlices.hpp"
 #include <cassert>
@@ -437,6 +438,47 @@ int main() {
     assert(ledSent>=beforeAutomationRefresh+100&&sent==beforePreset+3);
     [presetUnit deallocateRenderResources];
 
+    // Fresh AU, no fixture/instrument: defaults are explicit host metadata, not a reset on load.
+    {
+        xone::host::ResetDefaults defaults;defaults.config=1;assert(defaults.set(708,63));
+        xone::host::ResetDefaultsBytes wire{};assert(xone::host::encodeResetDefaults(defaults,wire));
+        NSData *metadata=[NSData dataWithBytes:wire.data() length:wire.size()];
+        XoneMidiAudioUnit *resetUnit=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
+        assert(resetUnit&&!error);
+        resetUnit.fullStateForDocument=@{@"XONE_RESET_DEFAULTS_V1":metadata};
+        assert([resetUnit.fullStateForDocument[@"XONE_RESET_DEFAULTS_V1"] isEqualToData:metadata]);
+        assert([resetUnit.inputBusses[0] setFormat:format error:&error]);
+        assert([resetUnit.outputBusses[0] setFormat:format error:&error]);
+        __block unsigned resetMusic=0;__block bool failReset=false;
+        resetUnit.MIDIOutputEventBlock=^OSStatus(AUEventSampleTime time,uint8_t cable,NSInteger length,const uint8_t *data){
+            (void)time;assert(cable==0&&length==3);
+            if((data[0]&15)==14)return noErr;
+            assert(data[0]==0xBB&&data[1]==68&&data[2]==63);++resetMusic;
+            if(failReset){failReset=false;return static_cast<OSStatus>(-1);}return noErr;
+        };
+        auto resetRender=resetUnit.internalRenderBlock;
+        assert([resetUnit allocateRenderResourcesAndReturnError:&error]&&!error);
+        AVAudioPCMBuffer *resetAudio=[[AVAudioPCMBuffer alloc] initWithPCMFormat:format frameCapacity:128];
+        AUEventSampleTime resetCursor=0;
+        const auto resetPump=[&](int status=-1){
+            AudioTimeStamp timestamp{};timestamp.mFlags=kAudioTimeStampSampleTimeValid;timestamp.mSampleTime=static_cast<Float64>(resetCursor);
+            AURenderEvent event{};event.MIDI.eventType=AURenderEventMIDI;event.MIDI.eventSampleTime=resetCursor+20;
+            event.MIDI.cable=0;event.MIDI.length=3;event.MIDI.data[0]=static_cast<uint8_t>(status);event.MIDI.data[1]=55;event.MIDI.data[2]=status==0x9E?127:0;
+            AudioUnitRenderActionFlags flags=0;resetAudio.frameLength=128;
+            assert(resetRender(&flags,&timestamp,128,0,resetAudio.mutableAudioBufferList,status<0?nullptr:&event,nil)==noErr);
+            resetCursor+=128;
+        };
+        resetPump();assert(resetMusic==0);
+        resetPump(0x9E);resetPump(0x8E);assert(resetMusic==1);
+        failReset=true;resetPump(0x9E);resetPump(0x8E);assert(resetMusic==2);
+        resetPump();assert(resetMusic==3);
+        // Invalid metadata refuses the state before changing the accepted configuration.
+        auto invalid=wire;invalid[16]=1;
+        xone::host::sessionPut32(invalid.data()+invalid.size()-4,xone::host::sessionCrc(invalid.data(),invalid.size()-4));
+        resetUnit.fullStateForDocument=@{@"XONE_RESET_DEFAULTS_V1":[NSData dataWithBytes:invalid.data() length:invalid.size()]};
+        assert([resetUnit.fullStateForDocument[@"XONE_RESET_DEFAULTS_V1"] isEqualToData:metadata]);
+        [resetUnit deallocateRenderResources];
+    }
     std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)\n";
  }
 }
