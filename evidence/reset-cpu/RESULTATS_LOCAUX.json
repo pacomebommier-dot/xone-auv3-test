@@ -1,0 +1,18 @@
+{
+  "base": "aa6195c3b6c91021f0e5fba332a9268ccbd983bb",
+  "branch": "fix/reset-filter-cpu",
+  "headers_sha256": "58b1a2a955f51332bc6742c11b825aa9934ca97b83c5d6b4016f2b0fcb92f81c",
+  "portable_regressions_during_development": {
+    "pass": 71,
+    "fail": 0,
+    "compiler": "GCC16.2 Windows",
+    "flags": "C++17 O2 UNDEBUG Wall Wextra Wpedantic Werror pthread static, stack16MiB",
+    "note": "full run before final default/restore correlation guard; final targeted RESET passes; CI verifies complete committed SHA"
+  },
+  "historical_c_midi_cases_pass": 10,
+  "source_integrity_checks_pass": 3,
+  "cpu_scope": "native idle only, not iOS/AUM CPU",
+  "hardware": "NOT_TESTED",
+  "final_targeted_reset": "PASS O2 including held-restore and LONG",
+  "final_idle_publication": "PASS O2, no repeated document copies"
+}
