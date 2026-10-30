@@ -212,6 +212,17 @@ public:
         }
         live_=next;return true;
     }
+    // Numeric RESET changes LIVE only. A stable LONG context keeps its NAV
+    // return archive; unlike a PATCH recall, it must remain playable while held.
+    bool commitNativeReset(const std::array<int,97>& cells,
+            const std::array<int,97>& values,unsigned count,int config) noexcept {
+        if(!diagnosticLive_||count==0||count>cells.size()||config!=live_.sessionConfig()||
+           !nav_.stable()||touch_.busy()||nav_.hasStage()||touchOwner_!=-1)return false;
+        auto next=live_;
+        for(unsigned i=0;i<count;++i)
+            if(!next.commitDesired(cells[i],values[i],next.revision(),config))return false;
+        live_=next;return true;
+    }
     // Qualified local source recalls use the same S3 LIVE writer. No backend ACK.
     bool commitNativeSourceRecall(const std::array<int,97>& cells,
             const std::array<int,97>& values,unsigned count,int config) noexcept {

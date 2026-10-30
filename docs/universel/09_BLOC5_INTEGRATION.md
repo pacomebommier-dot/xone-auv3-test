@@ -11,3 +11,6 @@ L’interface AU raccorde les deux paramètres existants : Éditeur PRESET et Ra
 La recette RECETTE_AUM_V02.md est mise à jour sur le code intégré et le parcours sans fixture. Le workflow Apple existant la copie déjà avec K2_SIM et son README ; le ZIP source conserve aussi RESULTATS_AUM_V0.csv, les sources et les tests. Aucun changement de runner, signature fictive ou .aum fabriqué. L’IPA non signée et sa somme SHA256 sont celles du run PASS ; signature et campagne réelle restent nécessaires.
 
 Le Bloc5 reste NON_TESTE_AUM jusqu’aux relevés réels. Les éditeurs de profils S8 ne sont pas exposés par cette interface minimale : leurs API et leur document natif existent, les valeurs et bindings non configurés demeurent inconnus/refusés. Cela ne remet pas les opérations internes validées en attente d’un choix de synthé.
+
+
+Correction ultérieure, base aa6195c préservée : [RESET/FILTER et CPU du30/10](10_RESET_FILTER_CPU_20261030.md). Cette note distingue les raccordements ajoutés, les scopes encore ouverts et la mesure native de la recette iPad.

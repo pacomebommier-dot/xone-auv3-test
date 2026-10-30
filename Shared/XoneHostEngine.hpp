@@ -2,6 +2,7 @@
 // Native V3: K2/gestures/NAV, known-session CC/LOOP and SMART/MIX/TOUCH/FLASH; specialized S8 remains pending.
 #include "../CoreV3/CoreCoordinatorV3.hpp"
 #include "XoneContinuousInput.hpp"
+#include "XoneResetDefaults.hpp"
 #include "XoneSoftMidiBridge.hpp"
 #include "XoneTopPulseBus.hpp"
 #include "XoneS8SamplePatchBank.hpp"
@@ -82,6 +83,41 @@ public:
     bool setNavForDiagnostic(const l01::NavImage& image) noexcept {
         return !started_&&core_.stageNativeNav(image)&&core_.commitNativeNav();
     }
+    // Host-side request, serialized by the AU wrapper. Consumed at render boundary.
+    // Defaults are independently configured; no instrument or observed state is inferred.
+    bool requestResetDefaults(const ResetDefaults& values,bool followRestore=false) noexcept {
+        if(!values.valid())return false;
+        if(followRestore&&requestedToken_==0)return false;
+        resetDefaultRequests_.publish({values,followRestore?requestedToken_:0,true});return true;
+    }
+    // Render-thread command: validate the complete numeric scope before one LIVE commit.
+    bool resetContinuousTargets(const std::array<ContinuousTarget,97>& targets,unsigned count) noexcept {
+        if(count==0||count>targets.size()||alternativeFlight_.valid||
+           sourceWrite_-sourceRead_+count+alternativeFlight_.reserved>sourceMidi_.size())return false;
+        std::array<int,97> cells{},values{};std::array<bool,97> changed{};
+        const int config=core_.nativeLive().sessionConfig();
+        for(unsigned i=0;i<count;++i){
+            const auto& target=targets[i];
+            if(!target.valid()||target.cell>=1894||target.api>=931)return false;
+            int type=10;
+            if(globalApi(static_cast<unsigned>(target.cell),type)!=target.api||type!=10)return false;
+            const int source=sourceForCell(target.cell);
+            if(source>=0&&resetDefaults_.alternatives[static_cast<unsigned>(source)]!=activeAlternative(static_cast<unsigned>(source)))return false;
+            const int value=resetDefaults_.get(target.api,config);if(value<0)return false;
+            for(unsigned j=0;j<i;++j)if(targets[j].cell==target.cell)return false;
+            const auto before=core_.nativeLive().desired(target.cell);
+            changed[i]=!before.known||before.value!=value;cells[i]=target.cell;values[i]=value;
+        }
+        if(!core_.commitNativeReset(cells,values,count,config))return false;
+        for(unsigned i=0;i<count;++i){
+            const int api=targets[i].api,value=values[i];
+            if(changed[i])pickup_.rearm(api);
+            sourceMidi_[sourceWrite_++%sourceMidi_.size()]={true,++sourcePacketToken_,10,api,value,
+                {static_cast<uint8_t>(0xB6+api/128),static_cast<uint8_t>(api%128),static_cast<uint8_t>(value)}};
+        }
+        documentDirty_=true;return true;
+    }
+
     void enableNativeMutePage(bool yes) noexcept {mutePageEnabled_=yes;core_.enableNativeMuteBot2(yes);}
     bool mutePageVisible() const noexcept {return mutePageEnabled_&&muteGate_.visible();}
     bool muteGesturePending() const noexcept {return muteBridge_.state().pendingCount()!=0;}
@@ -405,11 +441,11 @@ public:
                    0,packet.bytes.data(),3,packet.api);
     }
     const GlobalMuteState& globalMute() const noexcept {return muteBridge_.state();}
-    unsigned onMusicalGrid(const GridBatch& b) noexcept { documentDirty_=true;
+    unsigned onMusicalGrid(const GridBatch& b) noexcept {
         if(b.valid&&!b.overflow&&b.count<=b.events.size())started_=true;
         unsigned committed=soft_.observe(b); // only authenticated BAR, never timer
         if(b.valid&&!b.overflow&&b.count<=b.events.size()){
-            musicalScheduler_.consume(b,[this](DueAction due) noexcept -> bool {
+            const auto applied=musicalScheduler_.consume(b,[this](DueAction due) noexcept -> bool {
                 if(due.action.command==1){if(alternativeFlight_.valid&&alternativeFlight_.global)return false;applySourceRecall(due.action.destination);}
                 else if(due.action.command==2){if(alternativeFlight_.valid&&alternativeFlight_.global)return false;applyMemoryRecall(due.action.destination);}
                 else if(due.action.command==5)return beginAlternativeChange();
@@ -428,13 +464,18 @@ public:
                 }
                 return true;
             });
-            for(unsigned i=0;i<b.count;++i)if(b.events[i].kind==GridKind::Bar)cueLoad_.onBar();
+            if(applied)documentDirty_=true;
+            for(unsigned i=0;i<b.count;++i)if(b.events[i].kind==GridKind::Bar){
+                if(cueLoad_.pendingActions())documentDirty_=true;
+                cueLoad_.onBar();
+            }
         }
         if(mutePageEnabled_){
             const unsigned muteCommitted=muteBridge_.observe(b);
             if(muteCommitted)muteMidi_.observe(muteBridge_.state());
             committed+=muteCommitted;
         }
+        if(committed)documentDirty_=true;
         return committed;
     }
     SoftMidiPacket nextSoftPacket(unsigned& cursor) const noexcept {return soft_.next(cursor);}
@@ -565,7 +606,7 @@ public:
     static constexpr uint32_t TraceCapacity=256;
     static_assert(std::atomic<uint32_t>::is_always_lock_free,"RT trace requires lock-free indices");
     // Called only by render thread. Host cable is NOT an authenticated device ID.
-    Result receive(uint8_t cable,const uint8_t* data,size_t length,int64_t sample,int64_t gestureMs=0) noexcept { documentDirty_=true;
+    Result receive(uint8_t cable,const uint8_t* data,size_t length,int64_t sample,int64_t gestureMs=0) noexcept {
         const auto before=presetSignature();const auto applied=globalApplySerial_;redDirectGesture_=false;
         auto result=receiveImpl(cable,data,length,sample,gestureMs);
         if(cable==0&&data&&length==3&&(data[0]&15)==14&&((data[0]&0xf0)==0x80||(data[0]&0xf0)==0x90)&&
@@ -630,6 +671,23 @@ private:
             const int previousNav=navMode();
             core_.retainDjLoopPage(dj2LoopObserved_!=Dj2LoopObserved::Off || dj2LoopStartRequested_);
             const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs,muteBaseOwned);
+            if(accepted)documentDirty_=true;
+            if(accepted&&baseEvent){
+                auto& reset=resetBaseHolds_[static_cast<unsigned>(physical-4)];
+                const bool down=cmd==0x90&&data[2]!=0;
+                if(down&&!wasHeld){
+                    reset={};
+                    if(!muteBaseOwned&&core_.nativeNav().stable()&&!core_.nativeNav().hasStage()&&inputRoute.address>=0&&inputRoute.address/1024==13)
+                        reset={true,inputRoute,core_.nativeNav().revision(),gestureMs};
+                }else if(!down&&wasHeld&&reset.valid){
+                    const auto held=reset;reset={};
+                    if(!muteBaseOwned&&!mutePageVisible()&&gestureMs>=held.down&&
+                       held.navRevision==core_.nativeNav().revision()&&held.route==core_.nativeNav().active().route(physical)){
+                        const bool applied=resetBaseScope(held.route,gestureMs-held.down>=200);
+                        record(seq,sample,Stage::Decision,applied?Reason::Musical:Reason::UnknownLive,0,data,3);
+                    }
+                }
+            }
             record(seq,sample,Stage::Decision,accepted?Reason::Integrated:Reason::ClockRejected,cable,data,length);
             if(accepted)resolveDjLoopNavigation(previousNav);
             if(accepted&&inputSource>=0&&newSourceCommand)lastInstrumentGroup_=inputSource;
@@ -839,11 +897,31 @@ private:
                         if(patch && captured.context==3)armSamplePatch(index);
                         else if(patch && captured.context==7)armMachinePatch(index);
                         if(patch)++topPatchRecallsDeferred_;
-                        else ++topResetsDeferred_;
-                        record(seq,sample,Stage::Decision,Reason::TopResetDeferred,0,data,3,captured.route.address);
+                        bool reset=false;
+                        if(!patch){
+                            std::array<ContinuousTarget,97> scope{};
+                            const auto route=captured.route;
+                            if(route.address/1024==1){
+                                scope[0]=continuousTarget({route.address-1024,route.position});
+                                reset=resetContinuousTargets(scope,1);
+                            }
+                            if(reset)topIntentValid_[index]=false;else ++topResetsDeferred_;
+                        }
+                        record(seq,sample,Stage::Decision,reset?Reason::Musical:Reason::TopResetDeferred,0,data,3,captured.route.address);
                         }
                     }
                 }
+            }
+            // A RESET SPOT owns a continuous parameter, never the effect's ON/OFF.
+            // In MUTE the same knob underneath is reset; BASE remain MUTE/SOLO.
+            if(accepted&&cmd==0x90&&data[2]!=0&&!wasHeld&&physical>=20&&physical<32&&
+               (inputRoute.address/1024==1||mutePageVisible())){
+                std::array<ContinuousTarget,97> scope{};
+                scope[0]=mutePageVisible()?continuousTarget(core_.nativeNav().active().route(physical+20)):
+                    continuousTarget({inputRoute.address-1024,inputRoute.position});
+                const bool reset=resetContinuousTargets(scope,1);
+                record(seq,sample,Stage::Decision,reset?Reason::Musical:Reason::UnknownLive,0,data,3);
+                return {};
             }
             if(accepted&&(cmd==0x90||cmd==0x80)&&physical>=20&&physical<32){
                 const bool down=cmd==0x90&&data[2]!=0;
@@ -1013,6 +1091,8 @@ public:
     // Render boundaries are the sole application/publication points.
     void beginRenderBuffer() noexcept {
         muteLeds_.beginBuffer();
+        resetDefaultRequests_.take(pendingResetDefaults_);
+        applyPendingResetDefaults();
         if(ledRefreshRequest_.exchange(false,std::memory_order_acq_rel))muteLeds_.invalidate();
         started_=true;
         const int faceRequest=presetFaceRequest_.exchange(-1,std::memory_order_acq_rel);
@@ -1042,17 +1122,19 @@ public:
             pendingPresetSlot_=-1;initPending_=false;redActive_=false;redImage_.valid=false;redHeld_=false;
             sourceRead_=sourceWrite_;sourceBlocked_=false;cueLoad_.stop();
         }
+        applyPendingResetDefaults();
     }
     void endRenderBuffer() noexcept {
         publishedPresetFace_.store(core_.nativeNav().active().at(292)==1&&core_.nativeNav().active().presetFlag==1&&!mutePageVisible(),std::memory_order_release);
         const auto revision=core_.nativeLive().revision();
         if(documentDirty_||revision!=publishedRevision_||appliedToken_!=publishedToken_){
-            documents_->snapshots.publish({captureDocument(),appliedToken_});documentDirty_=false;
+            documents_->snapshots.publish({captureDocument(),appliedToken_});documentDirty_=false;++documentPublications_;
         }
         if(revision==publishedRevision_&&appliedToken_==publishedToken_)return;
         snapshots_.publish({core_.nativeLive().snapshot(),appliedToken_});
         publishedRevision_=revision;publishedToken_=appliedToken_;
     }
+    uint64_t documentPublicationsForDiagnostic() const noexcept {return documentPublications_;}
     l01::LiveRead desiredLive(int cell) const noexcept {return core_.nativeLive().desired(cell);}
     // Called immediately before each callback; dependent FLASH ON is suppressed
     // unless its nominal OFF succeeded. Its own OFF still follows a failed ON.
@@ -1130,6 +1212,7 @@ public:
     void beginStopRetryPass(int64_t sample) noexcept {stopRead_=0;stopSample_=sample;}
     unsigned pendingStopOffs() const noexcept {return stopPendingCount_;}
     void stop(int64_t sample) noexcept { muteLeds_.cancelFlashes(); documentDirty_=true;
+        resetBaseHolds_.fill(ResetBaseHold{});
         started_=true;transportStopped_=true;presetFaceRequest_.store(-1,std::memory_order_release);
         alternativeFlight_={};alternatives_.stop();alternativeBaseValid_.fill(false);
         for(auto& selector:alternativeSelectors_)selector={};
@@ -1191,11 +1274,12 @@ public:
     // Render-thread-only inspection; UI reads the SPSC trace, never core state.
     int navMode() const noexcept {return core_.nativeNav().active().at(292);}
     bool longNavPending() const noexcept {return core_.longNavPending();}
-    void advance(int64_t ms,int64_t sample) noexcept { documentDirty_=true;
+    void advance(int64_t ms,int64_t sample) noexcept {
         const auto signatureBeforeTimer=presetSignature();
         started_=true;
         const bool wasMuteVisible=mutePageVisible();
         muteGate_.advance(ms);
+        if(wasMuteVisible!=mutePageVisible())documentDirty_=true;
         if(!wasMuteVisible && mutePageVisible() && (navMode()==2 || navMode()==4))requestDjLoopStop(true);
         // Source GOLDEN long SPOT threshold: 120ms. The host owns this
         // qualification, not a second BAR/BEAT scheduler. First valid
@@ -1203,11 +1287,13 @@ public:
         // uses the exact same source proof.
         for(auto& hold:groupHolds_)fireGroupLong(hold,ms);
         if(!core_.gesture().timerNeeded())return;
+        const auto navBeforeTimer=core_.nativeNav().revision();
         const auto seq=++sequence_;
         const int previousNav=navMode();
         core_.retainDjLoopPage(dj2LoopObserved_!=Dj2LoopObserved::Off || dj2LoopStartRequested_);
         if(!core_.onTimer(ms))record(seq,sample,Stage::Decision,Reason::ClockRejected,0,nullptr,0);
         else resolveDjLoopNavigation(previousNav);
+        if(navBeforeTimer!=core_.nativeNav().revision())documentDirty_=true;
         invalidatePresetsIfChanged(signatureBeforeTimer);
         drainCore(seq,sample);
     }
@@ -1356,6 +1442,27 @@ private:
            !patch.valid||patch.config!=core_.nativeLive().sessionConfig())return;
         samplePatch_={selected-1,slot,patch.revision,true,true};
         topIntentValid_[index]=false;
+    }
+    bool resetBaseScope(l01::NavRoute route,bool longPress) noexcept {
+        if(route.address<0||route.address/1024!=13)return false;
+        const int family=(route.address%1024)/32,page=route.address%32;
+        int first=page,pages=1,width=0;
+        if(family==1&&page>=1&&page<=8){
+            width=12;
+            if(longPress){first=1+4*((page-1)/4);pages=4;}
+        }else{
+            // No uncontracted long group is inferred for other families.
+            if(longPress)return false;
+            if(family==2&&page>=1&&page<=24)width=12;
+            else if(family>=3&&family<=6&&page>=1&&page<=8&&
+                    !((family==3||family==4)&&(page==4||page==8)))width=6;
+            else if(family>=9&&family<=12&&page>=1&&page<=3)width=family==12?12:6;
+        }
+        if(width==0)return false;
+        std::array<ContinuousTarget,97> scope{};unsigned count=0;
+        for(int owner=first;owner<first+pages;++owner)
+            for(int q=0;q<width;++q)scope[count++]=continuousTarget({32*family+owner,q});
+        return resetContinuousTargets(scope,count);
     }
     void requestDjLoopStop(bool reset,bool invalidate=false) noexcept {
         if(dj2LoopStartRequested_ || dj2LoopObserved_==Dj2LoopObserved::On){
@@ -1521,6 +1628,16 @@ private:
     }
     l01::CoreCoordinatorV3 core_{};
     ContinuousPickup pickup_{};
+    struct ResetDefaultsRequest {ResetDefaults values{};uint32_t token{};bool valid{};};
+    ResetDefaults resetDefaults_{};StateMailbox<ResetDefaultsRequest> resetDefaultRequests_{};
+    ResetDefaultsRequest pendingResetDefaults_{};
+    void applyPendingResetDefaults() noexcept {
+        if(!pendingResetDefaults_.valid)return;
+        const auto token=pendingResetDefaults_.token;
+        if(token==0||token==appliedToken_){resetDefaults_=pendingResetDefaults_.values;pendingResetDefaults_.valid=false;}
+        else if(token<appliedToken_)pendingResetDefaults_.valid=false;
+    }
+    uint64_t documentPublications_{};
     SoftMidiBridge soft_{};
     TopPulseBus topPulse_{};
     S8SamplePatchBank s8Sample_{};
@@ -1707,8 +1824,11 @@ private:
         l01::BankS6 bank{};bank.initializeEmpty();
         std::array<std::uint32_t,96> memoryBases{};std::array<std::uint32_t,84> patchBases{};
         for(int owner=0;owner<28;++owner){
-            for(int slot=0;slot<(owner<12?4:3);++slot){const auto& m=d.memories[static_cast<unsigned>(l01::BankS6::memoryIndex(owner,slot))];
-                if(m.valid){if(!bank.saveMemory(owner,slot,m.config,m.values,0))return false;memoryBases[static_cast<unsigned>(l01::BankS6::memoryIndex(owner,slot))]=m.revision-1;}}
+            for(int slot=0;slot<(owner<12?4:3);++slot){
+                const int index=l01::BankS6::memoryIndex(owner,slot);
+                if(index<0||index>=96)return false;
+                const auto& m=d.memories[static_cast<unsigned>(index)];
+                if(m.valid){if(!bank.saveMemory(owner,slot,m.config,m.values,0))return false;memoryBases[static_cast<unsigned>(index)]=m.revision-1;}}
             for(int slot=0;slot<3;++slot){const auto& p=d.legacyPatches[static_cast<unsigned>(3*owner+slot)];
                 if(p.valid){if(!bank.savePatch(owner,slot,p.config,p.values,0))return false;patchBases[static_cast<unsigned>(3*owner+slot)]=p.revision-1;}}
         }
@@ -1944,6 +2064,8 @@ private:
     std::array<std::uint32_t,36> groupDownEpoch_{};
     std::uint32_t groupEpochCounter_{1};
     DjBrowserWindow browser_{};
+    struct ResetBaseHold {bool valid{};l01::NavRoute route{};uint64_t navRevision{};int64_t down{};};
+    std::array<ResetBaseHold,16> resetBaseHolds_{};
     std::array<TopCapture,4> topHold_{};
     std::array<TopIntent,4> topIntents_{};
     std::array<bool,4> topIntentValid_{};

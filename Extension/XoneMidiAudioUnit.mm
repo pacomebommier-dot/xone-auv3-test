@@ -17,6 +17,7 @@
     AUHostMusicalContextBlock _cachedMusicalContext;
     xone::host::HostGrid _musicalGrid;
     xone::host::HostEngine _engine;
+    xone::host::ResetDefaults _resetDefaultsForHost; // host thread, protected by @synchronized
     bool _transportKnown, _moving;
     double _gestureElapsedMs, _gestureSampleRate;
 }
@@ -98,6 +99,10 @@
         if (!state) state = [NSMutableDictionary dictionary];
         [state removeObjectForKey:@"XONE_LAST_LIVE_V1"];
         [state removeObjectForKey:@"XONE_DOCUMENT_V2"];
+        [state removeObjectForKey:@"XONE_RESET_DEFAULTS_V1"];
+        xone::host::ResetDefaultsBytes defaults{};
+        if(xone::host::encodeResetDefaults(_resetDefaultsForHost,defaults))
+            state[@"XONE_RESET_DEFAULTS_V1"]=[NSData dataWithBytes:defaults.data() length:defaults.size()];
         xone::host::SessionBytes bytes{};
         const auto image = _engine.sessionForHost();
         if (xone::host::encodeSession(image, bytes))
@@ -110,13 +115,26 @@
 }
 - (void)setFullState:(NSDictionary<NSString *,id> *)state {
     @synchronized (self) {
+        // Optional independent configuration; absent in old documents = UNKNOWN defaults.
+        // Decode it before admitting any musical restore. No defaults are applied here.
+        xone::host::ResetDefaults defaults;
+        id defaultsObject=state[@"XONE_RESET_DEFAULTS_V1"];
+        if(defaultsObject){
+            if(![defaultsObject isKindOfClass:[NSData class]])return;
+            NSData *data=(NSData *)defaultsObject;
+            if(!xone::host::decodeResetDefaults((const uint8_t *)data.bytes,data.length,defaults))return;
+        }
+        const auto configureDefaults=[&](bool followRestore){
+            _engine.requestResetDefaults(defaults,followRestore);_resetDefaultsForHost=defaults;
+        };
         id document=state[@"XONE_DOCUMENT_V2"];
         if(document){
             if(![document isKindOfClass:[NSData class]])return;
             NSData *data=(NSData *)document;xone::host::DocumentImage image{};
             if(!xone::host::decodeDocument((const uint8_t *)data.bytes,data.length,image)||!_engine.requestDocumentRestore(image))return;
-            [super setFullState:state];return;
+            configureDefaults(true);[super setFullState:state];return;
         }
+        bool restored=false;
         id payload = state[@"XONE_LAST_LIVE_V1"];
         if (payload) {
             if (![payload isKindOfClass:[NSData class]]) return;
@@ -124,8 +142,9 @@
             xone::host::SessionImage image{};
             if (!xone::host::decodeSession((const uint8_t *)data.bytes, data.length, image)) return;
             if (!_engine.requestSessionRestore(image)) return;
+            restored=true;
         }
-        [super setFullState:state];
+        configureDefaults(restored);[super setFullState:state];
     }
 }
 
