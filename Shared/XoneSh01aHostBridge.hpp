@@ -10,6 +10,9 @@ struct Sh01aAttachment {
  Sh01aAttachment()noexcept{fields.fill(-1);}
  bool valid()const noexcept {
   if(!enabled)return true;
+  // Current AU output cable0 also carries universal S7 (channels7..14)
+  // and K2 LED15. A shared channel cannot identify the SH destination.
+  if(image.profile.channel>=6&&image.profile.channel<=14)return false;
   if(source>=4||config<1||config>127||alternative < -1||alternative>3||!image.valid())return false;
   std::array<bool,60> used{};
   for(auto f:fields){if(f==-1)continue;

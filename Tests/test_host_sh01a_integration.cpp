@@ -8,6 +8,13 @@ static void bar(HostEngine& h){GridBatch b{};b.valid=true;b.count=1;b.events[0]=
 static void rx(HostEngine& h,int pc,int64_t t){const uint8_t b[]{0xC0,uint8_t(pc)};assert(!h.receive(0,b,2,t,t).emit);}
 static void full(HostEngine& h,const Sh01aProfile& p,int value,int64_t t){for(auto cc:p.cc){const uint8_t b[]{0xB0,cc,uint8_t(value)};assert(!h.receive(0,b,3,t,t).emit);}}
 int main(){
+ // The AU exposes one output on cable0: S7 channels7..14 and K2 LED15
+ // cannot also identify an independent SH destination by a channel filter.
+ {HostEngine route;for(unsigned ch=0;ch<16;++ch){auto a=provisionalSh01aAttachment(0,1,-1,17,static_cast<uint8_t>(ch),0,1000);
+  const bool dedicated=ch<6||ch==15;assert(a.valid()==dedicated);assert(route.requestSh01aAttachment(a)==dedicated);
+  Sh01aAttachmentBytes wire{};assert(encodeSh01aAttachment(a,wire)==dedicated);
+ }}
+
  for(unsigned source=0;source<4;++source){
  const unsigned otherSource=(source+1)%4;
  auto receipt=provisionalSh01aAttachment(0,1,-1,17,0,0,1000);

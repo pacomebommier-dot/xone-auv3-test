@@ -4,7 +4,7 @@ Statut : protocole préparé, **aucun essai physique exécuté par cette reprise
 
 ## Préparation
 
-Conserver une copie de la sessionAUM. Installer le build iOS du SHA après CI Apple, signature par le propriétaire de l'appareil. K2 physique OU K2_SIM, source exclusive, canal15. Dans XONE choisir «Configurer SH-01A · essais», source1(INST1) à4(YELLOW2) et canal du Roland (1 par exemple, jamais15).
+Conserver une copie de la sessionAUM. Installer le build iOS du SHA après CI Apple, signature par le propriétaire de l'appareil. K2 physique OU K2_SIM, source exclusive, canal15. Dans XONE choisir «Configurer SH-01A · essais», source1(INST1) à4(YELLOW2) et canal dédié du Roland (1–6 ou16, 1 par exemple ; 7–14 réservés S7 et15 K2).
 
 Activer CCOUTPUT sur le SH selon son manuel. Route SH OUT→XONE IN et route XONE OUT→SH IN, filtre sur le canalSH. Ne pas faire revenir automatiquement XONE OUT vers son entrée ; pas de MIDI Thru générique. Conserver les canauxS7 7..14 vers moniteur/destinationsAUM et LED15 vers K2. Le câbleAU0 est une frontière configurée, pas une authentification de l'appareil.
 

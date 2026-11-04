@@ -168,7 +168,7 @@
 
 - (BOOL)configureSh01aSource:(NSInteger)source channel:(NSInteger)channel {
     @synchronized (self) {
-        if(source<0||source>3||channel<1||channel>16||channel==15)return NO;
+        if(source<0||source>3||channel<1||channel>16||(channel>=7&&channel<=15))return NO;
         const auto old=_engine.sh01aForHost();const auto document=_engine.documentForHost();
         // Reconfiguration must never silently assign another route to existing mirrors.
         if(old.enabled)return old.source==source&&old.image.profile.channel==channel-1&&

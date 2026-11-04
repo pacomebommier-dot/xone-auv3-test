@@ -92,10 +92,10 @@
 }
 - (void)configureSh01a {
     UIAlertController *dialog=[UIAlertController alertControllerWithTitle:@"SH-01A · profil provisoire"
-        message:@"Source : 1 INST1, 2 INST2, 3 YELLOW1, 4 YELLOW2. Canal du Roland : 1–16, sauf 15 réservé au K2. 36 CC à vérifier dans AUM ; FILTER1/2/3 pilotent VCF FREQ/RES/MOD. Sauvegarde sur le Roland uniquement."
+        message:@"Source : 1 INST1, 2 INST2, 3 YELLOW1, 4 YELLOW2. Canal du Roland : 1–6 ou 16 ; 7–14 réservés à S7, 15 au K2. 36 CC à vérifier dans AUM ; FILTER1/2/3 pilotent VCF FREQ/RES/MOD. Sauvegarde sur le Roland uniquement."
         preferredStyle:UIAlertControllerStyleAlert];
     [dialog addTextFieldWithConfigurationHandler:^(UITextField *field){field.placeholder=@"Source 1–4";field.text=@"1";field.keyboardType=UIKeyboardTypeNumberPad;}];
-    [dialog addTextFieldWithConfigurationHandler:^(UITextField *field){field.placeholder=@"Canal MIDI 1–16";field.text=@"1";field.keyboardType=UIKeyboardTypeNumberPad;}];
+    [dialog addTextFieldWithConfigurationHandler:^(UITextField *field){field.placeholder=@"Canal MIDI 1–6 ou 16";field.text=@"1";field.keyboardType=UIKeyboardTypeNumberPad;}];
     [dialog addAction:[UIAlertAction actionWithTitle:@"Annuler" style:UIAlertActionStyleCancel handler:nil]];
     __weak XoneAUViewController *weakSelf=self;
     __weak UIAlertController *weakDialog=dialog;

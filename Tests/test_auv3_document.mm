@@ -519,7 +519,7 @@ int main() {
     XoneMidiAudioUnit *shUnit=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
     assert(shUnit&&!error);assert([shUnit.inputBusses[0] setFormat:format error:&error]);
     assert([shUnit.outputBusses[0] setFormat:format error:&error]);
-    assert(![shUnit configureSh01aSource:0 channel:15]);
+    for(NSInteger channel=7;channel<=15;++channel)assert(![shUnit configureSh01aSource:0 channel:channel]);
     assert([shUnit configureSh01aSource:0 channel:1]);
     assert(![shUnit configureSh01aSource:1 channel:1]); // existing route/mirrors protected
     __block unsigned shPrograms=0,shControls=0;__block bool failShPc=false;
