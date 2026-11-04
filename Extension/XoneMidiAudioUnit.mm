@@ -330,10 +330,12 @@
             }
         };
         AUEventSampleTime lastEventSample=bufferStart;
-        unsigned processed = 0;
-        const AURenderEvent *event = realtimeEventListHead;
-        for (;
-             event != nullptr && processed < 256; event = event->head.next, ++processed) {
+        // The host owns a finite, time-ordered list for this render cycle.
+        // A fixed count cutoff loses true UP/STOP and cannot be repaired by
+        // retaining a host pointer beyond this call. Visit each event once,
+        // with no allocation or deferred replay; the trace ring stays bounded.
+        for (const AURenderEvent *event = realtimeEventListHead;
+             event != nullptr; event = event->head.next) {
             if(event->head.eventType==AURenderEventParameter){
                 const auto& parameter=event->parameter;
                 const AUEventSampleTime sample=parameter.eventSampleTime==AUEventSampleTimeImmediate?bufferStart:parameter.eventSampleTime;
@@ -370,8 +372,7 @@
             flushTop(sample); // TOP UP produces pulse at true MIDI offset
             flushMuteLeds(sample,ms);
         }
-        if (event != nullptr) engine->renderOverflow(bufferStart);
-        else if(frameCount)deliverGridThrough(bufferStart+frameCount-1);
+        if(frameCount)deliverGridThrough(bufferStart+frameCount-1);
         // Rendering progresses while transport is stopped; seeking cannot rewind gestures.
         *elapsedMs += 1000.0 * frameCount / rate;
         engine->advance(static_cast<int64_t>(*elapsedMs), bufferStart+frameCount);
