@@ -42,7 +42,7 @@ jobs:
   auv3-harness:
     # Independent Apple host: do not wait for the Intel build queue to prove
     # callback/lifecycle regressions. The full iOS/sanitizer job remains below.
-    runs-on: macos-15
+    runs-on: macos-26-intel
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
