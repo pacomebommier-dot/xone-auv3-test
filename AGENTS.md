@@ -13,6 +13,9 @@ Puis, **seulement pour leurs gardes techniques et leurs précisions compatibles*
 - docs/reprise/SUIVI_REGROUPE_AVANT_L15.md (traçabilité historique des 6 tâches, pas le nouveau compteur).
 Les contrats musicaux GOLDEN, NEW, S7, S8 décident toujours du comportement sur leur périmètre. Lire uniquement ceux utiles au bloc courant, pas de revue intégrale à chaque reprise.
 
+## Décisions nouvelles du 04/11/2026
+Lire également `docs/universel/04_ADDENDUM_SH01A_MACHINES_PAIRES_2026-11-04.md` avant tout travail sur l'adaptateur SH-01A ou les pages MACHINE paires. Deux chantiers OUVERTS : raccordement matériel SH (sans changer l'API S7), et 12 CC + 12 SPOT centraux de MACHINE2/4/6/8 comme alias des 4 sous-pages FX INST, avec bascule native/empruntée. Les POTs/FADERs restent MACHINE. Aucun PATCH MACHINE, mémoire ou pickup supplémentaire pour les alias FX. Ne pas conclure que ces fonctions sont déjà implémentées.
+
 ## Règle fondamentale
 **XONE commande, mémorise, restitue et émet. AUM distribue. Les instruments interprètent.**
 Toutes les pages, slots, banques, gestuelles, CC/Notes, PATCH, MEMORY, CUE/LOAD, BASE, PRESET, RED, LED, PICKUP et persistance doivent fonctionner et être testables en MIDI virtuel sans instruments/plugins/presets choisis.
