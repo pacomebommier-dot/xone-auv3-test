@@ -596,7 +596,8 @@ int main() {
     };
     mpPump(48,0x9E,13,127);mpPump(48,0x9E,15,127);mpPump(48,0x8E,15,0);mpPump(48,0x8E,13,0);
     mpPump(48,0xBE,4,64);assert(mpCount==1&&mpLog[0][0]==0xBB&&mpLog[0][1]==75);
-    const auto mpLong=[&](){mpPump(48,0x9E,37,127);mpPump(8192);mpPump(1440);mpPump(48,0x8E,37,0);};
+    // Golden matrix: note32 selects MACHINE2; note37 selects MACHINE5.
+    const auto mpLong=[&](){mpPump(48,0x9E,32,127);mpPump(8192);mpPump(1440);mpPump(48,0x8E,32,0);};
     mpLong();assert(mpCount==1);mpPump(48,0xBE,4,64);assert(mpCount==2&&mpLog[1][1]==78);
     mpPump(48,0x9E,48,127);mpPump(48,0x8E,48,0);assert(mpCount==3&&mpLog[2][1]==78&&mpLog[2][2]==22);
     NSData *mpState=mpUnit.fullState[@"XONE_LAST_LIVE_V1"];
