@@ -25,6 +25,9 @@ PRESET global / RED temporaire, ownership/alternatives S8, FX, FADER, FILTER, MU
 PATCH/PRESET/RED n'émettent pas de « commande magique » : ils restituent les CC/notes ordinaires de leurs résultats.
 Respecter les exclusions S8 de modes SPOT MACHINE dans les snapshots, sans les généraliser à SAMPLE. Les modes SPOT MACHINE sont attachés au profil S8. Ne pas importer de données historiques ou fixture automatiquement dans une banque neuve.
 
+## Exception spécialisée SH-01A — décision du 04/11/2026
+Le contrat [05_CONTRAT_SH01A_MIROIR_PATCH36_V1_20261104.md](05_CONTRAT_SH01A_MIROIR_PATCH36_V1_20261104.md) **prévaut pour le SH-01A uniquement**, sur les règles génériques de SAVE/RECALL PATCH : SH maître, trois programmes PC0..2, trois miroirs automatiques XONE de 36 CC, aucun SAVE/validation XONE, rappel XONE par PC seul, capture complète 36/36 nécessaire avant remplacement du miroir. Ne jamais réémettre ces 36 CC lors du LOAD du SH ni y mêler les FX INST. Les autres profils, les sorties virtuelles S7, le moteur LIVE/pickup et les contrats génériques non contredits demeurent inchangés. Ne pas interpréter les anciens payloads MACHINE42/84 comme PATCH SH36 sans schéma/version et migration explicites.
+
 ## Hiérarchie et garde-fous
 GOLDEN et tableurs CCOUT/BINS constituent la provenance. Ne pas reprendre leurs indices supplantés : la spécification API S7 V1.2 et les arbitrages S8 spécialisés définissent les sorties actuelles. Les contrats musicaux existants font autorité sur leur périmètre ; ne pas les réécrire.
 Le précédent 00_CONTRAT_PILOTAGE_V0 reste applicable pour intégrité, non-régression, STOP et refus, MAIS sa classification « absence de binding = fonction interne différée » est remplacée par ce document.
