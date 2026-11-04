@@ -2,30 +2,20 @@
 Décision utilisateur du 4 novembre 2026. Statut : CONTRAT FONCTIONNEL À IMPLÉMENTER / TESTS NON EXÉCUTÉS.
 Portée : complément de `00_CONTRAT_MAITRE_UNIVERSEL_V1.md` et `01_CONTRAT_API_ET_ADAPTATEURS_V1.md`, sans modification des archives GOLDEN ni des identités S7. Ces deux demandes ne prouvent aucune fonctionnalité nouvelle déjà présente dans l'AUv3.
 
-## D1 — Intégrer le Roland SH-01A réel à XONE (adaptateur de destination)
+## D1 — Intégration SH-01A : contrat spécialisé SH-maître / XONE-miroir
 
-**But :** rendre le moteur universel XONE capable de commander et d'observer un SH-01A physique dans AUM, sans remplacer l'API MIDI virtuelle ni hardcoder le Roland dans le moteur.
+**Mise à jour normative du 04/11/2026 :** les décisions de synchronisation prises après la première rédaction de D1 sont **entièrement consolidées** dans [05_CONTRAT_SH01A_MIROIR_PATCH36_V1_20261104.md](05_CONTRAT_SH01A_MIROIR_PATCH36_V1_20261104.md). **Lire ce contrat avant toute implémentation ou test SH ; il prévaut sur la version initiale de D1 et sur les rapports antérieurs du 01/11.**
 
-1. Conserver les ID/CCOUT virtuels XONE (S7 V1.2 MIDI7..14, LED MIDI15). Un adaptateur SH-01A versionné traduit les commandes autorisées vers le port/canal et les CC/PC documentés et vérifiés. Ne jamais copier le remapping de test CH1 dans la production.
-2. Raccorder au host AUv3 la vraie entrée MIDI SH -> XONE et la sortie XONE -> SH, avec ports/routes explicites, sans boucle d'écho. La communication vérifiée via sonde Mozaic/AUM ne prouve pas ce raccordement dans l'app.
-3. Identifier chaque observation par destination, canal, numéro CC, programme/epoch, valeur, validité et provenance ; mettre à jour LIVE et la référence du pickup. Un changement de programme ouvre une nouvelle epoch et empêche les anciennes valeurs d'être présentées comme les valeurs du programme nouveau. Aucune valeur manquante n'est inventée : UNKNOWN reste UNKNOWN.
-4. Distinguer commande envoyée, événement observé et succès musical réel ; ne pas prendre un callback MIDI réussi pour un ACK SH.
-5. PATCH/SAVE/LOAD XONE : enregistrer numéro de programme quand connu, valeurs CC connues et masque de validité, selon les propriétaires existants. LOAD = PC ciblé, collecte non bloquante de retours SH, puis application contrôlée des seuls réglages XONE sauvegardés/autorisés. Ne pas exiger exactement 36 CC ni déclarer la mémoire matérielle écrite ; WRITE Roland physique ≠ SAVE XONE.
-6. Respecter les valeurs discrètes, les defaults vérifiés, le refus ciblé UNKNOWN, les transitions STOP/NoteOff, MEMORY/PRESET/RED et les exclusions de profils S8. Réutiliser les moteurs existants.
-7. Utiliser comme documents de référence : rapport de sonde et contrat du 01/11, handoff Codex V2 ; mapping interactif SH V27 du 04/11 comme **proposition d'interface à consolider**, non comme preuve de binding MIDI ni comme autorisation de toutes ses macros. Les anciens placements de commandes centrales sur MACHINE 2 deviennent caducs selon D2. Ne pas réintroduire automatiquement ces affectations.
+**Résumé fermé, valable seulement pour le profil Roland SH-01A :**
+- SH-01A = maître permanent du programme ; XONE = trois PATCH miroirs automatiques (programme façade 1/2/3 = PC0/1/2 = PATCH1/2/3), **36 CC distincts par miroir**. Les autres programmes SH peuvent actualiser LIVE, jamais les trois miroirs.
+- Sauvegarde définitive **uniquement par WRITE physique du SH**. **Aucun SAVE ou bouton de validation XONE** : ni écriture MIDI Roland supposée ni confirmation de sauvegarde fictive. Le geste SAVE générique demeure valable sur les autres instruments, sans effet de sauvegarde SH.
+- À chaque rappel d'un des trois programmes du SH, depuis sa façade ou à la suite d'une commande XONE, collecter 36 CC distincts du profil : **36/36 => remplacement atomique automatique** du seul miroir correspondant ; réception incomplète => conserver l'ancien miroir.
+- Rappel par XONE => envoyer **le PC correspondant uniquement**, selon le timing/owner existant, **jamais les 36 CC mémorisés**. Actualiser LIVE/miroir exclusivement depuis les CC retournés par SH.
+- Les valeurs LIVE changent à chaque manipulation SH/XONE, **mais pas les miroirs persistants** en dehors d'un rappel complet. Le WRITE physique n'a pas de notification MIDI démontrée.
+- Aucun PATCH SH ne contient les FX INST ou les alias CC/SPOT centraux des MACHINE paires. Les autres profils XONE conservent leur sémantique SAVE/RECALL actuelle.
+- L'adaptateur SH reste à implémenter dans la vraie AUv3, en conservant l'API virtuelle S7 et sans boucle MIDI. La liste précise des 36 identités CC et la resélection du programme courant sont des points de recette, non des raisons de réinventer le modèle.
 
-**TODO SH-A** : relire profil actuel/host AU ; identifier l'adaptateur et ses entrées/sorties réellement manquantes ; brancher transport et table de paramètres contrôlée.
-**TODO SH-B** : intégrer observation PC/CC + epochs/UNKNOWN + LIVE/pickup sans écho.
-**TODO SH-C** : raccorder SAVE/LOAD et persistance de valeurs partielles ; conserver les propriétaires XONE.
-**TODO SH-D** : CI déterministe, puis recette réelle AUM/iPhone/SH ; documenter résultats et inconnues.
-
-**Tests d'acceptation SH** :
-- SH01 : entrée PC/CC canal attendu et autre canal, valeurs 0/127, valeurs inconnues, doublons, ordre inversé et bursts de longueur variable ; bonne provenance et epoch.
-- SH02 : changement de programme invalide l'ancienne image LIVE sans convertir UNKNOWN en 0 ; absence de renvoi automatique/feedback loop.
-- SH03 : changement physique SH observé -> valeur LIVE mise à jour ; retour sur rotatif XONE -> pickup sans saut, ni émission avant rattrapage.
-- SH04 : SAVE XONE puis LOAD -> PC et CC connus seulement, ordre sûr, réponse partielle non bloquante ; pas de faux WRITE ou ACK ; aucune capture/écriture dans d'autres owners.
-- SH05 : port/canal absent, reconnect, STOP, replay et défaut inconnu -> refus local sûr, flux virtuel indépendant conservé.
-- SH06 : vrai XONE AUv3 dans AUM, MIDI vers SH physique et retours -> tracer les octets/valeurs et observation audible ; verdict matériel distinct de CI. Les sondes Mozaic V11/V12 déjà réalisées ne doivent pas être renommées « test app PASS ».
+**TODO et tests à exécuter :** suivre **SH-M01..M05** et **SH36-T01..T10** du contrat 05. Les anciens TODO SH-A..D et SH01..SH06 de D1 sont **remplacés**, pas des obligations supplémentaires. La conception D2 des MACHINE paires ci-dessous reste inchangée.
 
 ## D2 — Règle générale de toutes les MACHINE paires : surface FX de l'instrument
 
