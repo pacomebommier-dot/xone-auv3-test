@@ -16,6 +16,9 @@ AUM possède la matrice MIDI, MIDI Learn/MIDI Control et fan-out vers effets, by
 Un profil versionné convertit l'identité virtuelle vers les capacités effectivement vérifiées (canal/port, plage, CC, PC, SysEx, sens, defaults, retour). Un SH-01A ne partage pas automatiquement le profil JU-06A. Ne jamais envoyer de commandes Roland supposées.
 Une même commande peut en principe cibler MIDI Learn AUM et adaptateur matériel configuré, sans dupliquer le coeur.
 
+## Spécialisation SH-01A : mémoires et rappels (04/11/2026)
+Contrat normatif : [05_CONTRAT_SH01A_MIROIR_PATCH36_V1_20261104.md](05_CONTRAT_SH01A_MIROIR_PATCH36_V1_20261104.md). Pour ce profil matériel seulement, les trois PATCH XONE sont des miroirs automatiques des programmes SH1..3 (PC0..2), comprenant 36 CC observés chacun. Le SH conserve l'autorité de WRITE physique ; aucun SAVE XONE manuel ni écriture MIDI distante. Un rappel depuis XONE envoie **le PC seul**, sans retransmettre les CC de la copie. Les CC entrants du SH mettent à jour LIVE et, uniquement après capture complète 36/36 d'un programme PC0..2 rappelé, remplacent atomiquement son miroir. Un retour incomplet ne remplace rien. Ne jamais émettre d'ACK fictif ni d'ordre de WRITE ; aucun FX INST dans ces PATCH. Cette règle ne change pas l'API virtuelle ni le SAVE/RECALL générique des autres synthés.
+
 ## Tests et statuts
 K2_SIM_V3 -> XONE AU -> moniteur POST, sans instrument. Vérifier type, canal, numéro, valeur, ordre, sample offset, quantification, STOP/OFF, pickup, SAVE/RECALL et LED.
 Distinguer DESIRED, TX attempted/sent, observation réelle et succès du service externe. Un port MIDI sans destinataire ne prouve pas une action réelle et ne constitue pas un échec du moteur universel.
