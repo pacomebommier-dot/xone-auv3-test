@@ -31,4 +31,11 @@ Table provisoire36 :3,5,12–31,71–75,78–83,85–87. Hypothèse autorisée p
 
 Tester257/1025/4097 événements dans le harnessApple avant campagneAUM, UP/STOP en queue. Surappareil : interfaceouverte/fermée, sessionlégère puis chargée, navigation+CC+LED, PATCH/PRESET/RED, STOP, retraitAU après vraisUP/OFF, réallocation, échec/reprise de route et save/reopen. Noter iPhone/iPad, iOS, AUM, firmwareSH, interfaceMIDI, Hz, frames, CPUrepos/pics, xruns, tracesPRE/POST etSHA. Le dernier retraitAU sans nouveau rendu ne garantit pas l'émission desOFF : STOP et vérifierOFF avant suppression.
 
-BASE matérielSH est encore sans référence : refus UNKNOWN_CONFIG attendu, pas de PCBASE ni zéro Roland inventé. Les modesSPOT S8 restent horsPATCH/BASE/PRESET/RED selon décision du19/10. Les testsMACHINE MP01..MP07 seront consignés après intégration, sans les annoncer exécutés ici.
+BASE matérielSH est encore sans référence : refus UNKNOWN_CONFIG attendu, pas de PCBASE ni zéro Roland inventé. Les modesSPOT S8 restent horsPATCH/BASE/PRESET/RED selon décision du19/10. Les tests MP01..MP06 natifs sont intégrés ; MP07 Apple et AUM/K2 restent à exécuter.
+
+
+## Campagne MACHINE paires — MP07 matériel
+
+Pour chacune des paires 1/2, 3/4, 5/6, 7/8 : entrer par SHORT sur la page paire ; comparer les 12 rotatifs et les 12 SPOT aux quatre sous-pages FX natives de la source associée. LONG sur la paire active : vue empruntée ; LONG suivant : native. La bascule seule ne doit émettre aucun changement musical. Comparer aussi LED, RESET secondaire, pickup dans les deux sens et SPOT maintenu pendant une bascule.
+
+Vérifier que POTs/faders restent MACHINE, que SAVE/RECALL PATCH laisse tous les FX alias inchangés, et que MEMORY/PRESET/RED retrouvent le même état FX depuis les deux accès. STOP doit fermer chaque NoteOff dû, y compris après changement de page/vue ; réouverture sans émission spontanée. Conserver traces MIDI avant/après, vidéo LED et SHA. Toute cette campagne reste NON_TESTE matériel.

@@ -19,7 +19,7 @@ public:
   auto& record=records_[4*pool+instrument];
   if(record.base.valid&&record.base.config!=config)return false;
   if(record.base.revision>=16777212u)return false;
-  record.base.valid=true;record.base.config=config;record.base.values=values;++record.base.revision;return true;
+  record.base.valid=true;record.base.config=config;record.base.values=SourcePatchBank::canonical(values);++record.base.revision;return true;
  }
  bool base(unsigned pool,unsigned instrument,int config,Values& out)const noexcept {
   if(pool>=2||instrument>=4)return false;
@@ -36,7 +36,7 @@ public:
   auto& record=records_[4*pool+instrument];
   if(!record.base.valid||record.base.config!=config)return false;
   auto& p=record.patches[slot];if(p.revision>=16777212u)return false;
-  p.valid=true;p.config=config;p.values=values;++p.revision;return true;
+  p.valid=true;p.config=config;p.values=SourcePatchBank::canonical(values);++p.revision;return true;
  }
  bool setMode(unsigned pool,unsigned instrument,unsigned index,int mode) noexcept {
   if(pool>=2||instrument>=4||index>=24||mode<1||mode>4)return false;
@@ -46,7 +46,7 @@ public:
   return pool<2&&instrument<4&&index<24?records_[4*pool+instrument].modes[index]:-2;
  }
  void remember(unsigned pool,unsigned instrument,const Values& current) noexcept {
-  if(pool<2&&instrument<4)records_[4*pool+instrument].last=current;
+  if(pool<2&&instrument<4)records_[4*pool+instrument].last=SourcePatchBank::canonical(current);
  }
  template<class Archive> bool archive(Archive& a) noexcept {
   a(bindings_);for(const auto& row:bindings_){for(unsigned i=0;i<4;++i){

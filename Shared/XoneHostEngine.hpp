@@ -409,8 +409,9 @@ public:
     // Render-thread local source API. An external adapter is never treated as loaded.
     bool saveSourcePatch(unsigned source,unsigned slot) noexcept { documentDirty_=true;
         if(source>=4||slot>=3||sourcePending_[source]>=0||redActive_||sh01aSource(source))return false;
-        SourcePatchBank::Values values{};
+        SourcePatchBank::Values values{};values.fill(-2);
         for(unsigned f=0;f<values.size();++f){
+            if(!SourcePatchBank::included(f))continue;
             for(const auto& hold:spots_)if(hold.cell==SourcePatchBank::cell(source,f))return false;
             auto v=core_.nativeLive().desired(SourcePatchBank::cell(source,f));
             if(!v.known)return false;
@@ -513,7 +514,7 @@ public:
         for(unsigned i=0;i<16;++i)image[i]=base[i];
         const auto set=[&](unsigned i,MuteLedColor color,bool blink=false){image[i]={color,blink,true};};
         const int config=core_.nativeLive().sessionConfig();
-        for(unsigned i=0;i<32;++i){const int physical=static_cast<int>(i)+4;const auto route=n.route(physical);
+        for(unsigned i=0;i<32;++i){const int physical=static_cast<int>(i)+4;const auto route=core_.nativeRoute(physical);
             if(route.address==-1&&route.position==-1){set(i,MuteLedColor::Off);continue;}
             if(route.address<0||route.position<0)continue;
             const int kind=route.address/1024,family=(route.address%1024)/32,page=route.address%32,slot=route.position;
@@ -577,7 +578,7 @@ public:
                         if(observed.incomplete(static_cast<unsigned>(slot))){image[i]={};continue;}
                     }else if(machine&&selected<8){SourcePatchBank::Patch patch{};
                         const bool exists=readSourcePatch(static_cast<unsigned>(selected/2),static_cast<unsigned>(slot),patch);compatible=!exists||patch.config==config;valid=exists&&compatible;current=valid;
-                        if(valid)for(unsigned f=0;f<60;++f){const auto v=core_.nativeLive().desired(SourcePatchBank::cell(static_cast<unsigned>(selected/2),f));if(!v.known)known=false;else if(v.value!=patch.values[f])current=false;}
+                        if(valid)for(unsigned f=0;f<60;++f){if(!SourcePatchBank::included(f))continue;const auto v=core_.nativeLive().desired(SourcePatchBank::cell(static_cast<unsigned>(selected/2),f));if(!v.known)known=false;else if(v.value!=patch.values[f])current=false;}
                     }else if(machine){S8MachinePatchBank::Patch patch{};valid=s8Machine_.read(static_cast<unsigned>(selected),static_cast<unsigned>(slot),patch)&&patch.valid&&patch.config==config;compatible=!patch.valid||patch.config==config;current=valid;
                         if(valid)for(unsigned f=0;f<30;++f){const auto v=core_.nativeLive().desired(320+42*selected+static_cast<int>(f));if(!v.known)known=false;else if(v.value!=patch.values[f])current=false;}
                     }else {S8SamplePatchBank::Patch patch{};valid=s8Sample_.read(static_cast<unsigned>(selected),static_cast<unsigned>(slot),patch)&&patch.valid&&patch.config==config;compatible=!patch.valid||patch.config==config;current=valid;
@@ -612,7 +613,7 @@ public:
     }
     void pickupLedFeedback(int cc,int64_t ms) noexcept {
         if(cc<4||cc>15)return;
-        const auto route=core_.nativeNav().active().route(16+cc);
+        const auto route=core_.nativeRoute(16+cc);
         int cell=-1,modeCell=-1;
         if(route.address<0||route.address/1024!=3||!l01::LiveState::spotAddresses(route.address,route.position,cell,modeCell))return;
         const int family=(route.address%1024)/32;int mode=1;
@@ -680,7 +681,7 @@ private:
             if(!valid) {record(seq,sample,Stage::Decision,Reason::Rejected,cable,data,length);return {};}
             const int physical=l01::SurfaceInput::physicalControl(data[1]);
             const bool wasHeld=physical>=0&&core_.surface().held(physical);
-            const auto softRoute=(physical>=4&&physical<20)?core_.nativeNav().active().route(physical):l01::NavRoute{};
+            const auto softRoute=(physical>=4&&physical<20)?core_.nativeRoute(physical):l01::NavRoute{};
             const int softRoot=core_.nativeNav().active().at(291);
             // BOT2 is also DJ1 PUSH. Ownership is captured on its true DOWN,
             // never reconstructed from a deadline at UP.
@@ -705,13 +706,13 @@ private:
             const bool memorySource=baseEvent&&!muteBaseOwned&&!wasHeld&&cmd==0x90&&data[2]!=0&&
                 !core_.longNavPending()&&deriveMemory(core_.nativeNav(),physical,memoryOwner,memorySlot);
             const bool redReleaseOwned=physical==0&&wasHeld&&core_.s3().physicalOwner(0)==0;
-            const auto presetRoute=physical>=4&&physical<20?core_.nativeNav().active().route(physical):l01::NavRoute{};
+            const auto presetRoute=physical>=4&&physical<20?core_.nativeRoute(physical):l01::NavRoute{};
             const bool presetSource=baseEvent&&!muteBaseOwned&&!wasHeld&&cmd==0x90&&data[2]!=0&&
                 core_.nativeNav().active().presetFlag==1&&presetRoute.address==14*1024+17*32&&presetRoute.position>=0&&presetRoute.position<=4;
             const bool wasPresetFrame=core_.nativeNav().active().at(292)==1&&core_.nativeNav().active().presetFlag==1&&!mutePageVisible();
             l01::NavRoute inputRoute{};
-            if(physical>=4)inputRoute=core_.nativeNav().active().route(physical);
-            else if(cmd==0xB0&&data[1]<20)inputRoute=core_.nativeNav().active().route(36+data[1]);
+            if(physical>=4)inputRoute=core_.nativeRoute(physical);
+            else if(cmd==0xB0&&data[1]<20)inputRoute=core_.nativeRoute(36+data[1]);
             const int inputSource=sourceForRoute(inputRoute);
             const bool newSourceCommand=(cmd==0xB0&&data[1]<20)||(cmd==0x90&&data[2]!=0&&!wasHeld);
             if(newSourceCommand&&alternativeSourceBusy(inputSource)&&
@@ -722,6 +723,7 @@ private:
             core_.retainDjLoopPage(dj2LoopObserved_!=Dj2LoopObserved::Off || dj2LoopStartRequested_);
             const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs,muteBaseOwned);
             if(accepted)documentDirty_=true;
+            if(accepted&&physical>=20&&physical<32)inputRoute=core_.nativeRoute(physical);
             if(accepted&&baseEvent){
                 auto& reset=resetBaseHolds_[static_cast<unsigned>(physical-4)];
                 const bool down=cmd==0x90&&data[2]!=0;
@@ -732,7 +734,7 @@ private:
                 }else if(!down&&wasHeld&&reset.valid){
                     const auto held=reset;reset={};
                     if(!muteBaseOwned&&!mutePageVisible()&&gestureMs>=held.down&&
-                       held.navRevision==core_.nativeNav().revision()&&held.route==core_.nativeNav().active().route(physical)){
+                       held.navRevision==core_.nativeNav().revision()&&held.route==core_.nativeRoute(physical)){
                         const bool applied=resetBaseScope(held.route,gestureMs-held.down>=200);
                         record(seq,sample,Stage::Decision,applied?Reason::Musical:Reason::UnknownLive,0,data,3);
                     }
@@ -886,7 +888,7 @@ private:
                         }
                     }
                     topHold_[topIndex]=topSaveSuppress_[topIndex]?TopCapture{}:TopCapture{
-                        core_.nativeNav().active().route(physical),
+                        core_.nativeRoute(physical),
                         core_.nativeNav().active().contextMode,
                         core_.nativeNav().revision(),core_.nativeNav().active().at(291)
                     };
@@ -902,7 +904,7 @@ private:
                     // it must never emit an invented zero or an arbitrary CC.
                     // Store an observable deferred intent only if the captured
                     // physical destination has not changed during the gesture.
-                    const auto current=core_.nativeNav().active().route(physical);
+                    const auto current=core_.nativeRoute(physical);
                     if(captured.route.address>=0&&captured.route==current&&
                        captured.navRevision==core_.nativeNav().revision()&&
                        captured.context==core_.nativeNav().active().contextMode){
@@ -969,7 +971,7 @@ private:
             if(accepted&&cmd==0x90&&data[2]!=0&&!wasHeld&&physical>=20&&physical<32&&
                (inputRoute.address/1024==1||mutePageVisible())){
                 std::array<ContinuousTarget,97> scope{};
-                scope[0]=mutePageVisible()?continuousTarget(core_.nativeNav().active().route(physical+20)):
+                scope[0]=mutePageVisible()?continuousTarget(core_.nativeRoute(physical+20)):
                     continuousTarget({inputRoute.address-1024,inputRoute.position});
                 const bool reset=resetContinuousTargets(scope,1);
                 record(seq,sample,Stage::Decision,reset?Reason::Musical:Reason::UnknownLive,0,data,3);
@@ -978,7 +980,7 @@ private:
             if(accepted&&(cmd==0x90||cmd==0x80)&&physical>=20&&physical<32){
                 const bool down=cmd==0x90&&data[2]!=0;
                 // S2 advances before input: a LONG in this packet must qualify NAV first.
-                const auto captured=core_.nativeNav().active().route(physical);
+                const auto captured=core_.nativeRoute(physical);
                 if(wasHeld!=down)return spot(physical,down,captured,gestureMs,seq,sample);
             }
             if(accepted&&cmd==0xB0){
@@ -1331,10 +1333,13 @@ public:
     // Render-thread-only inspection; UI reads the SPSC trace, never core state.
     int navMode() const noexcept {return core_.nativeNav().active().at(292);}
     bool longNavPending() const noexcept {return core_.longNavPending();}
+    l01::NavRoute routeForControl(int physical)const noexcept{return core_.nativeRoute(physical);}
+    bool machineFxBorrowed()const noexcept{return core_.machineFxBorrowed();}
     void advance(int64_t ms,int64_t sample) noexcept {
         const bool shCapturing=sh01a_.mirror().capturing();const unsigned shCount=sh01a_.mirror().received();
         if(sh01aActive())sh01a_.advance(ms);else sh01a_.stop();
         if(shCapturing&&!sh01a_.mirror().capturing())record(++sequence_,sample,Stage::RxFeedback,Reason::ShCaptureIncomplete,0,nullptr,0,static_cast<int>(shCount));
+        core_.advanceMachineFxView(ms);
         const auto signatureBeforeTimer=presetSignature();
         started_=true;
         const bool wasMuteVisible=mutePageVisible();
@@ -1622,7 +1627,7 @@ private:
         record(seq,sample,Stage::Decision,Reason::Musical,0,r.bytes,3);return r;
     }
     Result continuous(int cc,int raw,int64_t ms,uint32_t seq,int64_t sample) noexcept {
-        const auto target=continuousTarget(core_.nativeNav().active().route(36+cc));
+        const auto target=continuousTarget(core_.nativeRoute(36+cc));
         if(!target.valid()||target.api==572)return {};
         const auto live=core_.nativeLive().desired(target.cell);
         // S3 @zr: a physical move is a real initial DESIRED value even when
@@ -1803,14 +1808,15 @@ private:
         std::array<int,388> cells{},values{};unsigned fields=0;
         std::array<SourcePacket,388> packets{};unsigned count=0;
         for(unsigned source=0;source<4;++source)if(flight.plan.from[source]!=flight.plan.to[source]){
-            for(unsigned f=0;f<60;++f){const int cell=SourcePatchBank::cell(source,f);const auto prior=core_.nativeLive().desired(cell);
+            before[source].fill(-2);
+            for(unsigned f=0;f<60;++f){if(!SourcePatchBank::included(f))continue;const int cell=SourcePatchBank::cell(source,f);const auto prior=core_.nativeLive().desired(cell);
                 before[source][f]=prior.known?prior.value:-2;cells[fields]=cell;values[fields++]=flight.bases[source][f];}
             for(int f=0;f<24;++f){cells[fields]=1552+24*static_cast<int>(source)+f;values[fields++]=0;}
             for(int f=0;f<12;++f){cells[fields]=1768+12*static_cast<int>(source)+f;values[fields++]=0;}
             cells[fields]=1546+static_cast<int>(source);values[fields++]=0;
             for(unsigned f=0;f<97;++f){
                 int api=-1,type=10,value=0;
-                if(f<60){api=SourcePatchBank::api(source,f);type=SourcePatchBank::type(f);value=flight.bases[source][f];}
+                if(f<60){if(!SourcePatchBank::included(f))continue;api=SourcePatchBank::api(source,f);type=SourcePatchBank::type(f);value=flight.bases[source][f];}
                 else if(f<84)api=715+24*static_cast<int>(source)+static_cast<int>(f)-60;
                 else if(f<96){api=384+12*static_cast<int>(source)+static_cast<int>(f)-84;type=11;}
                 else api=709+static_cast<int>(source);
@@ -1935,6 +1941,7 @@ private:
         if(cell<320){if(cell%40<16)return 16*static_cast<int>(cell/40)+static_cast<int>(cell%40);
             type=11;return 12*static_cast<int>(cell/40)+static_cast<int>(cell%40)-16;}
         if(cell<1328){const int owner=static_cast<int>((cell-320)/42),field=static_cast<int>((cell-320)%42);
+            if(owner<8&&field<30&&!SourcePatchBank::included(30*static_cast<unsigned>(owner%2)+static_cast<unsigned>(field)))return -1;
             if(field<18)return 128+18*owner+field;
             type=11;return field<30?96+12*owner+field-18:-1;}
         if(cell>=1328&&cell<1477)return cell==1340||cell==1341?-1:static_cast<int>(cell)-768;
@@ -2109,16 +2116,21 @@ private:
                 patch=saved.values;
             }
             std::array<int,97> cells{},values{};
-            unsigned count=97;
+            unsigned count=0;
             std::array<int,97> apis{},types{};
             std::array<bool,97> changed{};
             for(unsigned f=0;f<60;++f){
-                cells[f]=SourcePatchBank::cell(source,f);values[f]=patch[f];
-                apis[f]=SourcePatchBank::api(source,f);types[f]=SourcePatchBank::type(f);
+                if(!SourcePatchBank::included(f))continue;
+                cells[count]=SourcePatchBank::cell(source,f);values[count]=patch[f];
+                apis[count]=SourcePatchBank::api(source,f);types[count++]=SourcePatchBank::type(f);
             }
-            for(unsigned f=0;f<24;++f){cells[60+f]=1552+24*static_cast<int>(source)+static_cast<int>(f);apis[60+f]=cells[60+f]-837;types[60+f]=10;}
-            for(unsigned f=0;f<12;++f){cells[84+f]=1768+12*static_cast<int>(source)+static_cast<int>(f);apis[84+f]=cells[84+f]-1384;types[84+f]=11;}
-            cells[96]=1546+static_cast<int>(source);apis[96]=cells[96]-837;types[96]=10;
+            // PATCH excludes the central FX aliases entirely. Explicit BASE
+            // still owns the source's native FX reset domain, as before D2.
+            if(slot==3){
+                for(unsigned f=0;f<24;++f){cells[count]=1552+24*static_cast<int>(source)+static_cast<int>(f);apis[count]=cells[count]-837;types[count++]=10;}
+                for(unsigned f=0;f<12;++f){cells[count]=1768+12*static_cast<int>(source)+static_cast<int>(f);apis[count]=cells[count]-1384;types[count++]=11;}
+            }
+            cells[count]=1546+static_cast<int>(source);apis[count]=cells[count]-837;types[count++]=10;
             bool busy=false;
             for(unsigned f=0;f<count;++f){
                 const auto prior=core_.nativeLive().desired(cells[f]);

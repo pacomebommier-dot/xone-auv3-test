@@ -106,19 +106,20 @@ int main() {
     pump(48,0x8E,48,0);assert(sent==6);
     // Genuine MACHINE NAV -> TOUCH -> FLASH through the real callback.
     pump(48,0x9E,13,127);pump(48,0x9E,15,127);pump(48,0x8E,15,0);pump(48,0x8E,13,0);
-    pump(48,0x9E,48,127);assert(sent==7&&lastStatus==0x96&&lastNumber==108&&lastValue==127);
-    pump(48,0x8E,48,0);assert(sent==8&&lastStatus==0x86&&lastNumber==108&&lastValue==0);
+    pump(48,0x9E,36,127);pump(48,0x8E,36,0); // MACHINE1 retains the original TOUCH/FLASH domain
+    pump(48,0x9E,48,127);assert(sent==7&&lastStatus==0x96&&lastNumber==96&&lastValue==127);
+    pump(48,0x8E,48,0);assert(sent==8&&lastStatus==0x86&&lastNumber==96&&lastValue==0);
     pump(48,0x9E,44,127);assert(sent==11);
     const uint8_t pulseStatus[]{0x86,0x96,0x86};const uint8_t pulseValue[]{0,127,0};
-    for(unsigned n=0;n<3;++n)assert(recorded[8+n][0]==pulseStatus[n]&&recorded[8+n][1]==109&&recorded[8+n][2]==pulseValue[n]);
+    for(unsigned n=0;n<3;++n)assert(recorded[8+n][0]==pulseStatus[n]&&recorded[8+n][1]==97&&recorded[8+n][2]==pulseValue[n]);
     pump(48,0x8E,44,0);assert(sent==11);
-    failAt=12;pump(48,0x9E,40,127);assert(sent==12&&lastStatus==0x86&&lastNumber==110);
+    failAt=12;pump(48,0x9E,40,127);assert(sent==12&&lastStatus==0x86&&lastNumber==98);
     pump(48,0x8E,40,0);assert(sent==12); // failed prerequisite OFF suppresses the pulse
-    failAt=0;pump(48,0x9E,40,127);assert(sent==15&&lastStatus==0x86&&lastNumber==110);
+    failAt=0;pump(48,0x9E,40,127);assert(sent==15&&lastStatus==0x86&&lastNumber==98);
     pump(48,0x8E,40,0);assert(sent==15);
-    pump(48,0x9E,48,127);assert(sent==16&&lastStatus==0x96&&lastNumber==108);
+    pump(48,0x9E,48,127);assert(sent==16&&lastStatus==0x96&&lastNumber==96);
     failAt=17;pump(48,0x8E,48,0);assert(sent==17&&lastStatus==0x86);
-    failAt=0;pump(48,0xFC);assert(sent==18&&lastStatus==0x86&&lastNumber==108); // failed TOUCH OFF is still due
+    failAt=0;pump(48,0xFC);assert(sent==18&&lastStatus==0x86&&lastNumber==96); // failed TOUCH OFF is still due
     [unit deallocateRenderResources];
     // A new real AU subclass instance receives the saved document, not the old engine.
     XoneMidiAudioUnit *reopened=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
@@ -160,11 +161,12 @@ int main() {
     assert([clockUnit allocateRenderResourcesAndReturnError:&error]);render=clockUnit.internalRenderBlock;
     pump(48,0x9E,13,127);pump(48,0x9E,15,127);pump(8192);pump(960);
     pump(960,0x9E,48,127,480);
-    if(sent!=19||lastStatus!=0x96||lastNumber!=108||lastValue!=127)
+    if(sent!=19||lastStatus!=0x99||lastNumber!=0||lastValue!=127)
         std::cerr<<"in-buffer LONG: sent="<<sent<<" last="<<int(lastStatus)<<","<<int(lastNumber)<<","<<int(lastValue)<<" trace="<<[[clockUnit drainDiagnosticText] UTF8String]<<"\n";
-    assert(sent==19&&lastStatus==0x96&&lastNumber==108&&lastValue==127);
+    assert(sent==19&&lastStatus==0x99&&lastNumber==0&&lastValue==127);
     pump(48,0x8E,15,0);pump(48,0x8E,13,0);
-    pump(48,0x8E,48,0);assert(sent==20&&lastStatus==0x86&&lastNumber==108&&lastValue==0);
+    pump(8192);pump(8192); // SMART FX on the even page returns OFF on its real long release
+    pump(48,0x8E,48,0);assert(sent==20&&lastStatus==0x89&&lastNumber==0&&lastValue==0);
     [clockUnit deallocateRenderResources];
 
     // Native L06 harness: genuine host 120 BPM / 4:4 BAR, K2 BOT2 SHORT,
@@ -363,7 +365,7 @@ int main() {
     assert(sent==beforeSource+2); // CUE CC then failed first nominal CC; no same-buffer retry
     assert(recorded[beforeSource][0]==0xBD&&recorded[beforeSource][1]==38&&recorded[beforeSource][2]==127);
     assert(recorded[beforeSource+1][0]==0xB7&&recorded[beforeSource+1][1]==0&&recorded[beforeSource+1][2]==0);
-    failAt=0;pump(48);assert(sent==beforeSource+99);pump(48);assert(sent==beforeSource+99);
+    failAt=0;pump(48);assert(sent==beforeSource+75);pump(48);assert(sent==beforeSource+75);
     NSData *sourceState=sourceUnit.fullStateForDocument[@"XONE_LAST_LIVE_V1"];
     assert(xone::host::decodeSession(static_cast<const uint8_t *>(sourceState.bytes),sourceState.length,decoded));
     assert(decoded.desired[320]==0&&decoded.desired[1552]==0&&decoded.desired[1768]==0);
@@ -490,9 +492,10 @@ int main() {
     burstUnit.fullState=@{@"XONE_LAST_LIVE_V1":[NSData dataWithBytes:bytes.data() length:bytes.size()]};
     assert([burstUnit allocateRenderResourcesAndReturnError:&error]);render=burstUnit.internalRenderBlock;cursor=0;
     pump(48,0x9E,13,127);pump(48,0x9E,15,127);pump(48,0x8E,15,0);pump(48,0x8E,13,0);
+    pump(48,0x9E,36,127);pump(48,0x8E,36,0); // odd MACHINE TOUCH for UP/STOP stress
     for(unsigned count:{257u,1025u,4097u})for(bool stop:{false,true}){
         const NSUInteger before=sent;
-        pump(48,0x9E,48,127);assert(sent==before+1&&lastStatus==0x96&&lastNumber==108);
+        pump(48,0x9E,48,127);assert(sent==before+1&&lastStatus==0x96&&lastNumber==96);
         std::vector<AURenderEvent> events(count);
         for(unsigned i=0;i<count;++i){
             auto& e=events[i];e.MIDI.eventType=AURenderEventMIDI;e.MIDI.eventSampleTime=cursor+12;
@@ -505,7 +508,7 @@ int main() {
         AudioTimeStamp burstTime{};burstTime.mFlags=kAudioTimeStampSampleTimeValid;burstTime.mSampleTime=static_cast<Float64>(cursor);
         AudioUnitRenderActionFlags burstFlags=0;audio.frameLength=48;
         assert(render(&burstFlags,&burstTime,48,0,audio.mutableAudioBufferList,events.data(),nil)==noErr);cursor+=48;
-        assert(sent==before+2&&lastStatus==0x86&&lastNumber==108&&lastValue==0);
+        assert(sent==before+2&&lastStatus==0x86&&lastNumber==96&&lastValue==0);
         pump(48,0x8E,48,0);assert(sent==before+2); // no orphan release or extra OFF
         pump(48);assert(sent==before+2);
     }
@@ -567,6 +570,41 @@ int main() {
     shData=shAgain.fullState[@"XONE_SH01A_MIRRORS_V1"];
     assert(xone::host::decodeSh01aAttachment((const uint8_t *)shData.bytes,shData.length,shDecoded)&&shDecoded.image.mirrors[1].valid);
     [shAgain deallocateRenderResources];
+
+    // MP07 software harness: actual AU even-page aliases, qualified LONG,
+    // borrowed RESET, shared pickup and STOP. Physical AUM/K2 remains separate.
+    XoneMidiAudioUnit *mpUnit=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
+    assert(mpUnit&&!error);assert([mpUnit.inputBusses[0] setFormat:format error:&error]);
+    assert([mpUnit.outputBusses[0] setFormat:format error:&error]);mpUnit.maximumFramesToRender=8192;
+    auto mpLive=image;mpLive.desired.fill(-2);for(int c=1552;c<1576;++c)mpLive.desired[c]=64;
+    for(int c=1768;c<1780;++c)mpLive.desired[c]=0;
+    assert(xone::host::encodeSession(mpLive,bytes));xone::host::ResetDefaults mpDefaults;mpDefaults.config=1;assert(mpDefaults.set(718,22));
+    xone::host::ResetDefaultsBytes mpWire{};assert(xone::host::encodeResetDefaults(mpDefaults,mpWire));
+    mpUnit.fullState=@{@"XONE_LAST_LIVE_V1":[NSData dataWithBytes:bytes.data() length:bytes.size()],@"XONE_RESET_DEFAULTS_V1":[NSData dataWithBytes:mpWire.data() length:mpWire.size()]};
+    __block unsigned mpCount=0;uint8_t mpBytes[32][3]{};auto *mpLog=mpBytes;
+    mpUnit.MIDIOutputEventBlock=^OSStatus(AUEventSampleTime t,uint8_t cable,NSInteger length,const uint8_t *data){
+        (void)t;assert(cable==0&&length==3);if((data[0]&15)==14)return noErr;
+        assert(mpCount<32);for(unsigned i=0;i<3;++i)mpLog[mpCount][i]=data[i];++mpCount;return noErr;
+    };
+    assert([mpUnit allocateRenderResourcesAndReturnError:&error]);auto mpRender=mpUnit.internalRenderBlock;AUEventSampleTime mpCursor=0;
+    const auto mpPump=[&](AVAudioFrameCount frames,int cmd=-1,int number=0,int value=0){
+        AudioTimeStamp t{};t.mFlags=kAudioTimeStampSampleTimeValid;t.mSampleTime=static_cast<Float64>(mpCursor);
+        AURenderEvent e{};e.MIDI.eventType=AURenderEventMIDI;e.MIDI.eventSampleTime=mpCursor;e.MIDI.cable=0;e.MIDI.length=cmd==0xFC?1:3;
+        e.MIDI.data[0]=static_cast<uint8_t>(cmd);e.MIDI.data[1]=static_cast<uint8_t>(number);e.MIDI.data[2]=static_cast<uint8_t>(value);
+        AudioUnitRenderActionFlags f=0;audio.frameLength=frames;
+        assert(mpRender(&f,&t,frames,0,audio.mutableAudioBufferList,cmd<0?nullptr:&e,nil)==noErr);mpCursor+=frames;
+    };
+    mpPump(48,0x9E,13,127);mpPump(48,0x9E,15,127);mpPump(48,0x8E,15,0);mpPump(48,0x8E,13,0);
+    mpPump(48,0xBE,4,64);assert(mpCount==1&&mpLog[0][0]==0xBB&&mpLog[0][1]==75);
+    const auto mpLong=[&](){mpPump(48,0x9E,37,127);mpPump(8192);mpPump(1440);mpPump(48,0x8E,37,0);};
+    mpLong();assert(mpCount==1);mpPump(48,0xBE,4,64);assert(mpCount==2&&mpLog[1][1]==78);
+    mpPump(48,0x9E,48,127);mpPump(48,0x8E,48,0);assert(mpCount==3&&mpLog[2][1]==78&&mpLog[2][2]==22);
+    NSData *mpState=mpUnit.fullState[@"XONE_LAST_LIVE_V1"];
+    assert(xone::host::decodeSession((const uint8_t *)mpState.bytes,mpState.length,decoded)&&decoded.desired[1555]==22&&decoded.desired[362]==-2);
+    mpLong();assert(mpCount==3);mpPump(48,0xBE,4,64);mpPump(48,0xBE,4,100);assert(mpCount==4&&mpLog[3][1]==75&&mpLog[3][2]==100);
+    mpPump(48,0x9E,48,127);assert(mpCount==5&&mpLog[4][0]==0x99&&mpLog[4][1]==0);
+    mpPump(48,0xFC);mpPump(48,0x8E,48,0);assert(mpCount==6&&mpLog[5][0]==0x89&&mpLog[5][1]==0);
+    [mpUnit deallocateRenderResources];
 
     std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)\n";
  }

@@ -39,8 +39,8 @@ int main(){
   GridBatch b{};b.valid=true;b.count=1;b.events[0]={GridKind::Bar,0,4};e.onMusicalGrid(b);
   for(int owner=0;owner<12;++owner){xone::l01::BankS6::MemoryRecord saved{};assert(e.readMemory(owner,0,saved)&&saved.values[0]==50);
    assert(e.memoryEngaged(owner,0)==(owner/3!=source));assert(e.pendingMemorySlot(owner)==-1);
-   assert(e.desiredLive(xone::l01::FxS6::addressFor(owner,0)).value==(owner/3==source?0:50));}
-  e.onMusicalGrid(beat());assert(e.desiredLive(1552+24*source).value==0);
+   assert(e.desiredLive(xone::l01::FxS6::addressFor(owner,0)).value==(owner/3==source&&!patch?0:50));}
+  e.onMusicalGrid(beat());assert(e.desiredLive(1552+24*source).value==(patch?50:0));
  }
  {HostEngine e;assert(e.restoreSessionBeforeRendering(session()));assert(e.captureMemory(0,0));assert(e.captureMemory(3,0));
   assert(e.requestSourceRecall(0,3));assert(e.requestMemoryRecall(0,0));assert(e.requestMemoryRecall(3,0));

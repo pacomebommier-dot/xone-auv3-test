@@ -36,9 +36,9 @@ int main(){
  {HostEngine e;assert(e.restoreSessionBeforeRendering(session(23)));assert(e.saveSourcePatch(0,0));
   assert(e.requestSourceRecall(0,0));e.onMusicalGrid(bar());
   while(e.nextSourcePacket().valid){auto p=e.nextSourcePacket();e.ackSourcePacket(p,true,17);}
-  e.stop(18);assert(e.pendingStopOffs()==24);
+  e.stop(18);assert(e.pendingStopOffs()==12);
   e.beginStopRetryPass(18);unsigned off=0;for(;;){auto p=e.nextStopPacket();if(!p.emit)break;assert((p.bytes[0]&0xf0)==0x80);e.sent(p,0);++off;}
-  assert(off==24&&e.pendingStopOffs()==0);e.beginStopRetryPass(19);assert(!e.nextStopPacket().emit);
+  assert(off==12&&e.pendingStopOffs()==0);e.beginStopRetryPass(19);assert(!e.nextStopPacket().emit);
  }
 
  {HostEngine e;xone::l01::NavS3 nav;assert(nav.initializeDefault());int selection=-1;
@@ -48,7 +48,7 @@ int main(){
  }
  {HostEngine e;assert(e.requestSourceRecall(0,3)&&e.requestSourceRecall(1,3));e.onMusicalGrid(bar());
   assert(e.desiredLive(320).known&&e.desiredLive(404).known&&!e.desiredLive(488).known);
-  unsigned count=0;while(e.nextSourcePacket().valid){auto p=e.nextSourcePacket();e.ackSourcePacket(p,true,17);++count;}assert(count==194);
+  unsigned count=0;while(e.nextSourcePacket().valid){auto p=e.nextSourcePacket();e.ackSourcePacket(p,true,17);++count;}assert(count==146);
  }
 
  {HostEngine fresh;assert(fresh.setNavForDiagnostic(selected(0)));

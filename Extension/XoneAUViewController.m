@@ -98,17 +98,20 @@
     [dialog addTextFieldWithConfigurationHandler:^(UITextField *field){field.placeholder=@"Canal MIDI 1–16";field.text=@"1";field.keyboardType=UIKeyboardTypeNumberPad;}];
     [dialog addAction:[UIAlertAction actionWithTitle:@"Annuler" style:UIAlertActionStyleCancel handler:nil]];
     __weak XoneAUViewController *weakSelf=self;
+    __weak UIAlertController *weakDialog=dialog;
     [dialog addAction:[UIAlertAction actionWithTitle:@"Configurer" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){
         (void)action;XoneAUViewController *owner=weakSelf;if(!owner)return;
-        NSInteger source=0,channel=0;NSScanner *a=[NSScanner scannerWithString:dialog.textFields[0].text?:@""];
-        NSScanner *b=[NSScanner scannerWithString:dialog.textFields[1].text?:@""];
+        NSInteger source=0,channel=0;NSScanner *a=[NSScanner scannerWithString:weakDialog.textFields[0].text?:@""];
+        NSScanner *b=[NSScanner scannerWithString:weakDialog.textFields[1].text?:@""];
         const BOOL valid=[a scanInteger:&source]&&a.isAtEnd&&[b scanInteger:&channel]&&b.isAtEnd;
         const BOOL accepted=valid&&[owner.xoneUnit configureSh01aSource:source-1 channel:channel];
         UIAlertController *result=[UIAlertController alertControllerWithTitle:accepted?@"Profil SH demandé":@"Configuration refusée"
             message:accepted?@"Relâchez les touches avant les essais. Activez CC OUTPUT sur le SH et routez son retour MIDI vers XONE sans boucle. La table 36 CC reste à vérifier.":@"Vérifiez source et canal. Une route SH déjà configurée ne peut pas être réaffectée par ce bouton ; ses miroirs sont conservés."
             preferredStyle:UIAlertControllerStyleAlert];
         [result addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-        [owner presentViewController:result animated:YES completion:nil];
+        [owner dismissViewControllerAnimated:YES completion:^{
+            [owner presentViewController:result animated:YES completion:nil];
+        }];
     }]];
     [self presentViewController:dialog animated:YES completion:nil];
 }
