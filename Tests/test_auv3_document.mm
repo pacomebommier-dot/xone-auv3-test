@@ -479,6 +479,37 @@ int main() {
         assert([resetUnit.fullStateForDocument[@"XONE_RESET_DEFAULTS_V1"] isEqualToData:metadata]);
         [resetUnit deallocateRenderResources];
     }
+    // C01: a finite host event list must not discard a true UP or STOP
+    // merely because unrelated MIDI preceded it in the same buffer.
+    XoneMidiAudioUnit *burstUnit=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
+    assert(burstUnit&&!error);burstUnit.MIDIOutputEventBlock=testOutput;
+    assert([burstUnit.inputBusses[0] setFormat:format error:&error]);
+    assert([burstUnit.outputBusses[0] setFormat:format error:&error]);
+    assert(xone::host::encodeSession(image,bytes));
+    burstUnit.fullState=@{@"XONE_LAST_LIVE_V1":[NSData dataWithBytes:bytes.data() length:bytes.size()]};
+    assert([burstUnit allocateRenderResourcesAndReturnError:&error]);render=burstUnit.internalRenderBlock;cursor=0;
+    pump(48,0x9E,13,127);pump(48,0x9E,15,127);pump(48,0x8E,15,0);pump(48,0x8E,13,0);
+    for(unsigned count:{257u,1025u,4097u})for(bool stop:{false,true}){
+        const NSUInteger before=sent;
+        pump(48,0x9E,48,127);assert(sent==before+1&&lastStatus==0x96&&lastNumber==108);
+        std::vector<AURenderEvent> events(count);
+        for(unsigned i=0;i<count;++i){
+            auto& e=events[i];e.MIDI.eventType=AURenderEventMIDI;e.MIDI.eventSampleTime=cursor+12;
+            e.MIDI.next=i+1<count?&events[i+1]:nullptr;e.MIDI.cable=0;e.MIDI.length=3;
+            e.MIDI.data[0]=0xB0;e.MIDI.data[1]=1;e.MIDI.data[2]=0; // unconfigured source
+        }
+        auto& tail=events.back().MIDI;tail.length=stop?1:3;
+        tail.data[0]=stop?0xFC:0x8E;tail.data[1]=48;tail.data[2]=0;
+        expected[0]=cursor;expected[1]=cursor+48;
+        AudioTimeStamp burstTime{};burstTime.mFlags=kAudioTimeStampSampleTimeValid;burstTime.mSampleTime=static_cast<Float64>(cursor);
+        AudioUnitRenderActionFlags burstFlags=0;audio.frameLength=48;
+        assert(render(&burstFlags,&burstTime,48,0,audio.mutableAudioBufferList,events.data(),nil)==noErr);cursor+=48;
+        assert(sent==before+2&&lastStatus==0x86&&lastNumber==108&&lastValue==0);
+        pump(48,0x8E,48,0);assert(sent==before+2); // no orphan release or extra OFF
+        pump(48);assert(sent==before+2);
+    }
+    [burstUnit deallocateRenderResources];
+
     std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)\n";
  }
 }
