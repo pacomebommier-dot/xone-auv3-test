@@ -18,7 +18,7 @@ K2_SIM ou K2 -> XONE -> moniteur MIDI + feedback et save/reopen ; jeu combiné e
 
 ## Extensions décidées le 04/11/2026 : SH et MACHINE paires
 
-Voir `04_ADDENDUM_SH01A_MACHINES_PAIRES_2026-11-04.md` pour le contrat complet, le TODO SH-A..D, MP-A..D et les tests SH01..SH06, MP01..MP07.
+Contrats actifs : `04_ADDENDUM_SH01A_MACHINES_PAIRES_2026-11-04.md` pour les MACHINE paires (TODO MP-A..D, tests MP01..MP07) ; `05_CONTRAT_SH01A_MIROIR_PATCH36_V1_20261104.md` pour le SH-01A (TODO SH-M01..M05, tests SH36-T01..T10). Les anciens TODO SH-A..D et tests SH01..SH06 sont supersédés.
 
 - SH-01A : appliquer le **contrat spécialisé 05_CONTRAT_SH01A_MIROIR_PATCH36_V1_20261104.md** (SH maître, 3 PATCH miroirs 36 CC, capture 36/36 automatique, aucun SAVE XONE, XONE LOAD = PC seul). Développer l'adaptateur matériel dans AUv3, réception CC/PC, LIVE/pickup et persistance. TODO **SH-M01..M05**, tests **SH36-T01..T10**. Le banc Mozaic n'est pas la recette de l'app. Statut : À DÉVELOPPER / TESTER.
 - MACHINE paires 2/4/6/8 : 12 CC et 12 SPOT centraux = alias FX des quatre sous-pages INST, vue native ou empruntée par LONG sur page paire déjà active. Ces commandes sortent des PATCH MACHINE. POTs et faders restent MACHINE. Statut : À DÉVELOPPER / TESTER.
