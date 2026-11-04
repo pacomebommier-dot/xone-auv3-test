@@ -13,6 +13,9 @@ Puis, **seulement pour leurs gardes techniques et leurs précisions compatibles*
 - docs/reprise/SUIVI_REGROUPE_AVANT_L15.md (traçabilité historique des 6 tâches, pas le nouveau compteur).
 Les contrats musicaux GOLDEN, NEW, S7, S8 décident toujours du comportement sur leur périmètre. Lire uniquement ceux utiles au bloc courant, pas de revue intégrale à chaque reprise.
 
+## Ordre de priorité pour le profil SH-01A (décision 04/11/2026)
+Avant de toucher au SH, lire `docs/universel/05_CONTRAT_SH01A_MIROIR_PATCH36_V1_20261104.md` : **normatif et prioritaire exclusivement pour le profil SH**, il remplace les instructions antérieures SAVE XONE / rappel CC du SH. Les rapports et handoffs SH du 01/11 sont des preuves historiques, pas la règle produit actuelle. SH maître, trois miroirs PATCH1..3 de 36 CC, sauvegarde seulement par WRITE physique, aucun SAVE/validation XONE, XONE recall = PC seul ; 36/36 reçus après rappel => miroir automatiquement remplacé. Pas de FX dans PATCH SH. Conserver la règle générique SAVE/RECALL pour tous les autres synthés. Vérifier les SH36-T01..T10 avant qualification, sans réécrire les archives.
+
 ## Décisions nouvelles du 04/11/2026
 Lire également `docs/universel/04_ADDENDUM_SH01A_MACHINES_PAIRES_2026-11-04.md` avant tout travail sur l'adaptateur SH-01A ou les pages MACHINE paires. Deux chantiers OUVERTS : raccordement matériel SH (sans changer l'API S7), et 12 CC + 12 SPOT centraux de MACHINE2/4/6/8 comme alias des 4 sous-pages FX INST, avec bascule native/empruntée. Les POTs/FADERs restent MACHINE. Aucun PATCH MACHINE, mémoire ou pickup supplémentaire pour les alias FX. Ne pas conclure que ces fonctions sont déjà implémentées.
 
