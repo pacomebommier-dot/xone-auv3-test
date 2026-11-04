@@ -3,6 +3,8 @@ Date : 28 octobre 2026. Objectif : continuer à coder sans refaire de grands aud
 
 MISSION : terminer XONE AUv3 comme moteur de contrôle UNIVERSEL, avec toutes fonctions internes et sorties MIDI neutres testables sans instrument ni plugin musical. Les adapters AUM MIDI Learn et profils MIDI hardware sont des configurations futures. Ne pas les prendre pour des bloqueurs du moteur.
 
+AVANT UNE TÂCHE SUR LE SH-01A : relire `docs/universel/05_CONTRAT_SH01A_MIROIR_PATCH36_V1_20261104.md`, qui prévaut sur les anciens textes de synchronisation SH. Aucun SAVE XONE ni restauration des CC36 depuis le miroir ; XONE LOAD=PC seul, SH renvoie 36 CC et remplace automatiquement son miroir. Ne pas modifier les autres synthés ni les pages FX. Cette spécialisation s'ajoute aux cinq blocs universels sans modifier leur compteur.
+
 LECTURE OBLIGATOIRE COURTE :
 1. docs/universel/00_CONTRAT_MAITRE_UNIVERSEL_V1.md
 2. docs/universel/01_CONTRAT_API_ET_ADAPTATEURS_V1.md
