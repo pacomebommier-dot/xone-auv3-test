@@ -2016,7 +2016,7 @@ private:
             if(slot==3&&instrument>=0&&!alternativeBank_.base(source/2,static_cast<unsigned>(instrument),config,patch)){
                 sourceStatus_[source]=SourceRecallStatus::UnknownConfig;return;}
             if(slot<3){SourcePatchBank::Patch saved{};
-                if(!sourcePatches_.read(source,static_cast<unsigned>(slot),saved)||saved.config!=config){
+                if(!readSourcePatch(source,static_cast<unsigned>(slot),saved)||saved.config!=config){
                     sourceStatus_[source]=SourceRecallStatus::EmptyPatch;return;}
                 patch=saved.values;
             }
