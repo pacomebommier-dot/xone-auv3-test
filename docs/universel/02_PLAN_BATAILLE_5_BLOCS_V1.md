@@ -16,6 +16,15 @@ Toutes pages LED (notamment MEMORY/PATCH/PRESET/RED), désiré/envoyé/observé 
 ## 5/5 — Intégration universelle AUM
 K2_SIM ou K2 -> XONE -> moniteur MIDI + feedback et save/reopen ; jeu combiné et STOP, reconnect, timers, simultanéité, temps réel, performances. Paquet iOS signé par utilisateur/outil adéquat, fiche de recette, cas de test. CI source/Apple/iOS PASS ne prouve pas test sur appareil ; obtenir campagne AUM explicite pour déclarer validation. Instruments, presets externes et MIDI Learn restent une phase de configuration ultérieure.
 
+## Extensions décidées le 04/11/2026 : SH et MACHINE paires
+
+Voir `04_ADDENDUM_SH01A_MACHINES_PAIRES_2026-11-04.md` pour le contrat complet, le TODO SH-A..D, MP-A..D et les tests SH01..SH06, MP01..MP07.
+
+- SH-01A : développer adaptateur MIDI réel dans AUv3, réception et émission CC/PC, synchro LIVE/UNKNOWN et PATCH SAVE/LOAD. Le banc Mozaic n'est pas la recette de l'app. Statut : À DÉVELOPPER / TESTER.
+- MACHINE paires 2/4/6/8 : 12 CC et 12 SPOT centraux = alias FX des quatre sous-pages INST, vue native ou empruntée par LONG sur page paire déjà active. Ces commandes sortent des PATCH MACHINE. POTs et faders restent MACHINE. Statut : À DÉVELOPPER / TESTER.
+
+Ces deux extensions ne remplacent pas les cinq blocs universels et n'en changent pas le compteur. Aucune CI ni recette AUM nouvelle revendiquée.
+
 ## Règle anti-freeze
 Un bloc = un gros parcours livrable, pas des dizaines de mini-lots. Plusieurs commits cohérents possibles sans STOP demandé entre eux. Avant chaque ajout, localiser la fonction existante ; pas de troisième moteur ni d'audit L01-L16. Tests ciblés après changements, CI complète lors de fermeture du bloc et aux risques importants. Si rouge, diagnostiquer première cause, corriger localement, rejouer ; si configuration externe inconnue, classer CONFIG_FUTURE et avancer.
 Après chaque bloc : un seul checkpoint (HEAD/SHA, CI, comportements prouvés, réserves, bloc suivant). Aucun GO demandé entre commits. Ne pas prétendre à l'exécution de Work en arrière-plan. Ne pas écraser local non publié, ne pas merge main.
