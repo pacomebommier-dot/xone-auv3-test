@@ -62,10 +62,12 @@ public:
  }
  bool restore(const Sh01aMirrorImage& image)noexcept {
   if(!image.valid())return false;
-  image_=image;configured_=true;live_.fill(-2);program_=-1;capture_=false;count_=0;lastTime_=-1;incomplete_.fill(false);return true;
+  image_=image;configured_=true;live_.fill(-2);program_=-1;programObserved_=false;capture_=false;count_=0;lastTime_=-1;incomplete_.fill(false);return true;
  }
  const Sh01aMirrorImage& snapshot()const noexcept{return image_;}
  int program()const noexcept{return program_;}
+ bool programObserved()const noexcept{return programObserved_;}
+ bool liveKnown()const noexcept{for(auto v:live_)if(v<0)return false;return true;}
  bool capturing()const noexcept{return capture_;}
  unsigned received()const noexcept{return count_;}
  bool incomplete(unsigned slot)const noexcept{return slot<3&&incomplete_[slot];}
@@ -89,12 +91,12 @@ public:
  // Success means transport emission, never physical WRITE or instrument ACK.
  bool recallSent(unsigned program,int64_t now)noexcept {
   if(!configured_||program>63||now<0||now<lastTime_)return false;
-  start(program,now);return true;
+  start(program,now);programObserved_=false;return true;
  }
  Observation receive(uint8_t cable,const uint8_t* bytes,std::size_t size,int64_t now)noexcept {
   if(!configured_||!bytes||now<0||now<lastTime_||cable!=image_.profile.cable||!size||(bytes[0]&15)!=image_.profile.channel)return {};
   const unsigned command=bytes[0]&0xF0;
-  if(command==0xC0&&size==2&&bytes[1]<64){start(bytes[1],now);return {true,false,-1,-2};}
+  if(command==0xC0&&size==2&&bytes[1]<64){start(bytes[1],now);programObserved_=true;return {true,false,-1,-2};}
   if(command!=0xB0||size!=3||bytes[1]>127||bytes[2]>127)return {};
   const int i=index(bytes[1]);if(i<0)return {};
   advance(now);lastTime_=now;const auto at=static_cast<unsigned>(i);
@@ -104,7 +106,7 @@ public:
    if(count_==36){
     auto& m=image_.mirrors[static_cast<unsigned>(program_)];
     if(m.revision!=std::numeric_limits<uint32_t>::max()){
-     m.values=staging_;++m.revision;m.valid=true;incomplete_[static_cast<unsigned>(program_)]=false;replaced=true;
+     m.values=staging_;++m.revision;m.valid=true;programObserved_=true;incomplete_[static_cast<unsigned>(program_)]=false;replaced=true;
     }else incomplete_[static_cast<unsigned>(program_)]=true;
     capture_=false;
    }
@@ -125,7 +127,7 @@ private:
   cancel();program_=static_cast<int>(program);lastTime_=now;started_=now;
   capture_=program<3;seen_.fill(false);staging_.fill(-2);live_.fill(-2);
  }
- Sh01aMirrorImage image_{};bool configured_{},capture_{};int program_{-1};unsigned count_{};
+ Sh01aMirrorImage image_{};bool configured_{},capture_{},programObserved_{};int program_{-1};unsigned count_{};
  int64_t lastTime_{-1},started_{};std::array<int16_t,36> live_{},staging_{};
  std::array<bool,36> seen_{};std::array<bool,3> incomplete_{};
 };

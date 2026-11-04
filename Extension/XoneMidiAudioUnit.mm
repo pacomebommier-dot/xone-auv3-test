@@ -3,6 +3,7 @@
 #import <string.h>
 #include "../Shared/XoneHostEngine.hpp"
 #include "../Shared/XoneHostGrid.hpp"
+#include "../Shared/XoneSh01aProfile.hpp"
 #include "../Shared/XoneValidationFixture.hpp"
 #include "../Shared/XoneHostScheduler.hpp"
 #include <cmath>
@@ -99,6 +100,13 @@
         if (!state) state = [NSMutableDictionary dictionary];
         [state removeObjectForKey:@"XONE_LAST_LIVE_V1"];
         [state removeObjectForKey:@"XONE_DOCUMENT_V2"];
+        [state removeObjectForKey:@"XONE_SH01A_MIRRORS_V1"];
+        const auto sh=_engine.sh01aForHost();
+        if(sh.enabled){
+            xone::host::Sh01aAttachmentBytes hardware{};
+            if(xone::host::encodeSh01aAttachment(sh,hardware))
+                state[@"XONE_SH01A_MIRRORS_V1"]=[NSData dataWithBytes:hardware.data() length:hardware.size()];
+        }
         [state removeObjectForKey:@"XONE_RESET_DEFAULTS_V1"];
         xone::host::ResetDefaultsBytes defaults{};
         if(xone::host::encodeResetDefaults(_resetDefaultsForHost,defaults))
@@ -115,6 +123,13 @@
 }
 - (void)setFullState:(NSDictionary<NSString *,id> *)state {
     @synchronized (self) {
+        xone::host::Sh01aAttachment sh;
+        id shObject=state[@"XONE_SH01A_MIRRORS_V1"];
+        if(shObject){
+            if(![shObject isKindOfClass:[NSData class]])return;
+            NSData *data=(NSData *)shObject;
+            if(!xone::host::decodeSh01aAttachment((const uint8_t *)data.bytes,data.length,sh))return;
+        }
         // Optional independent configuration; absent in old documents = UNKNOWN defaults.
         // Decode it before admitting any musical restore. No defaults are applied here.
         xone::host::ResetDefaults defaults;
@@ -126,12 +141,14 @@
         }
         const auto configureDefaults=[&](bool followRestore){
             _engine.requestResetDefaults(defaults,followRestore);_resetDefaultsForHost=defaults;
+            _engine.requestSh01aAttachment(sh,followRestore);
         };
         id document=state[@"XONE_DOCUMENT_V2"];
         if(document){
             if(![document isKindOfClass:[NSData class]])return;
             NSData *data=(NSData *)document;xone::host::DocumentImage image{};
-            if(!xone::host::decodeDocument((const uint8_t *)data.bytes,data.length,image)||!_engine.requestDocumentRestore(image))return;
+            if(!xone::host::decodeDocument((const uint8_t *)data.bytes,data.length,image)||
+               (sh.enabled&&sh.config!=image.live.config)||!_engine.requestDocumentRestore(image))return;
             configureDefaults(true);[super setFullState:state];return;
         }
         bool restored=false;
@@ -141,10 +158,25 @@
             NSData *data = (NSData *)payload;
             xone::host::SessionImage image{};
             if (!xone::host::decodeSession((const uint8_t *)data.bytes, data.length, image)) return;
-            if (!_engine.requestSessionRestore(image)) return;
+            if ((sh.enabled&&sh.config!=image.config)||!_engine.requestSessionRestore(image)) return;
             restored=true;
         }
+        if(sh.enabled&&!restored&&sh.config!=_engine.sessionForHost().config)return;
         configureDefaults(restored);[super setFullState:state];
+    }
+}
+
+- (BOOL)configureSh01aSource:(NSInteger)source channel:(NSInteger)channel {
+    @synchronized (self) {
+        if(source<0||source>3||channel<1||channel>16||channel==15)return NO;
+        const auto old=_engine.sh01aForHost();const auto document=_engine.documentForHost();
+        // Reconfiguration must never silently assign another route to existing mirrors.
+        if(old.enabled)return old.source==source&&old.image.profile.channel==channel-1&&
+            old.config==document.live.config&&old.alternative==document.current.alternatives[static_cast<unsigned>(source)];
+        const auto attachment=xone::host::provisionalSh01aAttachment(static_cast<uint8_t>(source),
+            document.live.config,document.current.alternatives[static_cast<unsigned>(source)],
+            0x53483031u,static_cast<uint8_t>(channel-1),0,1000);
+        return _engine.requestSh01aAttachment(attachment);
     }
 }
 
@@ -239,6 +271,14 @@
                 engine->ackSourcePacket(packet,ok,sample);if(!ok)break;
             }
         };
+        const auto flushSh01a = [&](AUEventSampleTime sample,int64_t ms) {
+            if(!sendMIDI)return;
+            for(unsigned n=0;n<37;++n){
+                const auto packet=engine->nextSh01aPacket();if(!packet.valid)break;
+                const bool ok=sendMIDI(sample,0,static_cast<NSInteger>(packet.length),packet.bytes.data())==noErr;
+                engine->ackSh01aPacket(packet,ok,sample,ms);if(!ok)break;
+            }
+        };
         bool failedTopOffInThisBuffer=false;
         const auto flushTop = [&](AUEventSampleTime sample) {
             // Multiple flush sites (MIDI edge + end-of-buffer timer) share
@@ -285,6 +325,7 @@
         }
         engine->beginSourceRetryPass();
         flushSource(bufferStart);
+        flushSh01a(bufferStart,static_cast<int64_t>(*elapsedMs));
         if(!transport)engine->forgetTransport();
         // Inspect host transport before retrying an unstarted TOP pulse:
         // a STOP transition must cancel queued ONs, never emit them first.
@@ -318,6 +359,7 @@
                 flushSoft(bufferStart+one.events[0].offset);
                 flushCueLoad(bufferStart+one.events[0].offset);
                 flushSource(bufferStart+one.events[0].offset);
+                flushSh01a(bufferStart+one.events[0].offset,static_cast<int64_t>(*elapsedMs+1000.0*one.events[0].offset/rate));
                 const auto patch=engine->samplePatchOnGrid(one,bufferStart);
                 for(unsigned n=0;n<patch.packetCount();++n){
                     const auto packet=patch.packet(n);
@@ -369,6 +411,7 @@
                 else engine->noOutput(packet);
             }
             flushCueLoad(sample);flushSource(sample); // explicit stopped recalls, no synthetic grid
+            flushSh01a(sample,ms);
             flushTop(sample); // TOP UP produces pulse at true MIDI offset
             flushMuteLeds(sample,ms);
         }
@@ -395,8 +438,8 @@
 - (NSString *)drainDiagnosticText {
     // UI main thread only: the sole trace consumer. Formatting stays off render thread.
     static const char *stages[] = {"RX_IN","DECISION","TX_OUT","RX_FEEDBACK","STOP","OVERFLOW","GESTURE"};
-    static const char *reasons[] = {"MAPPED","SURFACE_ONLY","REJECTED","UNTRUSTED","SENT","SEND_FAILED","NO_OUTPUT","RECEIVED","INTEGRATED","QUALIFIED","CLOCK_REJECTED","UNKNOWN_LIVE","PICKUP_WAIT","MUSICAL","DJ_RELATIVE","BROWSER_LOAD_INTENT","TOP_RESET_DEFERRED"};
-    NSMutableString *text = [NSMutableString stringWithFormat:@"V3 dev | K2/S2/NAV | RX_FEEDBACK=UNKNOWN | dropped=%u | overflowBuffers=%u\n", _engine.dropped(), _engine.overflows()];
+    static const char *reasons[] = {"MAPPED","SURFACE_ONLY","REJECTED","UNTRUSTED","SENT","SEND_FAILED","NO_OUTPUT","RECEIVED","INTEGRATED","QUALIFIED","CLOCK_REJECTED","UNKNOWN_LIVE","PICKUP_WAIT","MUSICAL","DJ_RELATIVE","BROWSER_LOAD_INTENT","TOP_RESET_DEFERRED","SH_MIRROR_36","SH_CAPTURE_INCOMPLETE"};
+    NSMutableString *text = [NSMutableString stringWithFormat:@"V3 dev | K2/S2/NAV | RX_FEEDBACK=CONFIGURED_PROFILES_ONLY | dropped=%u | overflowBuffers=%u\n", _engine.dropped(), _engine.overflows()];
     xone::host::Trace t{};
     for (unsigned n=0; n<256 && _engine.pop(t); ++n) {
         [text appendFormat:@"%u s=%lld %s %s cable=%u len=%u %02X %02X %02X result=%d\n",

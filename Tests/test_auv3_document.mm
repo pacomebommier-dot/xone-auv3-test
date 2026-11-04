@@ -4,6 +4,7 @@
 #include "../Shared/XoneValidationFixture.hpp"
 #include "../Shared/XoneDocument.hpp"
 #include "../Shared/XoneResetDefaults.hpp"
+#include "../Shared/XoneSh01aProfile.hpp"
 #include "../Shared/XoneCueLoadBar.hpp"
 #include "../Core/NativeSlices.hpp"
 #include <cassert>
@@ -509,6 +510,63 @@ int main() {
         pump(48);assert(sent==before+2);
     }
     [burstUnit deallocateRenderResources];
+
+    // SH36 uses the real AU state field, length-two PC output and live CC input.
+    // The provisional Roland table is a working assumption, not hardware proof.
+    XoneMidiAudioUnit *shUnit=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
+    assert(shUnit&&!error);assert([shUnit.inputBusses[0] setFormat:format error:&error]);
+    assert([shUnit.outputBusses[0] setFormat:format error:&error]);
+    assert(![shUnit configureSh01aSource:0 channel:15]);
+    assert([shUnit configureSh01aSource:0 channel:1]);
+    assert(![shUnit configureSh01aSource:1 channel:1]); // existing route/mirrors protected
+    __block unsigned shPrograms=0,shControls=0;__block bool failShPc=false;
+    AUMIDIOutputEventBlock shOutput=^OSStatus(AUEventSampleTime time,uint8_t cable,NSInteger length,const uint8_t *data){
+        (void)time;assert(cable==0);
+        if((data[0]&15)==0){
+            if((data[0]&0xF0)==0xC0){assert(length==2);++shPrograms;if(failShPc){failShPc=false;return -1;}}
+            else {assert(length==3&&(data[0]&0xF0)==0xB0);++shControls;}
+        }else assert(length==3);
+        return noErr;
+    };
+    shUnit.MIDIOutputEventBlock=shOutput;
+    shUnit.transportStateBlock=^BOOL(AUHostTransportStateFlags *flags,double *p,double *a,double *b){
+        (void)p;(void)a;(void)b;if(flags)*flags=static_cast<AUHostTransportStateFlags>(0);return YES;
+    };
+    assert([shUnit allocateRenderResourcesAndReturnError:&error]);auto shRender=shUnit.internalRenderBlock;
+    AUEventSampleTime shCursor=0;
+    const auto shPump=[&](const uint8_t* data,unsigned length){
+        AudioTimeStamp t{};t.mFlags=kAudioTimeStampSampleTimeValid;t.mSampleTime=static_cast<Float64>(shCursor);
+        AURenderEvent e{};e.MIDI.eventType=AURenderEventMIDI;e.MIDI.eventSampleTime=shCursor;
+        e.MIDI.cable=0;e.MIDI.length=static_cast<uint16_t>(length);
+        for(unsigned i=0;i<length;++i)e.MIDI.data[i]=data[i];
+        AudioUnitRenderActionFlags f=0;audio.frameLength=48;
+        assert(shRender(&f,&t,48,0,audio.mutableAudioBufferList,length?&e:nullptr,nil)==noErr);shCursor+=48;
+    };
+    const auto shKey=[&](uint8_t note,bool down){const uint8_t b[]{static_cast<uint8_t>(down?0x9E:0x8E),note,static_cast<uint8_t>(down?127:0)};shPump(b,3);};
+    shPump(nullptr,0);const uint8_t shPc[]{0xC0,0};shPump(shPc,2);
+    const auto provisional=xone::host::provisionalSh01aProfile(17,0,0,1000);
+    for(auto cc:provisional.cc){const uint8_t b[]{0xB0,cc,64};shPump(b,3);}
+    xone::host::Sh01aAttachment shDecoded;
+    NSData *shData=shUnit.fullState[@"XONE_SH01A_MIRRORS_V1"];
+    assert(xone::host::decodeSh01aAttachment((const uint8_t *)shData.bytes,shData.length,shDecoded));
+    assert(shDecoded.image.mirrors[0].valid&&shPrograms==0&&shControls==0); // no RX echo
+    shKey(13,true);shKey(15,true);shKey(15,false);shKey(13,false); // MACHINE pair source0
+    shKey(14,true);shKey(52,true);shKey(52,false);shKey(14,false);assert(shPrograms==0&&shControls==0); // SAVE suppressed
+    failShPc=true;shKey(53,true);shKey(53,false);assert(shPrograms==1&&shControls==0); // empty mirror recall is still PC1
+    shPump(nullptr,0);assert(shPrograms==2&&shControls==0); // retry once in following render
+    for(auto cc:provisional.cc){const uint8_t b[]{0xB0,cc,70};shPump(b,3);}
+    NSDictionary *shState=shUnit.fullStateForDocument;shData=shState[@"XONE_SH01A_MIRRORS_V1"];
+    assert(xone::host::decodeSh01aAttachment((const uint8_t *)shData.bytes,shData.length,shDecoded));
+    assert(shDecoded.image.mirrors[1].valid&&shDecoded.image.mirrors[1].values[0]==70);
+    [shUnit deallocateRenderResources];
+    XoneMidiAudioUnit *shAgain=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
+    assert(shAgain&&!error);shAgain.MIDIOutputEventBlock=shOutput;shAgain.fullState=shState;
+    assert([shAgain.inputBusses[0] setFormat:format error:&error]);assert([shAgain.outputBusses[0] setFormat:format error:&error]);
+    assert([shAgain allocateRenderResourcesAndReturnError:&error]);shRender=shAgain.internalRenderBlock;shCursor=0;
+    shPump(nullptr,0);shPump(nullptr,0);assert(shPrograms==2&&shControls==0); // no PC/CC replay on recreate
+    shData=shAgain.fullState[@"XONE_SH01A_MIRRORS_V1"];
+    assert(xone::host::decodeSh01aAttachment((const uint8_t *)shData.bytes,shData.length,shDecoded)&&shDecoded.image.mirrors[1].valid);
+    [shAgain deallocateRenderResources];
 
     std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)\n";
  }
