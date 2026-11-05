@@ -111,19 +111,45 @@ int main() {
     assert(button>=0&&emptyButton>=0);
     assert(memory.ledImage()[static_cast<unsigned>(button-4)].color==MuteLedColor::Yellow);
     edge(memory,button,true,10);
-    assert(flush(memory)==0&&memory.ledImage()[static_cast<unsigned>(button-4)].blinking);
+    assert(flush(memory)==0&&!memory.ledImage()[static_cast<unsigned>(button-4)].blinking);
     edge(memory,button,false,11);
+    assert(memory.ledImage()[static_cast<unsigned>(button-4)].blinking);
     memory.onMusicalGrid(grid(GridKind::Beat));
     assert(flush(memory)==108);
     assert(memory.desiredLive(1648).value==42&&memory.desiredLive(1696).value==61);
     xone::l01::BankS6::MemoryRecord record{};
     assert(memory.readMemory(20,0,record)&&!record.valid);
-    edge(memory,emptyButton,true,20);
+    edge(memory,emptyButton,true,20);edge(memory,emptyButton,false,21);
     for(int family=0;family<2;++family)for(int sound=0;sound<6;++sound)
         assert(memory.readMemory(12+8*family+sound,1,record)&&record.valid);
     assert(memory.readMemory(27,1,record)&&!record.valid);
     assert(memory.ledImage()[static_cast<unsigned>(emptyButton-4)].color==MuteLedColor::Red);
-    edge(memory,emptyButton,false,220);
-    assert(memory.readMemory(12,1,record)&&record.revision==1); // held release does not write twice
+    assert(memory.readMemory(12,1,record)&&record.revision==1&&record.values[0]==42);
+    assert(memory.resetContinuousTargets(resets,2)&&flush(memory)==2);
+    edge(memory,emptyButton,true,30);
+    memory.onMusicalGrid(grid(GridKind::Beat));
+    assert(memory.desiredLive(1648).value==0&&flush(memory)==0);
+    edge(memory,emptyButton,false,230);
+    assert(memory.readMemory(12,1,record)&&record.revision==2&&record.values[0]==0);
+    assert(memory.readMemory(20,1,record)&&record.revision==2&&record.values[0]==0);
+    assert(flush(memory)==0); // replacement does not recall
+    HostEngine individual;setup(individual,0,1);
+    int single=-1, singleEmpty=-1;
+    for(int p=4;p<20;++p){
+        const auto route=individual.routeForControl(p);
+        if(route.address/1024!=5)continue;
+        if(route.position==0)single=p;
+        if(route.position==1)singleEmpty=p;
+    }
+    assert(single>=0&&singleEmpty>=0);
+    edge(individual,single,true,1);edge(individual,single,false,2);
+    assert(individual.readMemory(12,0,record)&&record.revision==1);
+    edge(individual,single,true,3);edge(individual,single,false,203);
+    assert(individual.readMemory(12,0,record)&&record.revision==2);
+    edge(individual,single,true,204);individual.stop(205);edge(individual,single,false,450);
+    assert(individual.readMemory(12,0,record)&&record.revision==2);
+    edge(individual,singleEmpty,true,451);edge(individual,singleEmpty,false,651);
+    assert(individual.readMemory(12,1,record)&&record.valid&&record.revision==1);
+    assert(individual.memoryEngaged(12,1)&&individual.pendingMemorySlot(12)==-1);
     std::cout<<"PASS DRUM/FILL page 7 fan-out, RESET, shared page 8 aliases and SOFT groups\n";
 }
