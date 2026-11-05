@@ -30,9 +30,9 @@ int main(){
  e.ackSourcePacket(p,false,0);assert(!e.nextSourcePacket().valid);
  e.beginSourceRetryPass();assert(e.nextSourcePacket().valid);flush(e);
  // All scopes before mutation: an unknown member refuses the whole batch.
- std::array<ContinuousTarget,97> group{};group[0]={1476,708};group[1]={1744,907};group[2]={1745,908};
+ std::array<ContinuousTarget,97> group{};group[0]={1476,708};group[1]={1744,907};group[2]={1750,913};
  assert(!e.resetContinuousTargets(group,3));
- assert(e.desiredLive(1476).value==63&&!e.desiredLive(1744).known&&!e.nextSourcePacket().valid);
+ assert(e.desiredLive(1476).value==63&&e.desiredLive(1744).value==63&&!e.nextSourcePacket().valid);
  assert(e.resetContinuousTargets(group,2));assert(e.desiredLive(1744).value==41);flush(e);
  // No stale default from a different configuration, no partially accepted table.
  defaults.config=2;assert(e.requestResetDefaults(defaults));e.beginRenderBuffer();

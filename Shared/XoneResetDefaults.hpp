@@ -1,11 +1,20 @@
 #pragma once
-// Explicit numeric defaults for the neutral CC API, never inferred from boot.
+// Configured overrides and sourced universal defaults for neutral CC.
 // Configuration is metadata only: accepting it performs no musical reset.
 #include <array>
 #include <cstdint>
 #include <cstddef>
 #include "XoneSession.hpp"
 namespace xone::host {
+// GOLDEN BICC6/BICC11 cover the six DRUMS/FILL sounds in each family.
+inline constexpr int universalContinuousBase(int cell) noexcept {
+ if((cell>=1648&&cell<1684)||(cell>=1696&&cell<1732))return 0;
+ // GOLDEN BICC1/BICC8 initialize six EQ controls in each root.
+ if((cell>=1744&&cell<1750)||(cell>=1756&&cell<1762))return 63;
+ // The shared DRUM8/FILL8 page uses the existing GLOBAL EQ targets.
+ if(cell>=1467&&cell<=1472)return 63;
+ return -2;
+}
 struct ResetDefaults {
  static constexpr unsigned Count=931;
  int config{};

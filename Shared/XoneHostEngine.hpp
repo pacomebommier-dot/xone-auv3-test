@@ -65,10 +65,13 @@ public:
         core_.initializeSourceDefaultNav();
         core_.enableDiagnosticLive(true);
         // Native logical configuration, independent of backend/instrument profile.
-        // New LIVE stays entirely UNKNOWN; banks stay empty and no MIDI is sent.
+        // Seed documented local references without sending MIDI or creating banks.
         l01::LiveState::SessionImage local{};
         local.schema=1;local.config=1;local.revision=1;local.desired.fill(-2);
+        seedOpeningValues(local,ResetDefaults{});
         core_.restoreNativeSessionForDiagnostic(local);
+        openingLive_=local;
+        uiSession_.image=local;
         core_.enableTestMidiProjection(true);
         core_.enableDiagnosticTouchNav(true); // source @zk/@zl selection, not SPOT TOUCH output
         core_.enableDiagnosticQualifiedNav(true); // source-qualified SHORT/LONG NAV only
@@ -105,7 +108,9 @@ public:
             if(globalApi(static_cast<unsigned>(target.cell),type)!=target.api||type!=10)return false;
             const int source=sourceForCell(target.cell);
             if(source>=0&&resetDefaults_.alternatives[static_cast<unsigned>(source)]!=activeAlternative(static_cast<unsigned>(source)))return false;
-            const int value=resetDefaults_.get(target.api,config);if(value<0)return false;
+            const int overrideValue=resetDefaults_.get(target.api,config);
+            const int value=overrideValue>=0?overrideValue:universalContinuousBase(target.cell);
+            if(value<0)return false;
             for(unsigned j=0;j<i;++j)if(targets[j].cell==target.cell)return false;
             const auto before=core_.nativeLive().desired(target.cell);
             changed[i]=!before.known||before.value!=value;cells[i]=target.cell;values[i]=value;
@@ -1020,9 +1025,14 @@ private:
         return r;
     }
 public:
+    int openingValue(int cell) const noexcept {
+        return cell>=0&&static_cast<unsigned>(cell)<openingLive_.desired.size()?openingLive_.desired[static_cast<unsigned>(cell)]:-2;
+    }
     // Lifecycle-only restore: call before rendering starts, never from UI during render.
     bool restoreSessionBeforeRendering(const l01::LiveState::SessionImage& image) noexcept {
-        return !started_&&core_.restoreNativeSessionForDiagnostic(image);
+        if(started_||!core_.restoreNativeSessionForDiagnostic(image))return false;
+        openingLive_=image;
+        return true;
     }
     // Lifecycle-only bank input, distinct from file selection/loading and from
     // an observed instrument. New banks are empty; no automatic legacy import.
@@ -1164,10 +1174,10 @@ public:
         for(std::size_t i=0;i<36;++i)if(core_.surface().held(i))return;
         DocumentFrame document{};
         if(documents_->restores.take(document)&&document.token==restoreEpoch_.load(std::memory_order_acquire)){
-            if(applyDocument(document.image)){appliedToken_=document.token;documentDirty_=true;}
+            if(applyDocument(document.image,document.token)){appliedToken_=document.token;documentDirty_=true;}
         }
         SessionFrame next{};
-        if(restores_.take(next)&&next.token==restoreEpoch_.load(std::memory_order_acquire)&&core_.restoreNativeSessionForDiagnostic(next.image)){
+        if(restores_.take(next)&&next.token==restoreEpoch_.load(std::memory_order_acquire)&&restoreOpeningSession(next.image,next.token)){
             appliedToken_=next.token;pickup_=ContinuousPickup{};
             core_.output()=l01::OutputS4{};core_.enableTestMidiProjection(true);
             samplePatch_={};pairedTopSource_=-1; // a restored session cannot execute an old queued recall
@@ -1896,7 +1906,34 @@ private:
         }
         return d;
     }
-    bool applyDocument(DocumentImage& d)noexcept {
+    // Fill only documented local holes. Older files retain their stored values.
+    static void seedOpeningValues(SessionImage& image,const ResetDefaults& defaults) noexcept {
+        for(unsigned cell=0;cell<image.desired.size();++cell){
+            if(image.desired[cell]!=-2)continue;
+            const int universal=universalContinuousBase(static_cast<int>(cell));
+            if(universal<0)continue;
+            int type=10;
+            const int value=defaults.get(globalApi(cell,type),image.config);
+            image.desired[cell]=value>=0?value:universal;
+        }
+        // MEMORY for each real sound includes three FX switches.
+        for(int owner:{12,13,14,15,16,17,20,21,22,23,24,25})
+            for(int field=6;field<9;++field){
+                const auto cell=static_cast<unsigned>(l01::FxS6::addressFor(owner,field));
+                if(image.desired[cell]==-2)image.desired[cell]=0;
+            }
+    }
+    const ResetDefaults& openingDefaults(uint32_t token) const noexcept {
+        if(pendingResetDefaults_.valid&&pendingResetDefaults_.token==token)return pendingResetDefaults_.values;
+        return resetDefaults_;
+    }
+    bool restoreOpeningSession(SessionImage& image,uint32_t token) noexcept {
+        seedOpeningValues(image,openingDefaults(token));
+        if(!core_.restoreNativeSessionForDiagnostic(image))return false;
+        openingLive_=image;
+        return true;
+    }
+    bool applyDocument(DocumentImage& d,uint32_t token)noexcept {
         if(!validDocument(d))return false;
         l01::BankS6 bank{};bank.initializeEmpty();
         std::array<std::uint32_t,96> memoryBases{};std::array<std::uint32_t,84> patchBases{};
@@ -1914,7 +1951,10 @@ private:
         auto soft=SoftMidiBridge{};auto mute=muteBridge_;
         auto appliedSoft=d.current.soft;appliedSoft.sounding.fill(false);
         if(!soft.restoreApplied(appliedSoft)||!mute.restoreApplied(d.current.mute,true))return false;
-        if(!core_.commitNativeDocument(d.live,d.current.nav,bank,memoryBases,patchBases))return false;
+        auto live=d.live;
+        seedOpeningValues(live,openingDefaults(token));
+        if(!core_.commitNativeDocument(live,d.current.nav,bank,memoryBases,patchBases))return false;
+        openingLive_=live;
         s8Sample_=d.sample;s8Machine_=d.machine;sourcePatches_=d.source;alternativeBank_=d.alternative;alternatives_=arbiter;
         presets_=d.presets;globalInit_=d.init;soft_=soft;muteBridge_=mute;muteGate_.restoreVisible(d.current.muteVisible);
         cueLoad_=CueLoadBar{}; // desired selection is rebuilt below; no historical service pulse
@@ -2195,6 +2235,7 @@ private:
     std::unique_ptr<DocumentExchange> documents_{std::make_unique<DocumentExchange>()};
     std::atomic<uint32_t> restoreEpoch_{0};bool documentDirty_{true};
     SessionMailbox restores_{},snapshots_{};
+    SessionImage openingLive_{}; // render-owned baseline for empty MEMORY slots
     SessionFrame uiSession_{}; // UI owns cache and request generation.
     uint32_t requestedToken_{}; // UI only
     uint32_t appliedToken_{},publishedToken_{},publishedRevision_{}; // render only

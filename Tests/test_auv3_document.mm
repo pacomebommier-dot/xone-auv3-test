@@ -141,7 +141,8 @@ int main() {
     assert(reopenedRender(&flags,&timestamp,48,0,audio.mutableAudioBufferList,nullptr,nil)==noErr && sent==18);
     NSData *reloaded=reopened.fullStateForDocument[@"XONE_LAST_LIVE_V1"];
     assert(xone::host::decodeSession(static_cast<const uint8_t *>(reloaded.bytes),reloaded.length,decoded)&&decoded.desired[1328]==100);
-    assert(replayed==21&&mixReplayed==1); // Five LIVE values plus 16 applied MUTE states; no historical pulse.
+    constexpr unsigned openingBaseValues=12*9+12+6; // sound FX, INST/YELLOW EQ, GLOBAL EQ
+    assert(replayed==21+openingBaseValues&&mixReplayed==1); // Saved LIVE and MUTE states, no historical pulse.
     NSData *documentData=state[@"XONE_DOCUMENT_V2"];assert([documentData isKindOfClass:[NSData class]]);
     xone::host::DocumentImage documentImage{};
     assert(xone::host::decodeDocument((const uint8_t *)documentData.bytes,documentData.length,documentImage));
