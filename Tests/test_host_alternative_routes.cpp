@@ -84,6 +84,24 @@ int main(){
   else {flush(h);assert(h.activeAlternative(0)==1&&h.desiredLive(320).value==22);}
  }
 
+ // A free instrument keeps its last MACHINE LIVE across save and reopen.
+ {HostEngine h;machinePage(h);
+  assert(h.configureAlternativeBase(0,0,base(11),1)&&h.configureAlternativeBase(0,1,base(22),1));
+  assert(h.bindAlternativeSlot(0,0,0)&&h.bindAlternativeSlot(0,1,1));
+  assert(h.requestAlternative(0,0)==A::Request::Accepted);h.onMusicalGrid(bar(4));flush(h);
+  machineCC(h,11,1);machineCC(h,37,2);
+  assert(h.requestAlternative(0,1)==A::Request::Accepted);h.onMusicalGrid(bar(8));flush(h);
+  assert(h.desiredLive(320).value==22);
+  h.endRenderBuffer();DocumentBytes bytes;
+  assert(encodeDocument(h.documentForHost(),bytes));
+  DocumentImage saved{};assert(decodeDocument(bytes.data(),bytes.size(),saved));
+  HostEngine reopened;assert(reopened.requestDocumentRestore(saved));reopened.beginRenderBuffer();flush(reopened);
+  assert(reopened.activeAlternative(0)==1&&reopened.desiredLive(320).value==22);
+  assert(reopened.requestAlternative(0,0)==A::Request::Accepted);reopened.onMusicalGrid(bar(12));flush(reopened);
+  assert(reopened.activeAlternative(0)==0&&reopened.desiredLive(320).value==37);
+  assert(reopened.requestSourceRecall(0,3));reopened.onMusicalGrid(bar(16));flush(reopened);
+  assert(reopened.desiredLive(320).value==11);
+ }
  HostEngine e;assert(e.presetInstrumentGroup()==-1&&e.activeAlternative(0)==-1);
  assert(e.requestAlternative(0,0)==A::Request::Rejected);
  assert(e.configureAlternativeBase(0,2,base(11),1)&&e.bindAlternativeSlot(0,0,2));
@@ -94,6 +112,10 @@ int main(){
  SourcePatchBank::Patch p{};assert(!e.readSourcePatch(0,0,p));
  assert(e.requestAlternative(0,0)==A::Request::Accepted);e.onMusicalGrid(bar(12));flush(e);assert(e.readSourcePatch(0,0,p)&&p.values[0]==11);
  assert(e.bindAlternativeSlot(1,0,2));assert(e.requestAlternative(1,0)==A::Request::Rejected);
+ assert(e.showPresetPage()&&e.consultPresetInstrumentGroup(0));
+ assert(e.ledImage()[12].color==MuteLedColor::Green);
+ assert(e.consultPresetInstrumentGroup(1));
+ assert(e.ledImage()[12].color==MuteLedColor::Red);
  assert(e.configureAlternativeBase(1,2,base(33),1)&&e.bindAlternativeSlot(2,0,2));assert(e.requestAlternative(2,0)==A::Request::Accepted);
  e.onMusicalGrid(bar(16));flush(e);assert(e.activeAlternative(0)==2&&e.activeAlternative(2)==2);
  std::cout<<"PASS native alternative selection, configured BASE, independent pools and instrument-owned PATCH banks\n";

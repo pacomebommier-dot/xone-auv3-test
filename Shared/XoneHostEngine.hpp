@@ -637,7 +637,7 @@ public:
                 if(id<0)continue;
                 set(12+slot,MuteLedColor::Off);const unsigned peer=group^1u;
                 if(activeAlternative(group)==id)set(12+slot,MuteLedColor::Green);
-                else if(activeAlternative(peer)==id)set(12+slot,MuteLedColor::Yellow);
+                else if(activeAlternative(peer)==id)set(12+slot,MuteLedColor::Red);
                 else if(pendingAlternative(group)==id)set(12+slot,MuteLedColor::Green,true);
                 else if(pendingAlternative(peer)==id)set(12+slot,MuteLedColor::Yellow);
             }
@@ -2001,6 +2001,13 @@ private:
             const auto& base=sourceBases_[sourceBaseIndex(source,flight.plan.to[source])];
             if(base.valid&&base.config==config)
                 for(unsigned f=0;f<SourceBaseImage::Count;++f)values[firstField+f]=base.values[f];
+            const auto& last=alternativeBank_.last(source/2,static_cast<unsigned>(flight.plan.to[source]));
+            unsigned liveField=firstField;
+            for(unsigned f=0;f<last.size();++f){
+                if(!SourcePatchBank::included(f))continue;
+                if(last[f]>=0)values[liveField]=last[f];
+                ++liveField;
+            }
             unsigned field=firstField;
             for(unsigned f=0;f<97;++f){
                 int api=-1,type=10,value=0;

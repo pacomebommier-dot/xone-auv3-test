@@ -45,6 +45,9 @@ public:
  int mode(unsigned pool,unsigned instrument,unsigned index)const noexcept {
   return pool<2&&instrument<4&&index<24?records_[4*pool+instrument].modes[index]:-2;
  }
+ const Values& last(unsigned pool,unsigned instrument) const noexcept {
+  return records_[4*pool+instrument].last;
+ }
  void remember(unsigned pool,unsigned instrument,const Values& current) noexcept {
   if(pool<2&&instrument<4)records_[4*pool+instrument].last=SourcePatchBank::canonical(current);
  }
