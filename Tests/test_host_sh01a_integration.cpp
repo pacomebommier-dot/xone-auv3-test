@@ -29,7 +29,7 @@ int main(){
  HostEngine h;xone::l01::NavS3 nav;assert(nav.initializeDefault());auto n=nav.active();n.at(292)=7;n.contextMode=7;n.at(314)=static_cast<int>(2*source+1);
  assert(xone::l01::NavS3::regenerate(n)&&h.setNavForDiagnostic(n));
  assert(h.requestSh01aAttachment(a));h.beginRenderBuffer();h.endRenderBuffer();
- rx(h,0,1);full(h,a.image.profile,64,2);h.endRenderBuffer();auto saved=h.sh01aForHost();
+ rx(h,1,1);full(h,a.image.profile,64,2);h.endRenderBuffer();auto saved=h.sh01aForHost();
  assert(saved.image.mirrors[0].valid&&h.desiredLive(SourcePatchBank::cell(source,0)).value==64&&!h.nextSh01aPacket().valid);
  assert(!h.saveSourcePatch(source,0));assert(!h.desiredLive(1552+24*static_cast<int>(source)).known); // SH never resets FX on PATCH
  h.observeTransport(false);assert(h.requestSourceRecall(otherSource,3));
@@ -37,7 +37,7 @@ int main(){
  assert(h.saveSourcePatch(otherSource,2));SourcePatchBank::Patch other{};assert(h.readSourcePatch(otherSource,2,other)&&other.valid);
  h.observeTransport(true);
  assert(h.requestSourceRecall(source,1));assert(!h.nextSh01aPacket().valid);bar(h);
- auto pc=h.nextSh01aPacket();assert(pc.valid&&pc.length==2&&pc.bytes[0]==0xC0&&pc.bytes[1]==1);
+ auto pc=h.nextSh01aPacket();assert(pc.valid&&pc.length==2&&pc.bytes[0]==0xC0&&pc.bytes[1]==2);
  assert(!h.nextSourcePacket().valid);h.ackSh01aPacket(pc,false,3,3);assert(!h.nextSh01aPacket().valid);
  h.beginRenderBuffer();pc=h.nextSh01aPacket();assert(pc.valid&&pc.length==2);h.ackSh01aPacket(pc,true,4,4);
  assert(!h.nextSh01aPacket().valid&&!h.nextSourcePacket().valid);full(h,a.image.profile,37,5);h.endRenderBuffer();
@@ -53,12 +53,38 @@ int main(){
  assert(h.captureRed());const uint8_t edit2[]{0xB0,74,61};h.receive(0,edit2,3,8,8);assert(h.restoreRed());
  assert(h.desiredLive(SourcePatchBank::cell(source,0)).value==61&&!h.nextSh01aPacket().valid);
  for(unsigned i=0;i<4096;++i){auto p=h.nextSourcePacket();if(!p.valid)break;h.ackSourcePacket(p,true,8);}
- rx(h,2,9);assert(h.ledImage()[30].blinking);const uint8_t partial[]{0xB0,74,99};h.receive(0,partial,3,10,10);h.stop(11);h.endRenderBuffer();
+ rx(h,3,9);assert(h.ledImage()[30].blinking);const uint8_t partial[]{0xB0,74,99};h.receive(0,partial,3,10,10);h.stop(11);h.endRenderBuffer();
  assert(!h.ledImage()[30].known);
  saved=h.sh01aForHost();assert(!saved.image.mirrors[2].valid&&saved.image.mirrors[0].valid);
  HostEngine reopened;assert(reopened.requestSh01aAttachment(saved));reopened.beginRenderBuffer();reopened.endRenderBuffer();
  assert(reopened.sh01aForHost().image.mirrors[1].valid&&!reopened.nextSh01aPacket().valid);
  assert(reopened.sh01aLive(74)==-2); // persisted mirrors are not fresh observations
+ h.observeTransport(false);
+ assert(h.requestSourceRecall(source,3));
+ auto base=h.nextSh01aPacket();
+ assert(base.valid&&base.value==0&&base.bytes[1]==0);
+ h.ackSh01aPacket(base,true,500,500);
+ unsigned fxPackets=0;
+ while(true){const auto p=h.nextSourcePacket();if(!p.valid)break;h.ackSourcePacket(p,true,500);++fxPackets;}
+ assert(fxPackets==37);
+ rx(h,0,501);assert(!h.nextSourcePacket().valid&&!h.nextSh01aPacket().valid);
+ rx(h,0,700);assert(h.nextSourcePacket().valid&&!h.nextSh01aPacket().valid);
+ full(h,a.image.profile,66,701);h.endRenderBuffer();
+ assert(h.sh01aForHost().image.mirrors==saved.image.mirrors);
+
+ // Old SHAU V1 wire has the same size but index zero used to mean PC0.
+ auto legacy=saved;
+ legacy.image.mirrors[0].values[0]=11;
+ legacy.image.mirrors[1].values[0]=22;
+ legacy.image.mirrors[2]=legacy.image.mirrors[1];
+ legacy.image.mirrors[2].values[0]=33;
+ assert(encodeSh01aAttachment(legacy,wire));
+ wire[4]=1;
+ sessionPut32(wire.data()+wire.size()-4,sessionCrc(wire.data(),wire.size()-4));
+ assert(decodeSh01aAttachment(wire.data(),wire.size(),decoded));
+ assert(decoded.image.mirrors[0].values[0]==22&&decoded.image.mirrors[1].values[0]==33);
+ assert(!decoded.image.mirrors[2].valid);
+
  }
  std::cout<<"PASS SH36 host across four sources configured route, S3 LIVE, SAVE guard, BAR PC-only, callback retry, physical CC, mirrors and no restore TX; hardware NOT_TESTED\n";
 }

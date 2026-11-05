@@ -390,7 +390,7 @@ int main() {
     pump(48,0xBE,16,64);pump(48,0xBE,16,100);assert(sent==beforeRed+2);
     pump(48,0x9E,12,127);failAt=beforeRed+3;pump(48,0x8E,12,0);
     assert(sent==beforeRed+3&&lastStatus==0xBA&&lastNumber==48&&lastValue==64);
-    failAt=0;pump(48);assert(sent==beforeRed+4);pump(48);assert(sent==beforeRed+4);
+    failAt=0;pump(48);assert(sent==beforeRed+4+openingBaseValues);pump(48);assert(sent==beforeRed+4+openingBaseValues);
     NSData *redState=redUnit.fullStateForDocument[@"XONE_LAST_LIVE_V1"];
     assert(xone::host::decodeSession(static_cast<const uint8_t *>(redState.bytes),redState.length,decoded));
     assert(decoded.desired[1328]==64&&decoded.desired[0]==-2);
@@ -422,7 +422,8 @@ int main() {
     pump(48,0xBE,16,64);pump(48,0xBE,16,100);assert(sent==beforePreset+2);
     pump(48,0x9E,36,127);pump(48,0x8E,36,0);assert(sent==beforePreset+2);
     for(unsigned i=0;i<12;++i)pump(8192);
-    assert(sent==beforePreset+3&&lastStatus==0xBA&&lastNumber==48&&lastValue==64);
+    assert(sent==beforePreset+3+openingBaseValues);
+    assert(recorded[beforePreset+2][0]==0xBA&&recorded[beforePreset+2][1]==48&&recorded[beforePreset+2][2]==64);
     NSData *presetState=presetUnit.fullStateForDocument[@"XONE_LAST_LIVE_V1"];
     assert(xone::host::decodeSession(static_cast<const uint8_t *>(presetState.bytes),presetState.length,decoded)&&decoded.desired[1328]==64);
     face.value=0;pump(48);assert(faceValue(face)==0);
@@ -433,15 +434,15 @@ int main() {
     parameterEvent.parameter.parameterAddress=0;parameterEvent.parameter.value=1;
     AudioUnitRenderActionFlags parameterFlags=0;audio.frameLength=48;
     assert(render(&parameterFlags,&parameterTime,48,0,audio.mutableAudioBufferList,&parameterEvent,nil)==noErr);cursor+=48;
-    assert(faceValue(face)==1&&sent==beforePreset+3);
+    assert(faceValue(face)==1&&sent==beforePreset+3+openingBaseValues);
     AUParameter *refresh=[presetUnit.parameterTree parameterWithAddress:1];assert(refresh);
     const NSUInteger beforeRefresh=ledSent;refresh.value=1;pump(48);
-    assert(ledSent>=beforeRefresh+100&&sent==beforePreset+3&&faceValue(refresh)==0);
+    assert(ledSent>=beforeRefresh+100&&sent==beforePreset+3+openingBaseValues&&faceValue(refresh)==0);
     const NSUInteger beforeAutomationRefresh=ledSent;
     expected[0]=cursor;expected[1]=cursor+48;parameterTime.mSampleTime=static_cast<Float64>(cursor);
     parameterEvent.parameter.eventSampleTime=cursor+12;parameterEvent.parameter.parameterAddress=1;
     assert(render(&parameterFlags,&parameterTime,48,0,audio.mutableAudioBufferList,&parameterEvent,nil)==noErr);cursor+=48;
-    assert(ledSent>=beforeAutomationRefresh+100&&sent==beforePreset+3);
+    assert(ledSent>=beforeAutomationRefresh+100&&sent==beforePreset+3+openingBaseValues);
     [presetUnit deallocateRenderResources];
 
     // Fresh AU, no fixture/instrument: defaults are explicit host metadata, not a reset on load.
@@ -549,7 +550,7 @@ int main() {
         assert(shRender(&f,&t,48,0,audio.mutableAudioBufferList,length?&e:nullptr,nil)==noErr);shCursor+=48;
     };
     const auto shKey=[&](uint8_t note,bool down){const uint8_t b[]{static_cast<uint8_t>(down?0x9E:0x8E),note,static_cast<uint8_t>(down?127:0)};shPump(b,3);};
-    shPump(nullptr,0);const uint8_t shPc[]{0xC0,0};shPump(shPc,2);
+    shPump(nullptr,0);const uint8_t shPc[]{0xC0,1};shPump(shPc,2);
     const auto provisional=xone::host::provisionalSh01aProfile(17,0,0,1000);
     for(auto cc:provisional.cc){const uint8_t b[]{0xB0,cc,64};shPump(b,3);}
     xone::host::Sh01aAttachment shDecoded;
@@ -558,7 +559,7 @@ int main() {
     assert(shDecoded.image.mirrors[0].valid&&shPrograms==0&&shControls==0); // no RX echo
     shKey(13,true);shKey(15,true);shKey(15,false);shKey(13,false); // MACHINE pair source0
     shKey(14,true);shKey(52,true);shKey(52,false);shKey(14,false);assert(shPrograms==0&&shControls==0); // SAVE suppressed
-    failShPc=true;shKey(53,true);shKey(53,false);assert(shPrograms==1&&shControls==0); // empty mirror recall is still PC1
+    failShPc=true;shKey(53,true);shKey(53,false);assert(shPrograms==1&&shControls==0); // empty mirror recall is still PC2
     shPump(nullptr,0);assert(shPrograms==2&&shControls==0); // retry once in following render
     for(auto cc:provisional.cc){const uint8_t b[]{0xB0,cc,70};shPump(b,3);}
     NSDictionary *shState=shUnit.fullStateForDocument;shData=shState[@"XONE_SH01A_MIRRORS_V1"];
@@ -569,7 +570,7 @@ int main() {
     const uint8_t receivedCc[]{0xB0,3,64}, extraCc[]{0xB0,90,64}, shStop[]{0xFC};
     shPump(receivedCc,3);shPump(extraCc,3);shPump(shStop,1);
     NSString *shDiagnostic=[shUnit drainDiagnosticText];
-    assert([shDiagnostic containsString:@"PC0 1/36 missing: 5 12"]);
+    assert([shDiagnostic containsString:@"PC1 1/36 missing: 5 12"]);
     assert([shDiagnostic containsString:@"extra: 90"]);
     [shUnit deallocateRenderResources];
     XoneMidiAudioUnit *shAgain=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];

@@ -32,7 +32,7 @@ struct Sh01aAttachment {
 using Sh01aAttachmentBytes=std::array<uint8_t,12+Sh01aMirrorBytes{}.size()+36+4>;
 inline bool encodeSh01aAttachment(const Sh01aAttachment& a,Sh01aAttachmentBytes& out)noexcept {
  if(!a.valid())return false;
- Sh01aAttachmentBytes b{};b[0]='S';b[1]='H';b[2]='A';b[3]='U';b[4]=1;b[5]=a.enabled?1:0;
+ Sh01aAttachmentBytes b{};b[0]='S';b[1]='H';b[2]='A';b[3]='U';b[4]=2;b[5]=a.enabled?1:0;
  if(a.enabled){
   b[8]=a.source;b[9]=static_cast<uint8_t>(a.config);b[10]=static_cast<uint8_t>(a.alternative+1);
   Sh01aMirrorBytes inner{};if(!encodeSh01aMirror(a.image,inner))return false;
@@ -42,11 +42,16 @@ inline bool encodeSh01aAttachment(const Sh01aAttachment& a,Sh01aAttachmentBytes&
  sessionPut32(b.data()+b.size()-4,sessionCrc(b.data(),b.size()-4));out=b;return true;
 }
 inline bool decodeSh01aAttachment(const uint8_t* b,std::size_t size,Sh01aAttachment& out)noexcept {
- if(!b||size!=Sh01aAttachmentBytes{}.size()||b[0]!='S'||b[1]!='H'||b[2]!='A'||b[3]!='U'||b[4]!=1||b[5]>1||b[6]||b[7]||b[11]||sessionGet32(b+size-4)!=sessionCrc(b,size-4))return false;
+ if(!b||size!=Sh01aAttachmentBytes{}.size()||b[0]!='S'||b[1]!='H'||b[2]!='A'||b[3]!='U'||(b[4]!=1&&b[4]!=2)||b[5]>1||b[6]||b[7]||b[11]||sessionGet32(b+size-4)!=sessionCrc(b,size-4))return false;
  Sh01aAttachment a;a.enabled=b[5]!=0;
  if(a.enabled){
   a.source=b[8];a.config=b[9];a.alternative=static_cast<int>(b[10])-1;
   if(!decodeSh01aMirror(b+12,Sh01aMirrorBytes{}.size(),a.image))return false;
+  if(b[4]==1){
+   a.image.mirrors[0]=a.image.mirrors[1]; // old PC1 is new PATCH1
+   a.image.mirrors[1]=a.image.mirrors[2]; // old PC2 is new PATCH2
+   a.image.mirrors[2]={}; // PC3 had no mirror in V1
+  }
   for(unsigned i=0;i<36;++i)a.fields[i]=static_cast<int16_t>(static_cast<int>(b[12+Sh01aMirrorBytes{}.size()+i])-1);
  }else for(unsigned i=8;i<size-4;++i)if(b[i])return false;
  if(!a.valid())return false;
@@ -89,8 +94,11 @@ public:
  }
  Sh01aMirror::CaptureReport takeIncomplete()noexcept{return mirror_.takeIncomplete();}
  void advance(int64_t now)noexcept{mirror_.advance(now);}
+ bool canQueueProgram(unsigned pc)const noexcept {
+  return attachment_.enabled&&pc<=shProgramForPatch(2)&&token_<UINT64_MAX;
+ }
  bool queueProgram(unsigned pc)noexcept {
-  if(!attachment_.enabled||pc>=3||token_==UINT64_MAX)return false;
+  if(!canQueueProgram(pc))return false;
   pendingProgram_=static_cast<int>(pc);pendingCc_.fill(-2);mirror_.stop();++token_;return true;
  }
  bool localEdit(unsigned index,int value)noexcept {

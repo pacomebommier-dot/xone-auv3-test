@@ -293,6 +293,7 @@ public:
     }
     void ackSh01aPacket(const Sh01aHostBridge::Packet& packet,bool success,int64_t sample,int64_t ms)noexcept {
         if(!sh01aActive()||!sh01a_.acknowledge(packet,success,ms))return;
+        if(success&&packet.index<0)shBaseSentMs_=packet.value==static_cast<int>(ShBaseProgram)?ms:-1;
         record(++sequence_,sample,Stage::TxOut,success?Reason::Sent:Reason::SendFailed,0,packet.bytes.data(),packet.length,success?0:-1);
     }
     int activeAlternative(unsigned source)const noexcept {return source<4?alternatives_.active()[source]:-1;}
@@ -404,7 +405,6 @@ public:
     }
     bool requestSourceRecall(unsigned source,unsigned choice) noexcept { documentDirty_=true;
         if(source>=4||choice>3||alternativeSourceBusy(static_cast<int>(source)))return false;
-        if(sh01aSource(source)&&choice==3){sourceStatus_[source]=SourceRecallStatus::UnknownConfig;return false;}
         if(!transportStopped_&&!musicalScheduler_.replace(1,static_cast<uint16_t>(source),ScheduleWhen::NextBar))return false;
         sourcePending_[source]=static_cast<int>(choice);sourcePendingAlternative_[source]=activeAlternative(source);sourceStatus_[source]=SourceRecallStatus::Pending;
         if(transportStopped_)applySourceRecall(source);
@@ -567,24 +567,14 @@ public:
             if(CueLoadBar::derive(nav,static_cast<unsigned>(physical),cueGroup,cueIndex)){
                 if(sh01aSource(cueGroup)){
                     const int choice=static_cast<int>(cueIndex%4);const auto& observed=sh01a_.mirror();
-                    set(i,choice<3&&observed.program()==choice&&observed.programObserved()?MuteLedColor::Green:MuteLedColor::Off);
-                    if(choice<3&&(sh01a_.pendingProgram()==choice||(observed.capturing()&&observed.program()==choice)))set(i,MuteLedColor::Yellow,true);
+                    const int program=choice==3?static_cast<int>(ShBaseProgram):static_cast<int>(shProgramForPatch(static_cast<unsigned>(choice)));
+                    set(i,observed.program()==program&&observed.programObserved()?MuteLedColor::Green:MuteLedColor::Off);
+                    if(choice==3)showSourceBaseLed(image[i],cueGroup,ms,observed.program()==program&&observed.programObserved());
+                    if(sh01a_.pendingProgram()==program||(observed.capturing()&&observed.program()==program))set(i,MuteLedColor::Yellow,true);
                 }else{
                     set(i,cueLoad_.sentSelection(cueGroup)==static_cast<int>(cueIndex)?MuteLedColor::Green:MuteLedColor::Off);
                     if(cueLoad_.desiredSelections()[cueGroup]==static_cast<int>(cueIndex)&&cueLoad_.sentSelection(cueGroup)<0&&cueLoad_.pendingSelection(cueGroup)<0&&cueLoad_.dueSelection(cueGroup)<0)image[i]={};
-                    if(cueIndex%4==3){
-                        const auto& base=sourceBases_[sourceBaseIndex(cueGroup)];
-                        if(base.valid&&base.config==config){
-                            bool matches=true;
-                            for(unsigned field=0;field<base.values.size();++field){
-                                const auto live=core_.nativeLive().desired(sourceBaseCell(cueGroup,field));
-                                if(!live.known||live.value!=base.values[field]){matches=false;break;}
-                            }
-                            const bool written=baseWriteFeedback_.source==static_cast<int>(cueGroup)&&
-                                ms>=baseWriteFeedback_.time&&ms-baseWriteFeedback_.time<600;
-                            set(i,matches?MuteLedColor::Green:MuteLedColor::Yellow,written);
-                        }
-                    }
+                    if(cueIndex%4==3)showSourceBaseLed(image[i],cueGroup,ms);
                     if(cueLoad_.pendingSelection(cueGroup)==static_cast<int>(cueIndex)||cueLoad_.dueSelection(cueGroup)==static_cast<int>(cueIndex))set(i,MuteLedColor::Yellow,true);
                 }
             }
@@ -594,9 +584,9 @@ public:
                 if(selected>=0&&selected<(machine?24:8)){
                     if(machine&&selected<8&&sh01aSource(static_cast<unsigned>(selected/2))){
                         const auto& observed=sh01a_.mirror();const auto& mirror=observed.snapshot().mirrors[static_cast<unsigned>(slot)];
-                        valid=mirror.valid;current=valid&&observed.program()==slot&&!observed.altered(static_cast<unsigned>(slot));
+                        valid=mirror.valid;current=valid&&observed.program()==static_cast<int>(shProgramForPatch(static_cast<unsigned>(slot)))&&!observed.altered(static_cast<unsigned>(slot));
                         known=observed.liveKnown();
-                        if(sh01a_.pendingProgram()==slot||(observed.capturing()&&observed.program()==slot)){set(i,MuteLedColor::Yellow,true);continue;}
+                        if(sh01a_.pendingProgram()==static_cast<int>(shProgramForPatch(static_cast<unsigned>(slot)))||(observed.capturing()&&observed.program()==static_cast<int>(shProgramForPatch(static_cast<unsigned>(slot))))){set(i,MuteLedColor::Yellow,true);continue;}
                         if(observed.incomplete(static_cast<unsigned>(slot))){image[i]={};continue;}
                     }else if(machine&&selected<8){SourcePatchBank::Patch patch{};
                         const bool exists=readSourcePatch(static_cast<unsigned>(selected/2),static_cast<unsigned>(slot),patch);compatible=!exists||patch.config==config;valid=exists&&compatible;current=valid;
@@ -668,6 +658,11 @@ public:
             const auto observation=sh01a_.receive(cable,data,length,gestureMs);
             traceShIncomplete(sample);
             if(observation.accepted){
+                if(length==2){
+                    const bool matchingEcho=shBaseSentMs_>=0&&gestureMs>=shBaseSentMs_&&gestureMs-shBaseSentMs_<=100;
+                    shBaseSentMs_=-1;
+                    if(data[1]==ShBaseProgram&&!matchingEcho)applySourceRecall(a.source,true);
+                }
                 if(observation.index>=0){const auto i=static_cast<unsigned>(observation.index);const int cell=a.cell(i);
                     if(cell>=0){const auto prior=core_.nativeLive().desired(cell);
                         if(core_.commitNativeLive(cell,observation.value,core_.nativeLive().revision(),a.config)&&
@@ -1207,6 +1202,7 @@ public:
         // NoteOff may still be due (this debt is outside OutputS4).
         if((!restores_.hasUpdate()&&!documents_->restores.hasUpdate())||core_.nativeNav().hasStage()||core_.output().outstanding()!=0||soft_.hasOutstandingNotes()||topPulse_.hasOwedOff())return;
         for(std::size_t i=0;i<36;++i)if(core_.surface().held(i))return;
+        const auto beforeRestore=appliedToken_;
         DocumentFrame document{};
         if(documents_->restores.take(document)&&document.token==restoreEpoch_.load(std::memory_order_acquire)){
             if(applyDocument(document.image,document.token)){appliedToken_=document.token;documentDirty_=true;}
@@ -1225,7 +1221,7 @@ public:
             cueBaseHolds_.fill({});baseWriteFeedback_={};
         }
         applyPendingResetDefaults();
-        beginSh01aBuffer();
+        beginSh01aBuffer(appliedToken_!=beforeRestore);
     }
     void endRenderBuffer() noexcept {
         sh01a_.endBuffer();
@@ -1316,7 +1312,7 @@ public:
     void beginStopRetryPass(int64_t sample) noexcept {stopRead_=0;stopSample_=sample;}
     unsigned pendingStopOffs() const noexcept {return stopPendingCount_;}
     void stop(int64_t sample) noexcept { muteLeds_.cancelFlashes(); documentDirty_=true;
-        sh01a_.stop();
+        sh01a_.stop();shBaseSentMs_=-1;
         traceShIncomplete(sample);
         resetBaseHolds_.fill(ResetBaseHold{});
         started_=true;transportStopped_=true;presetFaceRequest_.store(-1,std::memory_order_release);
@@ -1940,7 +1936,7 @@ private:
             d.live.desired[static_cast<unsigned>(hold.cell)]=static_cast<int16_t>(hold.previous);
             d.current.live.desired[static_cast<unsigned>(hold.cell)]=static_cast<int16_t>(hold.previous);
         }
-        d.sample=s8Sample_;d.machine=s8Machine_;d.source=sourcePatches_;d.alternative=alternativeBank_;d.sourceBases=sourceBases_;
+        d.sample=s8Sample_;d.machine=s8Machine_;d.source=sourcePatches_;d.alternative=alternativeBank_;d.sourceBases=sourceBases_;d.shBase=shBase_;
         d.presets=presets_;d.init=globalInit_;
         for(int owner=0;owner<28;++owner){
             for(int slot=0;slot<(owner<12?4:3);++slot){l01::BankS6::MemoryRecord m{};
@@ -1999,7 +1995,7 @@ private:
         seedOpeningValues(live,openingDefaults(token));
         if(!core_.commitNativeDocument(live,d.current.nav,bank,memoryBases,patchBases))return false;
         openingLive_=live;
-        s8Sample_=d.sample;s8Machine_=d.machine;sourcePatches_=d.source;alternativeBank_=d.alternative;sourceBases_=d.sourceBases;alternatives_=arbiter;
+        s8Sample_=d.sample;s8Machine_=d.machine;sourcePatches_=d.source;alternativeBank_=d.alternative;sourceBases_=d.sourceBases;shBase_=d.shBase;shBaseSentMs_=-1;alternatives_=arbiter;
         presets_=d.presets;globalInit_=d.init;soft_=soft;muteBridge_=mute;muteGate_.restoreVisible(d.current.muteVisible);
         cueBaseHolds_.fill({});baseWriteFeedback_={};
         cueLoad_=CueLoadBar{}; // desired selection is rebuilt below; no historical service pulse
@@ -2134,15 +2130,16 @@ private:
     }
     bool sh01aSource(unsigned source)const noexcept{return sh01aActive()&&source==sh01a_.attachment().source;}
     bool sh01aCell(int cell)const noexcept{return sh01aActive()&&sh01a_.attachment().indexForCell(cell)>=0;}
-    void beginSh01aBuffer()noexcept {
+    void beginSh01aBuffer(bool justRestored=false)noexcept {
         if(!sh01a_.hasPending()){sh01a_.beginBuffer(false,appliedToken_);return;}
         bool safe=false;
         if(sh01a_.hasPending()){
-            safe=sourceRead_==sourceWrite_&&!core_.nativeNav().hasStage()&&core_.output().outstanding()==0&&!soft_.hasOutstandingNotes()&&!topPulse_.hasOwedOff();
+            safe=(justRestored||sourceRead_==sourceWrite_)&&!core_.nativeNav().hasStage()&&core_.output().outstanding()==0&&!soft_.hasOutstandingNotes()&&!topPulse_.hasOwedOff();
             for(unsigned i=0;i<36&&safe;++i)if(core_.surface().held(i))safe=false;
         }
         const auto old=sh01a_.attachment();
         if(!sh01a_.beginBuffer(safe,appliedToken_))return;
+        shBaseSentMs_=-1;
         const auto cancel=[&](const Sh01aAttachment& a){if(a.enabled){musicalScheduler_.cancel(1,a.source);sourcePending_[a.source]=-1;cueLoad_.cancelPending(a.source);}};
         cancel(old);cancel(sh01a_.attachment());
     }
@@ -2185,23 +2182,27 @@ private:
     HostActionScheduler musicalScheduler_{};
     std::array<MemoryPending,28> memoryPending_{};
     std::array<bool,96> memoryEngaged_{};
-    void applySourceRecall(unsigned source) noexcept {
+    void applySourceRecall(unsigned source,bool fromShBase=false) noexcept {
         if(source>=4)return;
         if(pairedTopSource_==static_cast<int>(source))pairedTopSource_=-1;
         {
-            const int slot=sourcePending_[source];if(slot<0)return;
-            sourcePending_[source]=-1;
-            if(sourcePendingAlternative_[source]!=activeAlternative(source)){sourceStatus_[source]=SourceRecallStatus::Busy;return;}
+            const int slot=fromShBase?3:sourcePending_[source];if(slot<0)return;
+            if(!fromShBase)sourcePending_[source]=-1;
+            if(!fromShBase&&sourcePendingAlternative_[source]!=activeAlternative(source)){sourceStatus_[source]=SourceRecallStatus::Busy;return;}
             const int config=core_.nativeLive().sessionConfig();
             if(config<1){sourceStatus_[source]=SourceRecallStatus::UnknownConfig;return;}
-            if(sh01aSource(source)){
-                if(slot>=3||!sh01a_.queueProgram(static_cast<unsigned>(slot)))sourceStatus_[source]=SourceRecallStatus::UnknownConfig;
+            const bool sh=sh01aSource(source);
+            if(sh&&slot<3){
+                if(!sh01a_.queueProgram(shProgramForPatch(static_cast<unsigned>(slot))))sourceStatus_[source]=SourceRecallStatus::UnknownConfig;
                 else {sourceStatus_[source]=SourceRecallStatus::AwaitingFeedback;disengageSourceMemories(source);}
                 return;
             }
+            if(sh&&!fromShBase&&!sh01a_.canQueueProgram(ShBaseProgram)){
+                sourceStatus_[source]=SourceRecallStatus::Busy;return;
+            }
             SourcePatchBank::Values patch{};patch.fill(0);
             const int instrument=activeAlternative(source);
-            if(slot==3&&instrument>=0&&!alternativeBank_.base(source/2,static_cast<unsigned>(instrument),config,patch)){
+            if(!sh&&slot==3&&instrument>=0&&!alternativeBank_.base(source/2,static_cast<unsigned>(instrument),config,patch)){
                 sourceStatus_[source]=SourceRecallStatus::UnknownConfig;return;}
             if(slot<3){SourcePatchBank::Patch saved{};
                 if(!readSourcePatch(source,static_cast<unsigned>(slot),saved)||saved.config!=config){
@@ -2212,7 +2213,7 @@ private:
             unsigned count=0;
             std::array<int,97> apis{},types{};
             std::array<bool,97> changed{};
-            for(unsigned f=0;f<60;++f){
+            for(unsigned f=0;!sh&&f<60;++f){
                 if(!SourcePatchBank::included(f))continue;
                 cells[count]=SourcePatchBank::cell(source,f);values[count]=patch[f];
                 apis[count]=SourcePatchBank::api(source,f);types[count++]=SourcePatchBank::type(f);
@@ -2224,9 +2225,9 @@ private:
                 for(unsigned f=0;f<12;++f){cells[count]=1768+12*static_cast<int>(source)+static_cast<int>(f);apis[count]=cells[count]-1384;types[count++]=11;}
             }
             cells[count]=1546+static_cast<int>(source);apis[count]=cells[count]-837;types[count++]=10;
-            const auto& base=sourceBases_[sourceBaseIndex(source)];
-            if(slot==3&&base.valid&&base.config==config)
-                for(unsigned f=0;f<count;++f)values[f]=base.values[f];
+            const auto* base=sourceBase(source);
+            if(slot==3&&base&&base->valid&&base->config==config)
+                for(unsigned f=0;f<count;++f)values[f]=base->values[f+(sh?36:0)];
             bool busy=false;
             for(unsigned f=0;f<count;++f){
                 const auto prior=core_.nativeLive().desired(cells[f]);
@@ -2245,7 +2246,10 @@ private:
                 p={true,++sourcePacketToken_,type,api,value,{status,static_cast<uint8_t>(api%128),static_cast<uint8_t>(type==10?value:value?127:0)}};
             }
             disengageSourceMemories(source);
-            sourceStatus_[source]=SourceRecallStatus::AppliedLocal;
+            if(sh&&!fromShBase){
+                sh01a_.queueProgram(ShBaseProgram);
+                sourceStatus_[source]=SourceRecallStatus::AwaitingFeedback;
+            }else sourceStatus_[source]=SourceRecallStatus::AppliedLocal;
         }
     }
     unsigned sourceBaseIndex(unsigned source) const noexcept {
@@ -2260,19 +2264,38 @@ private:
         if(index<72)return 1768+12*static_cast<int>(source)+static_cast<int>(index)-60;
         return 1546+static_cast<int>(source);
     }
+    const SourceBaseImage* sourceBase(unsigned source) const noexcept {
+        if(!sh01aSource(source))return &sourceBases_[sourceBaseIndex(source)];
+        const auto& attachment=sh01a_.attachment();
+        if(shBase_.destination!=attachment.image.profile.destination||shBase_.source!=static_cast<int>(source)||
+           shBase_.alternative!=activeAlternative(source))return nullptr;
+        return &shBase_.base;
+    }
     int sourceBaseValue(unsigned source,int cell,int config) const noexcept {
-        const auto& base=sourceBases_[sourceBaseIndex(source)];
-        if(!base.valid||base.config!=config)return -2;
-        for(unsigned field=0;field<base.values.size();++field)
-            if(sourceBaseCell(source,field)==cell)return base.values[field];
+        const auto* base=sourceBase(source);
+        if(!base||!base->valid||base->config!=config)return -2;
+        for(unsigned field=sh01aSource(source)?36u:0u;field<base->values.size();++field)
+            if(sourceBaseCell(source,field)==cell)return base->values[field];
         return -2;
     }
+    void showSourceBaseLed(BaseLed& led,unsigned source,int64_t ms,bool active=true) const noexcept {
+        const auto* base=sourceBase(source);
+        if(!base||!base->valid||base->config!=core_.nativeLive().sessionConfig())return;
+        bool matches=true;
+        for(unsigned field=sh01aSource(source)?36u:0u;field<base->values.size();++field){
+            const auto live=core_.nativeLive().desired(sourceBaseCell(source,field));
+            if(!live.known||live.value!=base->values[field]){matches=false;break;}
+        }
+        const bool written=baseWriteFeedback_.source==static_cast<int>(source)&&
+            ms>=baseWriteFeedback_.time&&ms-baseWriteFeedback_.time<600;
+        if(active||written)led={matches?MuteLedColor::Green:MuteLedColor::Yellow,written,true};
+    }
     bool saveSourceBase(unsigned source) noexcept {
-        if(sh01aSource(source)||alternativeSourceBusy(static_cast<int>(source))||redActive_||sourcePending_[source]>=0)return false;
+        if(sh01a_.hasPending()||alternativeSourceBusy(static_cast<int>(source))||redActive_||sourcePending_[source]>=0)return false;
         SourceBaseImage base{};
         base.config=core_.nativeLive().sessionConfig();
         if(base.config<1)return false;
-        for(unsigned i=0;i<base.values.size();++i){
+        for(unsigned i=sh01aSource(source)?36u:0u;i<base.values.size();++i){
             const int cell=sourceBaseCell(source,i);
             for(const auto& hold:spots_)if(hold.cell==cell)return false;
             const auto value=core_.nativeLive().desired(cell);
@@ -2280,15 +2303,19 @@ private:
             base.values[i]=value.value;
         }
         base.valid=true;
-        sourceBases_[sourceBaseIndex(source)]=base;
+        if(sh01aSource(source))
+            shBase_={sh01a_.attachment().image.profile.destination,static_cast<int>(source),activeAlternative(source),base};
+        else sourceBases_[sourceBaseIndex(source)]=base;
         documentDirty_=true;
         return true;
     }
     std::array<SourceBaseImage,12> sourceBases_{};
+    ShSourceBaseImage shBase_{};
     struct CueBaseHold {int source{-1};unsigned index{};int instrument{-1};int64_t down{};};
     std::array<CueBaseHold,16> cueBaseHolds_{};
     struct BaseWriteFeedback {int source{-1};int64_t time{};};
     BaseWriteFeedback baseWriteFeedback_{};
+    int64_t shBaseSentMs_{-1};
     SourcePatchBank sourcePatches_{};
     std::array<int,4> sourcePending_{{-1,-1,-1,-1}},sourcePendingAlternative_{{-1,-1,-1,-1}};
     std::array<SourceRecallStatus,4> sourceStatus_{};

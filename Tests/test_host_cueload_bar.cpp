@@ -58,10 +58,10 @@ int main(){
         for(int k=0;k<4;++k){
             HostEngine h;assert(h.setNavForDiagnostic(navImage));
             edge(h,static_cast<unsigned>(physical[k]),true,10);
-            assert(h.pendingCueLoad()==1);
+            assert(h.pendingCueLoad()==(k==3?0u:1u));
             assert(!h.nextCueLoadPacket().valid); // not before BAR
             edge(h,static_cast<unsigned>(physical[k]),false,11);
-            assert(!h.nextCueLoadPacket().valid);
+            assert(h.pendingCueLoad()==1&&!h.nextCueLoadPacket().valid);
             h.onMusicalGrid(bar());
             const auto q=h.nextCueLoadPacket();
             const int expected=(root?939:931)+static_cast<int>(base)+k;

@@ -1,4 +1,5 @@
 #include "../Shared/XoneHostEngine.hpp"
+#include "../Shared/XoneSh01aProfile.hpp"
 #include <cassert>
 #include <iostream>
 using namespace xone::host;
@@ -73,5 +74,28 @@ int main() {
     drain(restored);
     edge(restored,25,true,400);restored.stop(401);edge(restored,25,false,650);
     assert(restored.pendingCueLoad()==0&&!restored.nextSourcePacket().valid);
+    HostEngine sh;
+    assert(sh.requestDocumentRestore(reopened));
+    const auto attachment=provisionalSh01aAttachment(0,1,-1,17,0,0,1000);
+    assert(sh.requestSh01aAttachment(attachment,true));
+    sh.beginRenderBuffer();drain(sh);
+    edge(sh,25,true,700);edge(sh,25,false,900);
+    assert(sh.ledImage(900)[led].blinking&&!sh.nextSh01aPacket().valid);
+    sh.endRenderBuffer();
+    auto shSaved=sh.documentForHost();
+    assert(shSaved.sourceBases[0].values[36]==77);
+    assert(shSaved.shBase.base.valid&&shSaved.shBase.destination==17);
+    assert(shSaved.shBase.base.values[36]==9&&shSaved.shBase.base.values[0]==0);
+    assert(encodeDocument(shSaved,bytes)&&bytes[4]==4);
+    assert(decodeDocument(bytes.data(),bytes.size(),reopened));
+    reopened.live.desired[1552]=44;reopened.current.live.desired[1552]=44;
+    HostEngine shReopened;
+    assert(shReopened.requestDocumentRestore(reopened));
+    assert(shReopened.requestSh01aAttachment(attachment,true));
+    shReopened.beginRenderBuffer();drain(shReopened);
+    assert(shReopened.desiredLive(1552).value==44);
+    const uint8_t pc0[]{0xC0,0};
+    assert(!shReopened.receive(0,pc0,2,1000,1000).emit);
+    assert(shReopened.desiredLive(1552).value==9&&!shReopened.nextSh01aPacket().valid);
     std::cout<<"PASS physical CUE4 short/long, full BASE persistence, FX recall and STOP\n";
 }

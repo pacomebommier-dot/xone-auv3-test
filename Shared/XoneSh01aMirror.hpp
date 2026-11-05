@@ -7,6 +7,9 @@
 #include <cstddef>
 #include <limits>
 namespace xone::host {
+inline constexpr unsigned ShBaseProgram=0;
+inline constexpr unsigned shProgramForPatch(unsigned slot) noexcept {return slot+1;}
+inline constexpr int shPatchForProgram(unsigned pc) noexcept {return pc>=1&&pc<=3?static_cast<int>(pc)-1:-1;}
 struct Sh01aProfile {
  uint32_t destination{};uint8_t channel{},cable{};uint32_t windowMs{};
  std::array<uint8_t,36> cc{};
@@ -83,7 +86,7 @@ public:
  bool incomplete(unsigned slot)const noexcept{return slot<3&&incomplete_[slot];}
  int live(unsigned cc)const noexcept{const int i=index(cc);return i<0?-2:live_[static_cast<unsigned>(i)];}
  bool altered(unsigned slot)const noexcept {
-  if(slot>=3||program_!=static_cast<int>(slot)||!image_.mirrors[slot].valid)return false;
+  if(slot>=3||program_!=static_cast<int>(shProgramForPatch(slot))||!image_.mirrors[slot].valid)return false;
   for(auto v:live_)if(v<0)return false;
   return live_!=image_.mirrors[slot].values;
  }
@@ -119,9 +122,9 @@ public:
   if(capture_){
    staging_[at]=bytes[2];if(!seen_[at]){seen_[at]=true;++count_;}
    if(count_==36){
-    auto& m=image_.mirrors[static_cast<unsigned>(program_)];
+    auto& m=image_.mirrors[static_cast<unsigned>(shPatchForProgram(static_cast<unsigned>(program_)))];
     if(m.revision!=std::numeric_limits<uint32_t>::max()){
-     m.values=staging_;++m.revision;m.valid=true;programObserved_=true;incomplete_[static_cast<unsigned>(program_)]=false;replaced=true;
+     m.values=staging_;++m.revision;m.valid=true;programObserved_=true;incomplete_[static_cast<unsigned>(shPatchForProgram(static_cast<unsigned>(program_)))]=false;replaced=true;
     }else reportIncomplete();
     capture_=false;
    }
@@ -138,7 +141,7 @@ private:
   mask[cc/64]|=uint64_t{1}<<(cc%64);
  }
  void reportIncomplete()noexcept {
-  incomplete_[static_cast<unsigned>(program_)]=true;
+  incomplete_[static_cast<unsigned>(shPatchForProgram(static_cast<unsigned>(program_)))]=true;
   incompleteReport_={program_,count_,{},extra_};
   for(unsigned i=0;i<36;++i)if(!seen_[i])mark(incompleteReport_.missing,image_.profile.cc[i]);
  }
@@ -148,7 +151,7 @@ private:
  }
  void start(unsigned program,int64_t now)noexcept {
   cancel();program_=static_cast<int>(program);lastTime_=now;started_=now;
-  capture_=program<3;extra_={};seen_.fill(false);staging_.fill(-2);live_.fill(-2);
+  capture_=shPatchForProgram(program)>=0;extra_={};seen_.fill(false);staging_.fill(-2);live_.fill(-2);
  }
  CaptureReport incompleteReport_{};
  std::array<uint64_t,2> extra_{};

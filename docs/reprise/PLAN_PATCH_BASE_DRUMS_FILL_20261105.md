@@ -25,3 +25,14 @@ Contrat de référence : [addendum du 5 novembre](../universel/11_ADDENDUM_BASE_
 
 - [ ] Exécuter contrôles des sources protégées, suites natives, harness AU macOS, ASan/UBSan et build iOS. Inclure un parcours session neuve sans plugins, réouverture d’un document V2, tests CUE4/LED, rappel MEMORY mixte à douze et SOFT à douze avec OFF en attente.
 - [ ] Actualiser la recette K2/AUM et tester l’appareil sur le SHA livré. Séparer les résultats MIDI neutres, la réponse des plugins et le retour physique SH. Les choix DJ/LOOP et les destinations externes restent des raccordements ultérieurs. Publier sur la branche de travail, avec fusion dans main soumise à accord.
+
+
+## État du raccordement CUE4
+
+Le BASE local complet utilise le document V3 dès qu’une référence personnalisée existe. La présence d’une référence FX SH utilise V4 et conserve une identité de destination, de source et d’alternative distincte de la banque locale. Le décodeur garde la lecture V2 et V3. Les anciens builds ne lisent pas les extensions nouvelles.
+
+La métadonnée SHAU V2 indexe les miroirs par PC1–3. À la lecture de SHAU V1, les données des anciens PC1 et PC2 suivent leur programme, PC3 démarre vide, et l’ancien PC0 ne devient pas un PATCH. Aucun rappel n’est envoyé lors de la migration.
+
+L’antidoublon du rappel BASE considère le premier PC0 correspondant dans les 100 ms suivant un PC0 sortant réussi comme un retour du même rappel. Un appui physique du même PC dans cette fenêtre est indiscernable avec le MIDI disponible. Vérifier la fenêtre sur le Roland réel.
+
+Reste à couvrir le rappel du BASE SH à la nouvelle attribution, les couleurs K2 exactes et l’intégration complète DRUMS/FILL. Les couleurs provisoires du BASE CUE4 sont vert pour courant et jaune pour altéré.
