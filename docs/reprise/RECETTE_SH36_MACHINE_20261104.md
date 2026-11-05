@@ -12,17 +12,20 @@ Cette première recette n'affecte au SH que FILTER1/2/3 de la MACHINE impaire as
 
 ## Campagne SH36
 
+Correspondance du prochain patch. Programme 1 = BASE (PC0), programmes 2–4 = PATCH XONE 1–3 (PC1–3). Vérifier la version installée. Les builds antérieurs utilisent encore l’ancienne correspondance PC0–2.
+
 | Test | Action | Critère / preuve à conserver | État |
 |---|---|---|---|
-| T01 | Rappeler programmeSH1, observer PC0 puisCC | SH_MIRROR_36 dans diagnostic, liste exacte36numéros/valeurs sur une seule epoch | NON_TESTE matériel |
-| T02 | RappelerSH2/3 puis4et64 | Seuls miroirs2/3 changent ; PC3/63 actualisentLIVE sans miroir | NON_TESTE matériel |
+| T01 | Rappeler le programme 2, observer PC1 puis CC | SH_MIRROR_36 dans diagnostic, liste exacte36numéros/valeurs sur une seule epoch | NON_TESTE matériel |
+| T02 | Rappeler les programmes 3 et 4, puis 1, 5 et 64 | Seuls miroirs2/3 changent ; PC0/4/63 actualisent LIVE hors des miroirs | NON_TESTE matériel |
 | T03 | Interrompre rafale, STOP, changementPC, mauvaise route | SH_CAPTURE_INCOMPLETE ; ancien miroir conservé, pas de fauxCURRENT | NON_TESTE matériel |
 | T04 | Doublons, ordre, PCécho ; conserver relevé brut | Pas de faux36/36 ; le PCrépété peut annuler une collecte, jamais les additionner | NON_TESTE matériel |
 | T05 | TournerVCF depuisK2 puisSH | OctetsTX74 corrects, LIVE/LED/pickup cohérents ; miroir non modifié hors rappel | NON_TESTE matériel |
 | T06 | Éditer parK2, WRITE physiqueSH, quitter/rappeler | Valeur reçue après rappel conservée parWRITE ; nouveau miroir, aucun SAVE XONE | NON_TESTE matériel |
-| T07 | TOP1..3 et CUE/LOAD depuisXONE en marche puis arrêt | PCseul0..2 au vraiBAR, immédiat si arrêt prouvé ; aucune rafaleCC36 émise | NON_TESTE matériel |
+| T07 | TOP1..3 et CUE/LOAD depuisXONE en marche puis arrêt | PC seul 1..3 au vrai BAR, immédiat si arrêt prouvé ; aucune rafaleCC36 émise | NON_TESTE matériel |
 | T08 | GesteSAVE surSH puis autre profil | Aucun WRITE/miroir/succèsSAVE SH ; autre instrument conserve SAVE/RECALL | NON_TESTE matériel |
 | T09 | Save/reopenAUM, réallocation/reconnexion | MiroirsVALID conservés, capturevolatile perdue ; aucunPC/CC36/WRITE rejoué | NON_TESTE matériel |
+| BASE | WRITE physique sur le programme 1, CUE4 long puis court | Long enregistre les FX locaux. Court envoie PC0 et restaure les FX. Les miroirs PATCH 1–3 sont conservés. | NON_TESTE matériel |
 | T10 | Même programme puis aller-retour manuel | Établir si la resélection émet36 ; sinon quitter/rappeler manuellement, jamais automatiquement | NON_TESTE matériel |
 
 Table provisoire36 :3,5,12–31,71–75,78–83,85–87. Hypothèse autorisée par l'utilisateur, non certificationRoland du contenu exact d'une rafale. Capturer les numéros réellement reçus avant toute correction de table ; ne pas accepter36événements arbitraires. Les valeurs0/127 sont des octets bruts, pas une calibration des sélecteurs.
