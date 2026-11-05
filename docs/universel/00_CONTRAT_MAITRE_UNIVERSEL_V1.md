@@ -13,10 +13,13 @@ ENTRÉE : K2 physique OU une instance Mozaic K2_SIM_V3 exclusive ; uniquement no
 MOTEUR : moteur natif unique, gestes/S1-S2-S3, LIVE, PICKUP, CC/SPOT, PAGE MUTE, SOLO, LOOP, TOP/BOT/DJ, PATCH/MEMORY/CUE/LOAD/BASE/PRESET/RED, propriétaires S8, MIDI, LED, STOP, persistance et resync.
 SORTIE : API virtuelle S7 V1.2 MIDI7..14, MIDI15 exclusivement LED. AUM MIDI Learn/MIDI Control/fan-out pour effets et instruments AUv3. Profil adaptateur versionné pour matériel MIDI (par exemple SH-01A), sans changement du coeur XONE. Aucun transfert ni mixage audio dans XONE.
 
+## Décisions actives du 05/11/2026
+Le [addendum du 5 novembre](11_ADDENDUM_BASE_CUE4_DRUMS_FILL_20261105.md) fixe les références BASE et RESET locales, CUE4 court/long et DRUMS/FILL 7–8. Il prévaut sur les formulations historiques de ces périmètres.
+
 ## Connu / inconnu : deux couches séparées
 - Adresse et commande virtuelle prévues : émission MIDI contractuelle même sans binding instrument, observable au moniteur.
-- BASE local provisoire : valeurs 0/OFF et modes SPOT MIX/code1 décidés le 15/10, dans le scope local défini. Action explicite, jamais reset automatique à OnLoad.
-- RESET_DEFAULT individuel UNKNOWN ou adaptation matérielle non configurée : refuser seulement l'opération qui en dépend, avant mutation ; ne pas fabriquer de CC, PC, SysEx, ACK ou succès de chargement.
+- Les commandes locales couvertes utilisent un BASE personnalisé ou universel selon le [addendum du 5 novembre](11_ADDENDUM_BASE_CUE4_DRUMS_FILL_20261105.md). La réouverture reprend le LIVE sauvegardé.
+- Les opérations qui exigent une adaptation matérielle inconnue restent soumises aux capacités documentées de la destination.
 - Aucun UNKNOWN ne devient 0 par commodité. L'absence de plugin externe ne bloque pas la logique interne admissible.
 
 ## Intégralité métier obligatoire

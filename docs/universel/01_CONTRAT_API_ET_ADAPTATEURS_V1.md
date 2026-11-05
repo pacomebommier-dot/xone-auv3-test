@@ -22,7 +22,7 @@ Contrat normatif : [05_CONTRAT_SH01A_MIROIR_PATCH36_V1_20261104.md](05_CONTRAT_S
 ## Tests et statuts
 K2_SIM_V3 -> XONE AU -> moniteur POST, sans instrument. Vérifier type, canal, numéro, valeur, ordre, sample offset, quantification, STOP/OFF, pickup, SAVE/RECALL et LED.
 Distinguer DESIRED, TX attempted/sent, observation réelle et succès du service externe. Un port MIDI sans destinataire ne prouve pas une action réelle et ne constitue pas un échec du moteur universel.
-RESET_DEFAULT inconnu => refus de cette demande seulement ; BASE local provisoire 0/OFF/MIX => décision explicitement autorisée sur son scope. Aucun reset au boot.
+Le [addendum du 5 novembre](11_ADDENDUM_BASE_CUE4_DRUMS_FILL_20261105.md) fixe la résolution du BASE et de RESET pour les paramètres locaux admissibles. L’initialisation des références et le rappel explicite restent deux opérations distinctes.
 
 ## Non-régression
 GOLDEN CCOUT est une annexe historique non normative pour les offsets supplantés. Ne jamais remplacer S7 V1.2 par le remapping du banc technique L02 (CH1 CC4->74, CC8->71). Conserver sorties LED, ownership, exclusions S8 et tests SOURCE/CI.

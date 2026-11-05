@@ -19,13 +19,16 @@ Avant de toucher au SH, lire `docs/universel/05_CONTRAT_SH01A_MIROIR_PATCH36_V1_
 ## Décisions nouvelles du 04/11/2026
 Lire également `docs/universel/04_ADDENDUM_SH01A_MACHINES_PAIRES_2026-11-04.md` avant tout travail sur l'adaptateur SH-01A ou les pages MACHINE paires. Deux chantiers OUVERTS : raccordement matériel SH (sans changer l'API S7), et 12 CC + 12 SPOT centraux de MACHINE2/4/6/8 comme alias des 4 sous-pages FX INST, avec bascule native/empruntée. Les POTs/FADERs restent MACHINE. Aucun PATCH MACHINE, mémoire ou pickup supplémentaire pour les alias FX. Ne pas conclure que ces fonctions sont déjà implémentées.
 
+## Décisions actives du 05/11/2026
+Lire docs/universel/11_ADDENDUM_BASE_CUE4_DRUMS_FILL_20261105.md avant toute modification BASE, RESET, CUE4 ou DRUMS/FILL 7–8. Plan dans docs/reprise/PLAN_PATCH_BASE_DRUMS_FILL_20261105.md.
+
 ## Règle fondamentale
 **XONE commande, mémorise, restitue et émet. AUM distribue. Les instruments interprètent.**
 Toutes les pages, slots, banques, gestuelles, CC/Notes, PATCH, MEMORY, CUE/LOAD, BASE, PRESET, RED, LED, PICKUP et persistance doivent fonctionner et être testables en MIDI virtuel sans instruments/plugins/presets choisis.
 Les sorties neutres normatives (API S7 V1.2 MIDI7..14, MIDI15 LED) restent disponibles sans binding musical. GOLDEN/CCOUT est la provenance, non la numérotation finale lorsque supplantée. AUM MIDI Learn et les adaptateurs de machines sont la couche de configuration ultérieure ; XONE n'effectue aucun routage audio.
 
 ## Inconnues et sécurité
-Ne jamais transformer UNKNOWN/INVALID en 0, synthé hypothétique, CC/PC/SysEx imaginaire ou succès de service matériel. BASE local provisoire0/OFF/MIX explicitement décidé est distinct du RESET_DEFAULT individuel inconnu. Une absence d'instrument peut rendre la **réussite externe** non vérifiable, mais ne retire pas la commande interne ni son émission API neutre si celle-ci est admissible.
+Ne jamais transformer UNKNOWN/INVALID en 0, synthé hypothétique, CC/PC/SysEx imaginaire ou succès de service matériel. Appliquer les références locales BASE/RESET documentées dans l’addendum du 05/11, en distinguant état local et observation externe. Une absence d'instrument peut rendre la **réussite externe** non vérifiable, mais ne retire pas la commande interne ni son émission API neutre si celle-ci est admissible.
 Les profils spécialisés S8 et leurs exclusions sont conservés. Maintenir NoteOff dus, owners, STOP, transitions, horloge, LED et protections de persistance ; refuser localement une action qui exigerait une vraie référence matérielle inconnue.
 
 ## Workflow anti-freeze
