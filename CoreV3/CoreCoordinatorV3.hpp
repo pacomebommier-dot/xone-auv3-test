@@ -170,6 +170,28 @@ public:
         return readNativeMemory(owner,slot,prior)&&prior.revision<BankS6::MaxRevision-1&&
             nativeBank_.saveMemory(owner,slot,live_.sessionConfig(),image,prior.revision-memoryRevisionBase_[static_cast<unsigned>(index)]);
     }
+    bool captureRhythmMemories(const std::array<int,12>& owners,unsigned count,int slot) noexcept {
+        if(!diagnosticLive_||!count||count>owners.size()||live_.sessionConfig()<1)return false;
+        auto staged=nativeBank_;
+        if(!staged.initialized()&&!staged.initializeEmpty())return false;
+        for(unsigned n=0;n<count;++n){
+            const int owner=owners[n];
+            const int index=BankS6::memoryIndex(owner,slot);
+            if(index<0||index>=96)return false;
+            BankS6::MemoryImage image{};
+            for(int field=0;field<9;++field){
+                const auto value=live_.desired(FxS6::addressFor(owner,field));
+                if(!value.known)return false;
+                image[static_cast<unsigned>(field)]=value.value;
+            }
+            BankS6::MemoryRecord prior{};
+            if(!staged.readMemory(owner,slot,prior)||
+               prior.revision+memoryRevisionBase_[static_cast<unsigned>(index)]>=BankS6::MaxRevision-1||
+               !staged.saveMemory(owner,slot,live_.sessionConfig(),image,prior.revision))return false;
+        }
+        nativeBank_=staged;
+        return true;
+    }
     // Explicit diagnostic recall of native MEMORY into the native single-writer
     // desired LIVE image. Source caller still has to qualify real gesture routing.
     bool recallNativeFxMemoryForDiagnostic(int owner,int slot,std::uint32_t expectedLiveRevision) noexcept {
@@ -368,7 +390,18 @@ public:
         localSave_.consumed=true;return true;
     }
     const NavS3& nativeNav() const noexcept{return nav_;}
-    NavRoute nativeRoute(int physical)const noexcept{return MachineFxAliases::route(nav_.active(),physical,machineFxBorrowed_&&nav_.active().at(314)==machineFxViewMachine_);}
+    NavRoute nativeRoute(int physical) const noexcept {
+        const auto route=MachineFxAliases::route(nav_.active(),physical,
+            machineFxBorrowed_&&nav_.active().at(314)==machineFxViewMachine_);
+        if(route.address<0||route.position<0||route.position>=6)return route;
+        const int family=(route.address%1024)/32;
+        if((family!=5&&family!=6)||route.address%32!=8)return route;
+        // DRUM8 and FILL8 share the existing BUS3/TOTAL INIT cells.
+        const int globalFamily=11+route.position/3;
+        if(physical>=40&&physical<52)return {32*globalFamily,route.position%3};
+        if(physical>=20&&physical<32)return {1024+32*globalFamily,route.position%3};
+        return route;
+    }
     bool machineFxBorrowed()const noexcept{return machineFxBorrowed_&&nav_.active().contextMode==7&&nav_.active().at(314)==machineFxViewMachine_;}
     bool advanceMachineFxView(int64_t ms)noexcept {
         if(machineFxHold_.physical<0||!surface_.held(static_cast<unsigned>(machineFxHold_.physical)))return false;

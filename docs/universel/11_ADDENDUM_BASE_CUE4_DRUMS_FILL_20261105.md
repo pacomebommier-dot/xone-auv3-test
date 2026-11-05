@@ -40,6 +40,8 @@ Chacune des deux familles possède six sons. Chaque son dispose de quatre appels
 | SAVE MEMORY 1 à 3 | Capturer le même numéro de slot individuel sur les six sons. | Capturer le même numéro de slot individuel sur les douze sons. |
 | Rappel MEMORY 1 à 3 | Pour chaque son, appliquer le slot existant ou le LIVE d’ouverture si vide. | Même règle sur les douze sons. |
 
+Sur les pages de groupe, le raccordement propose MEMORY courte pour rappeler et MEMORY longue pour sauvegarder au relâchement, avec le seuil de 200 ms de CUE4. Les pages de son gardent leur geste individuel. Les couleurs groupées retenues pour la recette sont éteint pour vide, jaune pour mixte, rouge pour complet et vert clignotant pour rappel en attente. Ces choix de surface restent à valider sur K2.
+
 SOFT laisse les réglages locaux en place. La page 8 ne rappelle aucun BASE ni PATCH des SYNTH et ne crée pas de banque MEMORY GLOBAL. Les six EQ GLOBAL sont hors du périmètre de cette MEMORY groupée.
 
 | Rotatifs | Cellules GLOBAL | API S7 | RESET universel |

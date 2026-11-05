@@ -35,4 +35,11 @@ La métadonnée SHAU V2 indexe les miroirs par PC1–3. À la lecture de SHAU V1
 
 L’antidoublon du rappel BASE considère le premier PC0 correspondant dans les 100 ms suivant un PC0 sortant réussi comme un retour du même rappel. Un appui physique du même PC dans cette fenêtre est indiscernable avec le MIDI disponible. Vérifier la fenêtre sur le Roland réel.
 
-Reste à couvrir le rappel du BASE SH à la nouvelle attribution, les couleurs K2 exactes et l’intégration complète DRUMS/FILL. Les couleurs provisoires du BASE CUE4 sont vert pour courant et jaune pour altéré.
+Reste à couvrir le rappel du BASE SH à la nouvelle attribution, les couleurs K2 exactes et la qualification DRUMS/FILL dans AUM. Les couleurs provisoires du BASE CUE4 sont vert pour courant et jaune pour altéré.
+
+
+## État du raccordement DRUMS/FILL
+
+Les pages 7 utilisent un ancrage sur la première position physique reçue. Les sorties interpolent depuis les valeurs courantes vers la butée, puis repartent ensemble. RESET et MEMORY réarment les cibles. DRUM8/FILL8 utilisent les routes GLOBAL existantes. Les six ou douze SOFT passent par la sortie SOFT existante au BAR. MEMORY groupée réutilise les slots des sons avec écriture préparée sur une copie de banque et un seul rappel au BEAT. Les anciens slots des pages 7 et 8 restent lisibles.
+
+Le geste et le feedback LED proposés sont consignés dans le contrat. Le chemin MIDI neutre peut être testé avec un moniteur AUM. La réponse d’un plugin dépend de sa liaison ultérieure.

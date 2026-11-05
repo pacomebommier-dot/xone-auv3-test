@@ -24,6 +24,7 @@ int main(){
 
  for(int family=3;family<=6;++family)for(int selection=1;selection<=8;++selection){
   if(family<5&&(selection==4||selection==8))continue;
+  if(family>=5&&selection>=7)continue; // group surface covered by test_host_rhythm_groups
   auto n=page(family,selection);xone::l01::NavS3 nav;assert(nav.initializeDefault());assert(nav.stage(n)&&nav.commit());
   unsigned found=0;for(int p=4;p<20;++p){int owner=-1,slot=-1;if(!HostEngine::deriveMemory(nav,p,owner,slot))continue;
    int expected=family<5?6*(family-3)+selection-1-(selection>4):12+8*(family-5)+selection-1;

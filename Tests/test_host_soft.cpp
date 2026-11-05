@@ -54,12 +54,12 @@ int main(){
     assert(!fromRoute.requestFromRoute(8,drum,0)); // owner/choice mismatch
     assert(fromRoute.observe(edge(GridKind::Bar,7))==1&&fromRoute.active(0,1)==0);
     take(fromRoute,4,true,true);
-    page=nav.active();page.at(300)=0;page.at(297)=3;page.at(303)=1;
+    page=nav.active();page.at(291)=1;page.at(300)=0;page.at(298)=3;page.at(304)=1;
     assert(xone::l01::NavS3::regenerate(page)&&xone::l01::NavS3::validate(page));
     assert(nav.stage(page)&&nav.commit());
     const auto fill=nav.active().route(4);
     assert(fill.address/1024==8&&fill.position==0);
-    assert(fromRoute.requestFromRoute(4,fill,0));
+    assert(fromRoute.requestFromRoute(4,fill,1));
     assert(fromRoute.observe(edge(GridKind::Bar,8))==1&&fromRoute.active(1,2)==0);
     take(fromRoute,40,true,true); // MIDI11 note 72
     // Full receive path: K2 DOWN, no pre-BAR MIDI, exact SOFT after BAR.
