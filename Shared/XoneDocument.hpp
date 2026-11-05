@@ -8,10 +8,19 @@
 #include "XoneSourcePatchBank.hpp"
 #include "XoneAlternativeBank.hpp"
 #include "../Core/BankS6.hpp"
+#include <algorithm>
 #include <vector>
 #include <limits>
 #include <type_traits>
 namespace xone::host {
+// BASE uses canonical MACHINE/FX cells. Slots 0..3 belong to unbound sources,
+ // and slots 4..11 follow the two pools of instrument alternatives.
+struct SourceBaseImage {
+ static constexpr unsigned Count=73;
+ bool valid{};
+ int config{};
+ std::array<int,Count> values{};
+};
 struct DocumentImage {
  SessionImage live{};
  GlobalSnapshot current{};
@@ -19,6 +28,7 @@ struct DocumentImage {
  S8MachinePatchBank machine{};
  SourcePatchBank source{};
  AlternativeBank alternative{};
+ std::array<SourceBaseImage,12> sourceBases{};
  std::array<l01::BankS6::MemoryRecord,96> memories{};
  std::array<l01::BankS6::PatchRecord,84> legacyPatches{};
  std::array<GlobalSnapshot,4> presets{};
@@ -86,17 +96,33 @@ template<class A> inline bool documentFields(A& a,DocumentImage& d)noexcept {
  }
  return a.ok();
 }
-inline bool validDocument(DocumentImage& d)noexcept {DocumentValidator a;return documentFields(a,d);}
+template<class Archive> inline bool documentSourceBases(Archive& archive,DocumentImage& document) noexcept {
+ for(auto& base:document.sourceBases){
+  archive(base.valid);archive(base.config);archive(base.values);
+  if(base.valid?(base.config<1||base.config>127):base.config!=0)return false;
+  for(unsigned i=0;i<base.values.size();++i){
+   const int maxValue=(i>=18&&i<30)||(i>=60&&i<72)?1:127;
+   if(base.values[i]<0||base.values[i]>maxValue||(!base.valid&&base.values[i]!=0))return false;
+  }
+ }
+ return archive.ok();
+}
+inline bool validDocument(DocumentImage& d)noexcept {
+ DocumentValidator a;return documentFields(a,d)&&documentSourceBases(a,d);
+}
 inline bool encodeDocument(const DocumentImage& image,DocumentBytes& out) {
- auto d=image;DocumentBytes bytes{'X','D','O','C',2,0,0,0};bytes.reserve(MaxDocumentBytes);
- DocumentWire wire(bytes);if(!documentFields(wire,d)||bytes.size()+4>MaxDocumentBytes)return false;
+ auto d=image;const bool extended=std::any_of(d.sourceBases.begin(),d.sourceBases.end(),[](const auto& base){return base.valid;});
+ DocumentBytes bytes{'X','D','O','C',static_cast<uint8_t>(extended?3:2),0,0,0};bytes.reserve(MaxDocumentBytes);
+ DocumentValidator validator;
+ if(!documentSourceBases(validator,d))return false;
+ DocumentWire wire(bytes);if(!documentFields(wire,d)||(extended&&!documentSourceBases(wire,d))||bytes.size()+4>MaxDocumentBytes)return false;
  const auto crc=sessionCrc(bytes.data(),bytes.size());for(unsigned i=0;i<4;++i)bytes.push_back(static_cast<uint8_t>(crc>>(8*i)));
  out=std::move(bytes);return true;
 }
 inline bool decodeDocument(const uint8_t* bytes,std::size_t size,DocumentImage& out)noexcept {
- if(!bytes||size<12||size>MaxDocumentBytes||bytes[0]!='X'||bytes[1]!='D'||bytes[2]!='O'||bytes[3]!='C'||bytes[4]!=2||bytes[5]||bytes[6]||bytes[7]||sessionGet32(bytes+size-4)!=sessionCrc(bytes,size-4))return false;
+ if(!bytes||size<12||size>MaxDocumentBytes||bytes[0]!='X'||bytes[1]!='D'||bytes[2]!='O'||bytes[3]!='C'||(bytes[4]!=2&&bytes[4]!=3)||bytes[5]||bytes[6]||bytes[7]||sessionGet32(bytes+size-4)!=sessionCrc(bytes,size-4))return false;
  DocumentImage d{};DocumentWire wire(bytes+8,size-12);
- if(!documentFields(wire,d)||!wire.complete())return false;
+ if(!documentFields(wire,d)||(bytes[4]==3&&!documentSourceBases(wire,d))||!wire.complete())return false;
  out=d;return true;
 }
 struct DocumentFrame {DocumentImage image{};uint32_t token{};};

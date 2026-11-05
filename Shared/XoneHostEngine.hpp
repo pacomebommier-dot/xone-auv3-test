@@ -107,9 +107,12 @@ public:
             int type=10;
             if(globalApi(static_cast<unsigned>(target.cell),type)!=target.api||type!=10)return false;
             const int source=sourceForCell(target.cell);
-            if(source>=0&&resetDefaults_.alternatives[static_cast<unsigned>(source)]!=activeAlternative(static_cast<unsigned>(source)))return false;
-            const int overrideValue=resetDefaults_.get(target.api,config);
-            const int value=overrideValue>=0?overrideValue:universalContinuousBase(target.cell);
+            int value=source>=0?sourceBaseValue(static_cast<unsigned>(source),target.cell,config):-2;
+            if(value<0){
+                if(source>=0&&resetDefaults_.alternatives[static_cast<unsigned>(source)]!=activeAlternative(static_cast<unsigned>(source)))return false;
+                const int overrideValue=resetDefaults_.get(target.api,config);
+                value=overrideValue>=0?overrideValue:universalContinuousBase(target.cell);
+            }
             if(value<0)return false;
             for(unsigned j=0;j<i;++j)if(targets[j].cell==target.cell)return false;
             const auto before=core_.nativeLive().desired(target.cell);
@@ -514,7 +517,7 @@ public:
     void ackMutePacket(unsigned target,bool callbackSucceeded) noexcept {
         muteMidi_.confirm(target,callbackSucceeded);
     }
-    MuteLedOutput::Image ledImage()const noexcept {
+    MuteLedOutput::Image ledImage(int64_t ms=-1)const noexcept {
         MuteLedOutput::Image image{};const auto& nav=core_.nativeNav();if(!nav.stable()||nav.hasStage())return image;
         const auto& n=nav.active();const auto base=BaseLedView::compose(nav);
         for(unsigned i=0;i<16;++i)image[i]=base[i];
@@ -569,6 +572,19 @@ public:
                 }else{
                     set(i,cueLoad_.sentSelection(cueGroup)==static_cast<int>(cueIndex)?MuteLedColor::Green:MuteLedColor::Off);
                     if(cueLoad_.desiredSelections()[cueGroup]==static_cast<int>(cueIndex)&&cueLoad_.sentSelection(cueGroup)<0&&cueLoad_.pendingSelection(cueGroup)<0&&cueLoad_.dueSelection(cueGroup)<0)image[i]={};
+                    if(cueIndex%4==3){
+                        const auto& base=sourceBases_[sourceBaseIndex(cueGroup)];
+                        if(base.valid&&base.config==config){
+                            bool matches=true;
+                            for(unsigned field=0;field<base.values.size();++field){
+                                const auto live=core_.nativeLive().desired(sourceBaseCell(cueGroup,field));
+                                if(!live.known||live.value!=base.values[field]){matches=false;break;}
+                            }
+                            const bool written=baseWriteFeedback_.source==static_cast<int>(cueGroup)&&
+                                ms>=baseWriteFeedback_.time&&ms-baseWriteFeedback_.time<600;
+                            set(i,matches?MuteLedColor::Green:MuteLedColor::Yellow,written);
+                        }
+                    }
                     if(cueLoad_.pendingSelection(cueGroup)==static_cast<int>(cueIndex)||cueLoad_.dueSelection(cueGroup)==static_cast<int>(cueIndex))set(i,MuteLedColor::Yellow,true);
                 }
             }
@@ -635,7 +651,7 @@ public:
     void refreshLeds() noexcept {muteLeds_.invalidate();}
     void prepareMuteLeds(int64_t ms) noexcept {
         if(ledNavRevision_!=core_.nativeNav().revision()){muteLeds_.cancelFlashes();ledNavRevision_=core_.nativeNav().revision();}
-        muteLeds_.observeFull(ledImage(),ms);
+        muteLeds_.observeFull(ledImage(ms),ms);
     }
     MuteLedOutput::Packet nextMuteLedPacket(unsigned& cursor) const noexcept {return muteLeds_.next(cursor);}
     void ackMuteLedPacket(const MuteLedOutput::Packet& packet,bool success) noexcept {muteLeds_.confirm(packet,success);}
@@ -800,12 +816,31 @@ private:
                !muteBaseOwned&&physical>=4&&physical<20&&
                !core_.longNavPending()&&!core_.nativeNav().hasStage())
                 soft_.requestFromRoute(physical,softRoute,softRoot);
-            if(accepted && cueSource){
+            if(accepted&&cueSource&&cueIndex%4==3){
+                cueBaseHolds_[static_cast<unsigned>(physical-4)]={static_cast<int>(cueGroup),cueIndex,activeAlternative(cueGroup),gestureMs};
+            }else if(accepted&&cueSource){
                 if(!sh01aSource(cueGroup)){
                     cueLoad_.requestQualified(cueGroup,cueIndex);
                     if(transportStopped_)cueLoad_.onStopped();
                 }
                 requestSourceRecall(cueGroup,cueIndex%4);
+            }
+            if(accepted&&baseEvent&&wasHeld&&(cmd==0x80||data[2]==0)){
+                auto& hold=cueBaseHolds_[static_cast<unsigned>(physical-4)];
+                const auto captured=hold;
+                hold={};
+                if(captured.source>=0&&gestureMs>=captured.down&&
+                   activeAlternative(static_cast<unsigned>(captured.source))==captured.instrument){
+                    const auto source=static_cast<unsigned>(captured.source);
+                    if(gestureMs-captured.down>=200){
+                        if(saveSourceBase(source)){
+                            baseWriteFeedback_={static_cast<int>(source),gestureMs};
+                        }
+                    }else if(requestSourceRecall(source,3)&&!sh01aSource(source)){
+                        cueLoad_.requestQualified(source,captured.index);
+                        if(transportStopped_)cueLoad_.onStopped();
+                    }
+                }
             }
             if(accepted&&memorySource)memoryGesture(memoryOwner,memorySlot);
             if(accepted&&presetSource){
@@ -1187,6 +1222,7 @@ public:
             alternativeFlight_={};alternatives_.stop();alternativeBaseValid_.fill(false);
             pendingPresetSlot_=-1;initPending_=false;redActive_=false;redImage_.valid=false;redHeld_=false;
             sourceRead_=sourceWrite_;sourceBlocked_=false;cueLoad_.stop();
+            cueBaseHolds_.fill({});baseWriteFeedback_={};
         }
         applyPendingResetDefaults();
         beginSh01aBuffer();
@@ -1309,6 +1345,7 @@ public:
         for(auto& pending:memoryPending_)pending={};
         sourcePending_.fill(-1);sourceRead_=sourceWrite_;sourceBlocked_=false;
         for(auto& status:sourceStatus_)if(status==SourceRecallStatus::Pending)status=SourceRecallStatus::None;
+        cueBaseHolds_.fill({});baseWriteFeedback_={};
         cueLoad_.stop(); // cancel pending BAR intents, preserve actual CC-sent state
         topPulse_.stop(); // cancels unattempted pulses; retains every attempted OFF
         topSaveSuppress_.fill(false);
@@ -1811,6 +1848,7 @@ private:
             if(pairedTopSource_==static_cast<int>(source))pairedTopSource_=-1;
             for(auto& hold:spots_)if(sourceForCell(hold.cell)==static_cast<int>(source))hold={};
             for(auto& hold:topHold_)if(sourceForRoute(hold.route)==static_cast<int>(source))hold={};
+            for(auto& hold:cueBaseHolds_)if(hold.source==static_cast<int>(source))hold={};
         }
         return offCount?true:finishAlternativeChange();
     }
@@ -1825,18 +1863,24 @@ private:
         std::array<int,388> cells{},values{};unsigned fields=0;
         std::array<SourcePacket,388> packets{};unsigned count=0;
         for(unsigned source=0;source<4;++source)if(flight.plan.from[source]!=flight.plan.to[source]){
+            const unsigned firstField=fields;
             before[source].fill(-2);
             for(unsigned f=0;f<60;++f){if(!SourcePatchBank::included(f))continue;const int cell=SourcePatchBank::cell(source,f);const auto prior=core_.nativeLive().desired(cell);
                 before[source][f]=prior.known?prior.value:-2;cells[fields]=cell;values[fields++]=flight.bases[source][f];}
             for(int f=0;f<24;++f){cells[fields]=1552+24*static_cast<int>(source)+f;values[fields++]=0;}
             for(int f=0;f<12;++f){cells[fields]=1768+12*static_cast<int>(source)+f;values[fields++]=0;}
             cells[fields]=1546+static_cast<int>(source);values[fields++]=0;
+            const auto& base=sourceBases_[sourceBaseIndex(source,flight.plan.to[source])];
+            if(base.valid&&base.config==config)
+                for(unsigned f=0;f<SourceBaseImage::Count;++f)values[firstField+f]=base.values[f];
+            unsigned field=firstField;
             for(unsigned f=0;f<97;++f){
                 int api=-1,type=10,value=0;
                 if(f<60){if(!SourcePatchBank::included(f))continue;api=SourcePatchBank::api(source,f);type=SourcePatchBank::type(f);value=flight.bases[source][f];}
                 else if(f<84)api=715+24*static_cast<int>(source)+static_cast<int>(f)-60;
                 else if(f<96){api=384+12*static_cast<int>(source)+static_cast<int>(f)-84;type=11;}
                 else api=709+static_cast<int>(source);
+                value=values[field++];
                 const auto status=static_cast<uint8_t>((type==10?0xB6:value?0x96:0x86)+api/128);
                 packets[count++]={true,0,type,api,value,{status,static_cast<uint8_t>(api%128),static_cast<uint8_t>(type==10?value:value?127:0)}};
             }
@@ -1896,7 +1940,7 @@ private:
             d.live.desired[static_cast<unsigned>(hold.cell)]=static_cast<int16_t>(hold.previous);
             d.current.live.desired[static_cast<unsigned>(hold.cell)]=static_cast<int16_t>(hold.previous);
         }
-        d.sample=s8Sample_;d.machine=s8Machine_;d.source=sourcePatches_;d.alternative=alternativeBank_;
+        d.sample=s8Sample_;d.machine=s8Machine_;d.source=sourcePatches_;d.alternative=alternativeBank_;d.sourceBases=sourceBases_;
         d.presets=presets_;d.init=globalInit_;
         for(int owner=0;owner<28;++owner){
             for(int slot=0;slot<(owner<12?4:3);++slot){l01::BankS6::MemoryRecord m{};
@@ -1955,8 +1999,9 @@ private:
         seedOpeningValues(live,openingDefaults(token));
         if(!core_.commitNativeDocument(live,d.current.nav,bank,memoryBases,patchBases))return false;
         openingLive_=live;
-        s8Sample_=d.sample;s8Machine_=d.machine;sourcePatches_=d.source;alternativeBank_=d.alternative;alternatives_=arbiter;
+        s8Sample_=d.sample;s8Machine_=d.machine;sourcePatches_=d.source;alternativeBank_=d.alternative;sourceBases_=d.sourceBases;alternatives_=arbiter;
         presets_=d.presets;globalInit_=d.init;soft_=soft;muteBridge_=mute;muteGate_.restoreVisible(d.current.muteVisible);
+        cueBaseHolds_.fill({});baseWriteFeedback_={};
         cueLoad_=CueLoadBar{}; // desired selection is rebuilt below; no historical service pulse
         cueLoad_.restoreDocumentSelections(d.current.cueSelections);
         memoryEngaged_=d.current.memoryEngaged;presetEngaged_=d.current.presetEngaged;presetValid_.fill(false);
@@ -2058,6 +2103,7 @@ private:
             musicalScheduler_.cancel(1,static_cast<uint16_t>(source));sourcePending_[source]=-1;cue.cancelUnstarted(source);
             disengageSourceMemories(source);
             for(auto& hold:topHold_)if(sourceForRoute(hold.route)==static_cast<int>(source))hold={};
+            for(auto& hold:cueBaseHolds_)if(hold.source==static_cast<int>(source))hold={};
         }
         alternatives_=alternativeDraft;alternativeFlight_={};bool pendingAlternative=false;
         for(unsigned source=0;source<4;++source){if(alternatives_.pending()[source]<0)alternativeBaseValid_[source]=false;else pendingAlternative=true;}
@@ -2178,6 +2224,9 @@ private:
                 for(unsigned f=0;f<12;++f){cells[count]=1768+12*static_cast<int>(source)+static_cast<int>(f);apis[count]=cells[count]-1384;types[count++]=11;}
             }
             cells[count]=1546+static_cast<int>(source);apis[count]=cells[count]-837;types[count++]=10;
+            const auto& base=sourceBases_[sourceBaseIndex(source)];
+            if(slot==3&&base.valid&&base.config==config)
+                for(unsigned f=0;f<count;++f)values[f]=base.values[f];
             bool busy=false;
             for(unsigned f=0;f<count;++f){
                 const auto prior=core_.nativeLive().desired(cells[f]);
@@ -2199,6 +2248,47 @@ private:
             sourceStatus_[source]=SourceRecallStatus::AppliedLocal;
         }
     }
+    unsigned sourceBaseIndex(unsigned source) const noexcept {
+        return sourceBaseIndex(source,activeAlternative(source));
+    }
+    static unsigned sourceBaseIndex(unsigned source,int instrument) noexcept {
+        return instrument<0?source:4+4*(source/2)+static_cast<unsigned>(instrument);
+    }
+    static int sourceBaseCell(unsigned source,unsigned index) noexcept {
+        if(index<36)return SourcePatchBank::cell(source,index<30?index:index+12);
+        if(index<60)return 1552+24*static_cast<int>(source)+static_cast<int>(index)-36;
+        if(index<72)return 1768+12*static_cast<int>(source)+static_cast<int>(index)-60;
+        return 1546+static_cast<int>(source);
+    }
+    int sourceBaseValue(unsigned source,int cell,int config) const noexcept {
+        const auto& base=sourceBases_[sourceBaseIndex(source)];
+        if(!base.valid||base.config!=config)return -2;
+        for(unsigned field=0;field<base.values.size();++field)
+            if(sourceBaseCell(source,field)==cell)return base.values[field];
+        return -2;
+    }
+    bool saveSourceBase(unsigned source) noexcept {
+        if(sh01aSource(source)||alternativeSourceBusy(static_cast<int>(source))||redActive_||sourcePending_[source]>=0)return false;
+        SourceBaseImage base{};
+        base.config=core_.nativeLive().sessionConfig();
+        if(base.config<1)return false;
+        for(unsigned i=0;i<base.values.size();++i){
+            const int cell=sourceBaseCell(source,i);
+            for(const auto& hold:spots_)if(hold.cell==cell)return false;
+            const auto value=core_.nativeLive().desired(cell);
+            if(!value.known)return false;
+            base.values[i]=value.value;
+        }
+        base.valid=true;
+        sourceBases_[sourceBaseIndex(source)]=base;
+        documentDirty_=true;
+        return true;
+    }
+    std::array<SourceBaseImage,12> sourceBases_{};
+    struct CueBaseHold {int source{-1};unsigned index{};int instrument{-1};int64_t down{};};
+    std::array<CueBaseHold,16> cueBaseHolds_{};
+    struct BaseWriteFeedback {int source{-1};int64_t time{};};
+    BaseWriteFeedback baseWriteFeedback_{};
     SourcePatchBank sourcePatches_{};
     std::array<int,4> sourcePending_{{-1,-1,-1,-1}},sourcePendingAlternative_{{-1,-1,-1,-1}};
     std::array<SourceRecallStatus,4> sourceStatus_{};

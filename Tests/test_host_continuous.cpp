@@ -5,11 +5,12 @@ using namespace xone::host;
 int main() {
     const int cells[]{1546,1547,1550,1476,1744,1747,1750,1753,1745,1748,1751,1754,1746,1749,1752,1755,1328,1329,1332,1336};
     const int api[]{709,710,713,708,907,910,913,916,908,911,914,917,909,912,915,918,560,561,564,568};
-    // No fixture: each physical absolute CC supplies its own initial LIVE
-    // value and exact normative S7 virtual MIDI output (not a RESET zero).
+    // Exercise all physical CC routes without a fixture. Meet the pickup
+    // reference for controls that start with a documented BASE.
     HostEngine e;
     for(int k=0;k<20;++k){
-        const int raw=20+k;
+        const auto opening=e.desiredLive(cells[k]);
+        const int raw=opening.known?opening.value:20+k;
         uint8_t input[]{0xBE,static_cast<uint8_t>(k),static_cast<uint8_t>(raw)};
         const auto r=e.receive(0,input,3,k,k);
         assert(r.emit && r.musical && r.api==api[k]);

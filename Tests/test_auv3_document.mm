@@ -265,13 +265,15 @@ int main() {
     const NSUInteger afterRestore=ledSent;pump(48);assert(ledSent==afterRestore);
     [muteUnit deallocateRenderResources];
 
-    // Fresh AU starts UNKNOWN. Loading an explicit simulated recipe uses
+    // Fresh AU exposes its documented local references. Loading a simulated recipe uses
     // the same session mailbox as document restore, and never transmits on load.
     XoneMidiAudioUnit *lifecycle=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
     assert(lifecycle&&!error);lifecycle.MIDIOutputEventBlock=testOutput;lifecycle.maximumFramesToRender=8192;
     assert([lifecycle.inputBusses[0] setFormat:format error:&error]);
     assert([lifecycle.outputBusses[0] setFormat:format error:&error]);
-    assert(lifecycle.fullState[@"XONE_LAST_LIVE_V1"]==nil); // no valid configured session yet
+    NSData *openingData=lifecycle.fullState[@"XONE_LAST_LIVE_V1"];
+    assert(xone::host::decodeSession(static_cast<const uint8_t *>(openingData.bytes),openingData.length,decoded));
+    assert(decoded.desired[1648]==0&&decoded.desired[1467]==63&&decoded.desired[1328]==-2);
     const NSUInteger beforeFixture=sent;
     assert([lifecycle allocateRenderResourcesAndReturnError:&error]);render=lifecycle.internalRenderBlock;
     // Real AU, no saved fixture and no synth: physical CC is first DESIRED.
