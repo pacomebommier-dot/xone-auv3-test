@@ -18,7 +18,7 @@ Correspondance du prochain patch. Programme 1 = BASE (PC0), programmes 2–4 = P
 |---|---|---|---|
 | T01 | Rappeler le programme 2, observer PC1 puis CC | SH_MIRROR_36 dans diagnostic, liste exacte36numéros/valeurs sur une seule epoch | NON_TESTE matériel |
 | T02 | Rappeler les programmes 3 et 4, puis 1, 5 et 64 | Seuls miroirs2/3 changent ; PC0/4/63 actualisent LIVE hors des miroirs | NON_TESTE matériel |
-| T03 | Interrompre rafale, STOP, changementPC, mauvaise route | SH_CAPTURE_INCOMPLETE ; ancien miroir conservé, pas de fauxCURRENT | NON_TESTE matériel |
+| T03 | Interrompre rafale, STOP, changementPC, mauvaise route | SH_CAPTURE_INCOMPLETE avec PC, compteur, numéros manquants et supplémentaires reçus sur la route SH pendant la collecte. Ancien miroir conservé | NON_TESTE matériel |
 | T04 | Doublons, ordre, PCécho ; conserver relevé brut | Pas de faux36/36 ; le PCrépété peut annuler une collecte, jamais les additionner | NON_TESTE matériel |
 | T05 | TournerVCF depuisK2 puisSH | OctetsTX74 corrects, LIVE/LED/pickup cohérents ; miroir non modifié hors rappel | NON_TESTE matériel |
 | T06 | Éditer parK2, WRITE physiqueSH, quitter/rappeler | Valeur reçue après rappel conservée parWRITE ; nouveau miroir, aucun SAVE XONE | NON_TESTE matériel |

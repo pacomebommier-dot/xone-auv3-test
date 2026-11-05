@@ -22,6 +22,20 @@ int main(){
  cc(m,1,22,4);assert(live(m,1)==22&&m.snapshot().mirrors[0].values[0]==127&&m.altered(0));
  pc(m,0,10);cc(m,1,42,11);pc(m,1,12);for(unsigned i=2;i<=36;++i)cc(m,i,17,13);
  assert(!m.snapshot().mirrors[1].valid&&m.received()==35);m.advance(113);assert(!m.capturing()&&m.incomplete(1));
+ const auto incomplete=m.takeIncomplete();
+ assert(incomplete.program==1&&incomplete.count==35);
+ assert(incomplete.missing[p.cc[0]/64]==(uint64_t{1}<<(p.cc[0]%64)));
+ assert(!incomplete.extra[0]&&!incomplete.extra[1]&&m.takeIncomplete().program==-1);
+ // Extra CC are unique, route-qualified and scoped to the interrupted recall.
+ pc(m,1,114);cc(m,1,17,115);
+ assert(!m.receive(0,foreign,3,115).accepted);
+ assert(!m.receive(1,foreign,3,115).accepted);
+ assert(!m.receive(1,foreign,3,115).accepted);
+ pc(m,2,116);
+ const auto interrupted=m.takeIncomplete();
+ assert(interrupted.program==1&&interrupted.count==1);
+ assert(interrupted.extra[0]==0&&interrupted.extra[1]==(uint64_t{1}<<(90-64)));
+ assert(!(interrupted.missing[p.cc[0]/64]&(uint64_t{1}<<(p.cc[0]%64))));
  assert(m.snapshot().mirrors[0].revision==1);
  pc(m,2,120);full(m,127,121);assert(m.snapshot().mirrors[2].valid&&m.snapshot().mirrors[2].values[5]==127);
  auto old=m.snapshot();pc(m,63,130);full(m,44,131);assert(m.snapshot()==old&&live(m,6)==44);

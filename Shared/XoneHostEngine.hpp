@@ -37,6 +37,7 @@ struct Trace {
     Reason reason{};
     uint8_t cable{},length{},bytes[3]{};
     int32_t result{};
+    Sh01aMirror::CaptureReport shCapture{};
 };
 struct PendingPacket {uint8_t bytes[3]{};int api{-1},value{},type{10},key{127};bool requiresOff{};};
 struct Result {
@@ -643,8 +644,8 @@ public:
             // matching alone is not an independently authenticated device ID.
             if(data&&length==3&&data[0]==0xB0+a.image.profile.channel&&cable==a.image.profile.cable&&
                core_.nativeLive().revision()>=l01::LiveState::MaxRevision)return {};
-            const bool wasCapturing=sh01a_.mirror().capturing();const unsigned beforeCount=sh01a_.mirror().received();
             const auto observation=sh01a_.receive(cable,data,length,gestureMs);
+            traceShIncomplete(sample);
             if(observation.accepted){
                 if(observation.index>=0){const auto i=static_cast<unsigned>(observation.index);const int cell=a.cell(i);
                     if(cell>=0){const auto prior=core_.nativeLive().desired(cell);
@@ -653,13 +654,13 @@ public:
                 if(observation.mirrorReplaced){
                     sourceStatus_[a.source]=SourceRecallStatus::ObservedMirror;
                     record(++sequence_,sample,Stage::RxFeedback,Reason::ShMirrorComplete,cable,data,length,sh01a_.mirror().program());
-                }else if(wasCapturing&&beforeCount&&length==2)
-                    record(++sequence_,sample,Stage::RxFeedback,Reason::ShCaptureIncomplete,cable,data,length,static_cast<int>(beforeCount));
+                }
                 record(++sequence_,sample,Stage::RxFeedback,Reason::Received,cable,data,length);return {};
             }
         }
         const auto before=presetSignature();const auto applied=globalApplySerial_;redDirectGesture_=false;
         auto result=receiveImpl(cable,data,length,sample,gestureMs);
+        traceShIncomplete(sample);
         if(cable==0&&data&&length==3&&(data[0]&15)==14&&((data[0]&0xf0)==0x80||(data[0]&0xf0)==0x90)&&
            !redDirectGesture_&&applied==globalApplySerial_)invalidatePresetsIfChanged(before);
         return result;
@@ -1269,8 +1270,8 @@ public:
     void beginStopRetryPass(int64_t sample) noexcept {stopRead_=0;stopSample_=sample;}
     unsigned pendingStopOffs() const noexcept {return stopPendingCount_;}
     void stop(int64_t sample) noexcept { muteLeds_.cancelFlashes(); documentDirty_=true;
-        if(sh01a_.mirror().capturing())record(++sequence_,sample,Stage::RxFeedback,Reason::ShCaptureIncomplete,0,nullptr,0,static_cast<int>(sh01a_.mirror().received()));
         sh01a_.stop();
+        traceShIncomplete(sample);
         resetBaseHolds_.fill(ResetBaseHold{});
         started_=true;transportStopped_=true;presetFaceRequest_.store(-1,std::memory_order_release);
         alternativeFlight_={};alternatives_.stop();alternativeBaseValid_.fill(false);
@@ -1336,9 +1337,8 @@ public:
     l01::NavRoute routeForControl(int physical)const noexcept{return core_.nativeRoute(physical);}
     bool machineFxBorrowed()const noexcept{return core_.machineFxBorrowed();}
     void advance(int64_t ms,int64_t sample) noexcept {
-        const bool shCapturing=sh01a_.mirror().capturing();const unsigned shCount=sh01a_.mirror().received();
         if(sh01aActive())sh01a_.advance(ms);else sh01a_.stop();
-        if(shCapturing&&!sh01a_.mirror().capturing())record(++sequence_,sample,Stage::RxFeedback,Reason::ShCaptureIncomplete,0,nullptr,0,static_cast<int>(shCount));
+        traceShIncomplete(sample);
         core_.advanceMachineFxView(ms);
         const auto signatureBeforeTimer=presetSignature();
         started_=true;
@@ -1684,14 +1684,21 @@ private:
         // Diagnostic consumer speed must never gate the musical input queue.
         core_.drainTrace();core_.drainS3Trace();
     }
+    void traceShIncomplete(int64_t sample) noexcept {
+        const auto report=sh01a_.takeIncomplete();
+        if(report.program>=0)
+            record(++sequence_,sample,Stage::RxFeedback,Reason::ShCaptureIncomplete,
+                   sh01a_.attachment().image.profile.cable,nullptr,0,static_cast<int>(report.count),report);
+    }
     void record(uint32_t sequence,int64_t sample,Stage stage,Reason reason,uint8_t cable,
-                const uint8_t* bytes,size_t length,int32_t result=0) noexcept {
+                const uint8_t* bytes,size_t length,int32_t result=0,
+                const Sh01aMirror::CaptureReport& shCapture={}) noexcept {
         const auto w=write_.load(std::memory_order_relaxed);
         if(w-read_.load(std::memory_order_acquire)>=TraceCapacity) {
             dropped_.fetch_add(1,std::memory_order_relaxed);return;
         }
         Trace t{};t.sequence=sequence;t.sample=sample;t.stage=stage;t.reason=reason;t.cable=cable;
-        t.length=static_cast<uint8_t>(length>255?255:length);t.result=result;
+        t.length=static_cast<uint8_t>(length>255?255:length);t.result=result;t.shCapture=shCapture;
         if(bytes)for(size_t i=0;i<3 && i<length;++i)t.bytes[i]=bytes[i];
         trace_[w%TraceCapacity]=t;write_.store(w+1,std::memory_order_release);
     }

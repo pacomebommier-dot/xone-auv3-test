@@ -561,6 +561,13 @@ int main() {
     NSDictionary *shState=shUnit.fullStateForDocument;shData=shState[@"XONE_SH01A_MIRRORS_V1"];
     assert(xone::host::decodeSh01aAttachment((const uint8_t *)shData.bytes,shData.length,shDecoded));
     assert(shDecoded.image.mirrors[1].valid&&shDecoded.image.mirrors[1].values[0]==70);
+    // The AU diagnostic reports actual CC identities from the interrupted epoch.
+    shPump(shPc,2);
+    const uint8_t receivedCc[]{0xB0,3,64}, extraCc[]{0xB0,90,64}, shStop[]{0xFC};
+    shPump(receivedCc,3);shPump(extraCc,3);shPump(shStop,1);
+    NSString *shDiagnostic=[shUnit drainDiagnosticText];
+    assert([shDiagnostic containsString:@"PC0 1/36 missing: 5 12"]);
+    assert([shDiagnostic containsString:@"extra: 90"]);
     [shUnit deallocateRenderResources];
     XoneMidiAudioUnit *shAgain=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
     assert(shAgain&&!error);shAgain.MIDIOutputEventBlock=shOutput;shAgain.fullState=shState;

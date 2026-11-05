@@ -62,12 +62,22 @@ public:
  }
  bool restore(const Sh01aMirrorImage& image)noexcept {
   if(!image.valid())return false;
-  image_=image;configured_=true;live_.fill(-2);program_=-1;programObserved_=false;capture_=false;count_=0;lastTime_=-1;incomplete_.fill(false);return true;
+  image_=image;configured_=true;live_.fill(-2);program_=-1;programObserved_=false;capture_=false;count_=0;lastTime_=-1;incomplete_.fill(false);incompleteReport_={};extra_={};return true;
  }
  const Sh01aMirrorImage& snapshot()const noexcept{return image_;}
  int program()const noexcept{return program_;}
  bool programObserved()const noexcept{return programObserved_;}
  bool liveKnown()const noexcept{for(auto v:live_)if(v<0)return false;return true;}
+ struct CaptureReport {
+  int program{-1};
+  unsigned count{};
+  std::array<uint64_t,2> missing{},extra{};
+ };
+ CaptureReport takeIncomplete() noexcept {
+  const auto report=incompleteReport_;
+  incompleteReport_={};
+  return report;
+ }
  bool capturing()const noexcept{return capture_;}
  unsigned received()const noexcept{return count_;}
  bool incomplete(unsigned slot)const noexcept{return slot<3&&incomplete_[slot];}
@@ -98,8 +108,13 @@ public:
   const unsigned command=bytes[0]&0xF0;
   if(command==0xC0&&size==2&&bytes[1]<64){start(bytes[1],now);programObserved_=true;return {true,false,-1,-2};}
   if(command!=0xB0||size!=3||bytes[1]>127||bytes[2]>127)return {};
-  const int i=index(bytes[1]);if(i<0)return {};
-  advance(now);lastTime_=now;const auto at=static_cast<unsigned>(i);
+  const int i=index(bytes[1]);
+  advance(now);
+  if(i<0){
+   if(capture_)mark(extra_,bytes[1]);
+   return {};
+  }
+  const auto at=static_cast<unsigned>(i);
   live_[at]=bytes[2];bool replaced=false;
   if(capture_){
    staging_[at]=bytes[2];if(!seen_[at]){seen_[at]=true;++count_;}
@@ -107,7 +122,7 @@ public:
     auto& m=image_.mirrors[static_cast<unsigned>(program_)];
     if(m.revision!=std::numeric_limits<uint32_t>::max()){
      m.values=staging_;++m.revision;m.valid=true;programObserved_=true;incomplete_[static_cast<unsigned>(program_)]=false;replaced=true;
-    }else incomplete_[static_cast<unsigned>(program_)]=true;
+    }else reportIncomplete();
     capture_=false;
    }
   }
@@ -119,14 +134,24 @@ private:
   for(unsigned i=0;i<36;++i)if(image_.profile.cc[i]==cc)return static_cast<int>(i);
   return -1;
  }
+ static void mark(std::array<uint64_t,2>& mask,unsigned cc)noexcept {
+  mask[cc/64]|=uint64_t{1}<<(cc%64);
+ }
+ void reportIncomplete()noexcept {
+  incomplete_[static_cast<unsigned>(program_)]=true;
+  incompleteReport_={program_,count_,{},extra_};
+  for(unsigned i=0;i<36;++i)if(!seen_[i])mark(incompleteReport_.missing,image_.profile.cc[i]);
+ }
  void cancel()noexcept {
-  if(capture_&&program_>=0&&program_<3)incomplete_[static_cast<unsigned>(program_)]=true;
+  if(capture_)reportIncomplete();
   capture_=false;count_=0;seen_.fill(false);
  }
  void start(unsigned program,int64_t now)noexcept {
   cancel();program_=static_cast<int>(program);lastTime_=now;started_=now;
-  capture_=program<3;seen_.fill(false);staging_.fill(-2);live_.fill(-2);
+  capture_=program<3;extra_={};seen_.fill(false);staging_.fill(-2);live_.fill(-2);
  }
+ CaptureReport incompleteReport_{};
+ std::array<uint64_t,2> extra_{};
  Sh01aMirrorImage image_{};bool configured_{},capture_{},programObserved_{};int program_{-1};unsigned count_{};
  int64_t lastTime_{-1},started_{};std::array<int16_t,36> live_{},staging_{};
  std::array<bool,36> seen_{};std::array<bool,3> incomplete_{};

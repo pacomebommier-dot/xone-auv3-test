@@ -442,9 +442,21 @@
     NSMutableString *text = [NSMutableString stringWithFormat:@"V3 dev | K2/S2/NAV | RX_FEEDBACK=CONFIGURED_PROFILES_ONLY | dropped=%u | overflowBuffers=%u\n", _engine.dropped(), _engine.overflows()];
     xone::host::Trace t{};
     for (unsigned n=0; n<256 && _engine.pop(t); ++n) {
-        [text appendFormat:@"%u s=%lld %s %s cable=%u len=%u %02X %02X %02X result=%d\n",
+        [text appendFormat:@"%u s=%lld %s %s cable=%u len=%u %02X %02X %02X result=%d",
             t.sequence, (long long)t.sample, stages[(unsigned)t.stage], reasons[(unsigned)t.reason],
             t.cable, t.length, t.bytes[0], t.bytes[1], t.bytes[2], t.result];
+        if(t.reason==xone::host::Reason::ShCaptureIncomplete){
+            [text appendFormat:@" PC%d %u/36",t.shCapture.program,t.shCapture.count];
+            const auto appendMask=[&](NSString *label,const std::array<uint64_t,2>& mask){
+                [text appendString:label];
+                if(!mask[0]&&!mask[1])[text appendString:@" -"];
+                for(unsigned cc=0;cc<128;++cc)
+                    if(mask[cc/64]&(uint64_t{1}<<(cc%64)))[text appendFormat:@" %u",cc];
+            };
+            appendMask(@" missing:",t.shCapture.missing);
+            appendMask(@" extra:",t.shCapture.extra);
+        }
+        [text appendString:@"\n"];
     }
     return text;
 }

@@ -87,6 +87,7 @@ public:
   if(result.mirrorReplaced){attachment_.image=mirror_.snapshot();dirty_=true;}
   return result;
  }
+ Sh01aMirror::CaptureReport takeIncomplete()noexcept{return mirror_.takeIncomplete();}
  void advance(int64_t now)noexcept{mirror_.advance(now);}
  bool queueProgram(unsigned pc)noexcept {
   if(!attachment_.enabled||pc>=3||token_==UINT64_MAX)return false;
