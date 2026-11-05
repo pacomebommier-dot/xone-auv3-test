@@ -101,24 +101,29 @@ int main() {
     resets[0]={1648,811};resets[1]={1696,859};
     assert(memory.resetContinuousTargets(resets,2)&&flush(memory)==2);
     assert(memory.desiredLive(1648).value==0&&memory.desiredLive(1696).value==0);
-    int button=-1;
+    int button=-1, emptyButton=-1;
     for(int p=4;p<20;++p){
         const auto route=memory.routeForControl(p);
-        if(route.address/1024==5&&route.position==0)button=p;
+        if(route.address/1024!=5)continue;
+        if(route.position==0)button=p;
+        if(route.position==1)emptyButton=p;
     }
-    assert(button>=0);
+    assert(button>=0&&emptyButton>=0);
     assert(memory.ledImage()[static_cast<unsigned>(button-4)].color==MuteLedColor::Yellow);
-    edge(memory,button,true,10);edge(memory,button,false,11);
+    edge(memory,button,true,10);
     assert(flush(memory)==0&&memory.ledImage()[static_cast<unsigned>(button-4)].blinking);
+    edge(memory,button,false,11);
     memory.onMusicalGrid(grid(GridKind::Beat));
     assert(flush(memory)==108);
     assert(memory.desiredLive(1648).value==42&&memory.desiredLive(1696).value==61);
     xone::l01::BankS6::MemoryRecord record{};
     assert(memory.readMemory(20,0,record)&&!record.valid);
-    edge(memory,button,true,20);edge(memory,button,false,220);
+    edge(memory,emptyButton,true,20);
     for(int family=0;family<2;++family)for(int sound=0;sound<6;++sound)
-        assert(memory.readMemory(12+8*family+sound,0,record)&&record.valid);
-    assert(memory.readMemory(27,0,record)&&!record.valid);
-    assert(memory.ledImage()[static_cast<unsigned>(button-4)].color==MuteLedColor::Red);
+        assert(memory.readMemory(12+8*family+sound,1,record)&&record.valid);
+    assert(memory.readMemory(27,1,record)&&!record.valid);
+    assert(memory.ledImage()[static_cast<unsigned>(emptyButton-4)].color==MuteLedColor::Red);
+    edge(memory,emptyButton,false,220);
+    assert(memory.readMemory(12,1,record)&&record.revision==1); // held release does not write twice
     std::cout<<"PASS DRUM/FILL page 7 fan-out, RESET, shared page 8 aliases and SOFT groups\n";
 }

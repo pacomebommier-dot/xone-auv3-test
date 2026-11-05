@@ -867,16 +867,7 @@ private:
             if(accepted&&memorySource){
                 const int group=rhythmMemoryGroup(memoryOwner);
                 if(group<0)memoryGesture(memoryOwner,memorySlot);
-                else rhythmMemoryHolds_[static_cast<unsigned>(physical-4)]={group,memorySlot,gestureMs};
-            }
-            if(accepted&&baseEvent&&wasHeld&&(cmd==0x80||data[2]==0)){
-                auto& hold=rhythmMemoryHolds_[static_cast<unsigned>(physical-4)];
-                const auto captured=hold;
-                hold={};
-                if(captured.group>=0&&gestureMs>=captured.down){
-                    if(gestureMs-captured.down>=200)saveRhythmMemory(captured.group,captured.slot);
-                    else requestRhythmMemory(captured.group,captured.slot);
-                }
+                else rhythmMemoryGesture(group,memorySlot);
             }
             if(accepted&&presetSource){
                 const unsigned slot=static_cast<unsigned>(presetRoute.position);
@@ -1270,7 +1261,7 @@ public:
             alternativeFlight_={};alternatives_.stop();alternativeBaseValid_.fill(false);
             pendingPresetSlot_=-1;initPending_=false;redActive_=false;redImage_.valid=false;redHeld_=false;
             sourceRead_=sourceWrite_;sourceBlocked_=false;cueLoad_.stop();
-            cueBaseHolds_.fill({});baseWriteFeedback_={};rhythmMemoryHolds_.fill({});rhythmMemoryPending_.fill({});
+            cueBaseHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});
         }
         applyPendingResetDefaults();
         beginSh01aBuffer(appliedToken_!=beforeRestore);
@@ -1393,7 +1384,7 @@ public:
         for(auto& pending:memoryPending_)pending={};
         sourcePending_.fill(-1);sourceRead_=sourceWrite_;sourceBlocked_=false;
         for(auto& status:sourceStatus_)if(status==SourceRecallStatus::Pending)status=SourceRecallStatus::None;
-        cueBaseHolds_.fill({});baseWriteFeedback_={};rhythmMemoryHolds_.fill({});rhythmMemoryPending_.fill({});
+        cueBaseHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});
         cueLoad_.stop(); // cancel pending BAR intents, preserve actual CC-sent state
         topPulse_.stop(); // cancels unattempted pulses; retains every attempted OFF
         topSaveSuppress_.fill(false);
@@ -2115,7 +2106,7 @@ private:
         openingLive_=live;rhythmDials_.fill({});
         s8Sample_=d.sample;s8Machine_=d.machine;sourcePatches_=d.source;alternativeBank_=d.alternative;sourceBases_=d.sourceBases;shBase_=d.shBase;shBaseSentMs_=-1;alternatives_=arbiter;
         presets_=d.presets;globalInit_=d.init;soft_=soft;muteBridge_=mute;muteGate_.restoreVisible(d.current.muteVisible);
-        cueBaseHolds_.fill({});baseWriteFeedback_={};rhythmMemoryHolds_.fill({});rhythmMemoryPending_.fill({});
+        cueBaseHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});
         cueLoad_=CueLoadBar{}; // desired selection is rebuilt below; no historical service pulse
         cueLoad_.restoreDocumentSelections(d.current.cueSelections);
         memoryEngaged_=d.current.memoryEngaged;presetEngaged_=d.current.presetEngaged;presetValid_.fill(false);
@@ -2284,11 +2275,17 @@ private:
         }
         return count;
     }
-    struct RhythmMemoryHold {int group{-1},slot{-1};int64_t down{};};
     struct RhythmMemoryRequest {
         int slot{-1},config{};
         std::array<l01::BankS6::MemoryImage,12> values{};
     };
+    bool rhythmMemoryGesture(int group,int slot) noexcept {
+        std::array<int,12> owners{};
+        const auto count=rhythmMemoryOwners(group,owners);
+        for(unsigned i=0;i<count;++i)
+            if(memoryEngaged(owners[i],slot))return requestRhythmMemory(group,slot);
+        return saveRhythmMemory(group,slot);
+    }
     bool saveRhythmMemory(int group,int slot) noexcept {
         std::array<int,12> owners{};
         const auto count=rhythmMemoryOwners(group,owners);
@@ -2354,7 +2351,6 @@ private:
         documentDirty_=true;
         return true;
     }
-    std::array<RhythmMemoryHold,16> rhythmMemoryHolds_{};
     std::array<RhythmMemoryRequest,3> rhythmMemoryPending_{};
     bool memoryGesture(int owner,int slot) noexcept {
         return memoryEngaged(owner,slot)?requestMemoryRecall(owner,slot):captureMemory(owner,slot);
