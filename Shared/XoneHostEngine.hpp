@@ -298,6 +298,11 @@ public:
     }
     int activeAlternative(unsigned source)const noexcept {return source<4?alternatives_.active()[source]:-1;}
     int pendingAlternative(unsigned source)const noexcept {return source<4?alternatives_.pending()[source]:-1;}
+    uint8_t midiOutputCable(int api,int type) const noexcept {
+        const int source=sourceForPacket(api,type);
+        if(!synthCables_||source<0)return 0;
+        return static_cast<uint8_t>(synthCable(static_cast<unsigned>(source),activeAlternative(static_cast<unsigned>(source))));
+    }
     int presetInstrumentGroup()const noexcept {return presetInstrumentGroup_;}
     bool consultPresetInstrumentGroup(unsigned source) noexcept {
         if(source>=4)return false;
@@ -316,8 +321,12 @@ public:
         if(arbitration==0){if(alternativeArbitration_==UINT64_MAX)return Request::Rejected;arbitration=alternativeArbitration_+1;}
         if(arbitration<alternativeArbitration_)return Request::Rejected;
         auto draft=alternatives_;const auto result=draft.request(source,instrument,arbitration);
-        if(result==Request::Accepted&&!transportStopped_&&!musicalScheduler_.replace(5,0,ScheduleWhen::NextBar))return Request::Rejected;
         if(result==Request::Rejected)return result;
+        auto projected=draft.active();
+        for(unsigned i=0;i<projected.size();++i)
+            if(draft.pending()[i]>=0)projected[i]=draft.pending()[i];
+        if(synthCables_&&!uniqueSynthCables(projected))return Request::Rejected;
+        if(result==Request::Accepted&&!transportStopped_&&!musicalScheduler_.replace(5,0,ScheduleWhen::NextBar))return Request::Rejected;
         alternatives_=draft;alternativeArbitration_=arbitration;
         if(result==Request::Accepted){alternativeBases_[source]=values;alternativeBaseValid_[source]=true;alternativePendingOrder_[source]=transportStopped_?0:musicalScheduler_.orderOf(5,0);}
         if(result==Request::Cancelled)alternativeBaseValid_[source]=false;
@@ -638,6 +647,12 @@ public:
                 set(12+slot,MuteLedColor::Off);const unsigned peer=group^1u;
                 if(activeAlternative(group)==id)set(12+slot,MuteLedColor::Green);
                 else if(activeAlternative(peer)==id)set(12+slot,MuteLedColor::Red);
+                else if(synthCables_){
+                    auto projected=alternatives_.active();projected[group]=id;
+                    if(!uniqueSynthCables(projected)){set(12+slot,MuteLedColor::Red);continue;}
+                    if(pendingAlternative(group)==id)set(12+slot,MuteLedColor::Green,true);
+                    else if(pendingAlternative(peer)==id)set(12+slot,MuteLedColor::Yellow);
+                }
                 else if(pendingAlternative(group)==id)set(12+slot,MuteLedColor::Green,true);
                 else if(pendingAlternative(peer)==id)set(12+slot,MuteLedColor::Yellow);
             }
@@ -1902,6 +1917,21 @@ private:
         if(family==0&&page==0&&route.address/1024==0&&route.position>=0&&route.position<4)return route.position;
         return -1;
     }
+    static unsigned synthCable(unsigned source,int alternative) noexcept {
+        return alternative<0?0u:static_cast<unsigned>(alternative)+1+2*(source/2);
+    }
+    static bool uniqueSynthCables(const AlternativeArbiter::Targets& targets) noexcept {
+        unsigned seen=0;
+        for(unsigned source=0;source<targets.size();++source){
+            const unsigned cable=synthCable(source,targets[source]);
+            if(!cable)continue;
+            const unsigned bit=1u<<cable;
+            if(seen&bit)return false;
+            seen|=bit;
+        }
+        return true;
+    }
+    bool synthCables_{true};
     static int sourceForPacket(int api,int type) noexcept {
         if(type==10){
             if(api>=128&&api<272)return (api-128)/36;
@@ -1947,7 +1977,7 @@ private:
         if(alternativeFlight_.valid)return alternativeFlight_.waiting==0?finishAlternativeChange():true;
         AlternativeArbiter::Ready ready{};
         for(unsigned i=0;i<4;++i)ready[i]=alternativeBaseValid_[i];
-        auto plan=alternatives_.prepareNextBar(ready);if(!plan.valid)return false;
+        auto plan=alternatives_.prepareNextBar(ready);if(!plan.valid||(synthCables_&&!uniqueSynthCables(plan.to)))return false;
         if(plan.from==plan.to)return true;
         if(topPulse_.hasOwedOff()||core_.nativeNav().hasStage()||alternativeSerial_==UINT64_MAX)return false;
         AlternativeFlight flight{};flight.valid=true;flight.plan=plan;flight.bases=alternativeBases_;flight.serial=alternativeSerial_+1;
@@ -2134,7 +2164,7 @@ private:
         seedOpeningValues(live,openingDefaults(token));
         if(!core_.commitNativeDocument(live,d.current.nav,bank,memoryBases,patchBases))return false;
         openingLive_=live;rhythmDials_.fill({});
-        s8Sample_=d.sample;s8Machine_=d.machine;sourcePatches_=d.source;alternativeBank_=d.alternative;sourceBases_=d.sourceBases;shBase_=d.shBase;shBaseSentMs_=-1;alternatives_=arbiter;
+        s8Sample_=d.sample;s8Machine_=d.machine;sourcePatches_=d.source;alternativeBank_=d.alternative;sourceBases_=d.sourceBases;shBase_=d.shBase;shBaseSentMs_=-1;alternatives_=arbiter;synthCables_=uniqueSynthCables(arbiter.active());
         presets_=d.presets;globalInit_=d.init;soft_=soft;muteBridge_=mute;muteGate_.restoreVisible(d.current.muteVisible);
         cueHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});
         cueLoad_=CueLoadBar{}; // desired selection is rebuilt below; no historical service pulse
@@ -2185,7 +2215,7 @@ private:
         AlternativeArbiter::Ready ready{};
         for(unsigned source=0;source<4;++source){SourcePatchBank::Values ignored{};
             ready[source]=image.alternatives[source]<0||alternativeBank_.base(source/2,static_cast<unsigned>(image.alternatives[source]),live.sessionConfig(),ignored);}
-        const auto plan=alternatives_.prepareRecall(image.alternatives,ready);if(!plan.valid)return false;
+        const auto plan=alternatives_.prepareRecall(image.alternatives,ready);if(!plan.valid||(synthCables_&&!uniqueSynthCables(plan.to)))return false;
         bool closing=false;
         for(int api=0;api<528;++api){const int source=sourceForPacket(api,11);
             if(source>=0&&plan.from[static_cast<unsigned>(source)]!=plan.to[static_cast<unsigned>(source)]&&core_.output().debt(api))closing=true;}

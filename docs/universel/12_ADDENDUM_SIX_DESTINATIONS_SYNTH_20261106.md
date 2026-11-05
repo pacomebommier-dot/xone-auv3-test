@@ -36,6 +36,12 @@ Pour le slot consulté, vert fixe désigne sa destination active. Vert clignotan
 
 Le premier correctif restaure les valeurs MACHINE connues du dernier LIVE déjà enregistré par la banque existante. Il conserve le BASE pour une première activation et pour un rappel explicite. Le rouge signale les conflits déjà refusés par l’arbitre actuel. L’indication jaune d’un échange admissible attend la mise en œuvre des échanges entre les six destinations.
 
+## Câbles AUv3
+
+La sortie existante conserve le numéro 0. Les sorties SYNTH 1 à 6 utilisent les câbles virtuels 1 à 6. Une commande nominale appartenant à une alternative active emprunte son câble SYNTH. Les octets S7 conservent leur adresse logique dans ce raccordement. Les bus, les LED et le trafic de l’adaptateur SH historique conservent la sortie commune. Un NoteOff de bascule est envoyé avant la confirmation de la nouvelle affectation.
+
+Les nouvelles sélections et les rappels globaux refusent les doubles destinations sur un même câble. Un ancien document comportant un tel chevauchement reste lisible et utilise la sortie historique pour cette ouverture. L’échange, l’activation des affectations de démarrage et la traduction indépendante du slot jusqu’au plugin restent à raccorder. La matrice AUM doit encore être validée sur iPad avec les sorties nommées.
+
 ## Cas à vérifier
 
 1. Session neuve avec la grille par défaut et SYNTH 3/4 libres.

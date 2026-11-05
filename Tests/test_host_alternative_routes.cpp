@@ -78,10 +78,13 @@ int main(){
   assert(h.configureAlternativeBase(0,0,sounding,1)&&h.configureAlternativeBase(0,1,base(22),1));
   assert(h.bindAlternativeSlot(0,0,0)&&h.bindAlternativeSlot(0,1,1));assert(h.requestAlternative(0,0)==A::Request::Accepted);h.onMusicalGrid(bar(4));flush(h);
   assert(h.activeAlternative(0)==0&&h.desiredLive(320).value==11);assert(h.requestAlternative(0,1)==A::Request::Accepted);h.onMusicalGrid(bar(8));
-  auto off=h.nextSourcePacket();assert(off.valid&&off.type==11&&off.api==96&&off.value==0);h.ackSourcePacket(off,false,1);
+  auto off=h.nextSourcePacket();assert(off.valid&&off.type==11&&off.api==96&&off.value==0);
+  assert(h.midiOutputCable(off.api,off.type)==1);h.ackSourcePacket(off,false,1);
+  assert(h.midiOutputCable(off.api,off.type)==1);
   assert(!h.nextSourcePacket().valid&&h.activeAlternative(0)==0&&h.desiredLive(320).value==11);
   if(stop){h.stop(2);h.ackSourcePacket(off,true,3);h.onMusicalGrid(bar(12));assert(h.activeAlternative(0)==0&&h.desiredLive(320).value==11);}
-  else {flush(h);assert(h.activeAlternative(0)==1&&h.desiredLive(320).value==22);}
+  else {flush(h);assert(h.activeAlternative(0)==1&&h.desiredLive(320).value==22);
+   assert(h.midiOutputCable(off.api,off.type)==2);}
  }
 
  // A free instrument keeps its last MACHINE LIVE across save and reopen.
@@ -101,6 +104,17 @@ int main(){
   assert(reopened.activeAlternative(0)==0&&reopened.desiredLive(320).value==37);
   assert(reopened.requestSourceRecall(0,3));reopened.onMusicalGrid(bar(16));flush(reopened);
   assert(reopened.desiredLive(320).value==11);
+ }
+ // Cable numbers identify the AUM destination, independently of the logical slot.
+ {HostEngine h;
+  assert(h.configureAlternativeBase(0,2,base(11),1)&&h.configureAlternativeBase(1,0,base(22),1));
+  assert(h.bindAlternativeSlot(0,0,2)&&h.bindAlternativeSlot(2,0,0));
+  assert(h.midiOutputCable(128,10)==0);
+  assert(h.requestAlternative(0,0)==A::Request::Accepted);h.onMusicalGrid(bar(4));
+  assert(h.midiOutputCable(128,10)==3&&h.midiOutputCable(96,13)==3);
+  assert(h.midiOutputCable(699,10)==0);
+  assert(h.requestAlternative(2,0)==A::Request::Rejected);
+  flush(h);
  }
  HostEngine e;assert(e.presetInstrumentGroup()==-1&&e.activeAlternative(0)==-1);
  assert(e.requestAlternative(0,0)==A::Request::Rejected);

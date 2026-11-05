@@ -333,6 +333,9 @@ int main() {
     // One rejected callback retries only in the following render buffer.
     XoneMidiAudioUnit *sourceUnit=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
     assert(sourceUnit&&!error);sourceUnit.MIDIOutputEventBlock=testOutput;
+    assert(sourceUnit.MIDIOutputNames.count==7);
+    assert([sourceUnit.MIDIOutputNames[0] isEqualToString:@"XONE V0.2 TEST OUT"]);
+    assert([sourceUnit.MIDIOutputNames[6] isEqualToString:@"SYNTH 6"]);
     assert([sourceUnit.inputBusses[0] setFormat:format error:&error]);
     assert([sourceUnit.outputBusses[0] setFormat:format error:&error]);
     sourceUnit.maximumFramesToRender=8192;cursor=0;

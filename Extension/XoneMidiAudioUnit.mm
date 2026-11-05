@@ -66,7 +66,7 @@
 - (AUParameterTree *)parameterTree { return _nativeParameterTree; }
 - (AUAudioUnitBusArray *)inputBusses { return _inputBusArray; }
 - (AUAudioUnitBusArray *)outputBusses { return _outputBusArray; }
-- (NSArray<NSString *> *)MIDIOutputNames { return @[@"XONE V0.2 TEST OUT"]; }
+- (NSArray<NSString *> *)MIDIOutputNames { return @[@"XONE V0.2 TEST OUT", @"SYNTH 1", @"SYNTH 2", @"SYNTH 3", @"SYNTH 4", @"SYNTH 5", @"SYNTH 6"]; }
 
 - (BOOL)allocateRenderResourcesAndReturnError:(NSError * _Nullable __autoreleasing *)outError {
     if (![super allocateRenderResourcesAndReturnError:outError]) return NO;
@@ -217,7 +217,7 @@
                 const auto packet=engine->nextStopPacket();
                 if (!packet.emit) break;
                 if (!engine->canSend(packet)) continue;
-                if (sendMIDI) engine->sent(packet,sendMIDI(packet.sample,0,3,packet.bytes));
+                if (sendMIDI) engine->sent(packet,sendMIDI(packet.sample,engine->midiOutputCable(packet.api,packet.type),3,packet.bytes));
                 else engine->noOutput(packet);
             }
         };
@@ -267,7 +267,7 @@
             if(!sendMIDI)return;
             for(unsigned n=0;n<2048;++n){
                 const auto packet=engine->nextSourcePacket();if(!packet.valid)break;
-                const bool ok=sendMIDI(sample,0,3,packet.bytes.data())==noErr;
+                const bool ok=sendMIDI(sample,engine->midiOutputCable(packet.api,packet.type),3,packet.bytes.data())==noErr;
                 engine->ackSourcePacket(packet,ok,sample);if(!ok)break;
             }
         };
@@ -364,7 +364,7 @@
                 for(unsigned n=0;n<patch.packetCount();++n){
                     const auto packet=patch.packet(n);
                     if(!engine->canSend(packet))continue;
-                    if(sendMIDI)engine->sent(packet,sendMIDI(packet.sample,0,3,packet.bytes));
+                    if(sendMIDI)engine->sent(packet,sendMIDI(packet.sample,engine->midiOutputCable(packet.api,packet.type),3,packet.bytes));
                     else engine->noOutput(packet);
                 }
                 flushMute(bufferStart+one.events[0].offset);
@@ -407,7 +407,7 @@
             for (unsigned n=0; n<result.packetCount(); ++n) {
                 const auto packet = result.packet(n);
                 if (!engine->canSend(packet)) continue;
-                if (sendMIDI) engine->sent(packet, sendMIDI(sample, 0, 3, packet.bytes));
+                if (sendMIDI) engine->sent(packet, sendMIDI(sample, engine->midiOutputCable(packet.api,packet.type), 3, packet.bytes));
                 else engine->noOutput(packet);
             }
             flushCueLoad(sample);flushSource(sample); // explicit stopped recalls, no synthetic grid
