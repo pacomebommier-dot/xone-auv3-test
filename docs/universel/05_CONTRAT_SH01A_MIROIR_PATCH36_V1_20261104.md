@@ -35,7 +35,7 @@ Association **par destination SH configurée** (et synthé/owner correct), jamai
 2. Pour PC1/PC2/PC3, accumuler les valeurs **des 36 CC distincts du profil**, sous le même identifiant de programme/destination/epoch ; répétitions du même CC remplacent la valeur temporaire correspondante, sans augmenter le compteur.
 3. **Seulement si 36/36 ont été effectivement reçus**, remplacer en une opération atomique le miroir XONE correspondant et persister sa nouvelle image. Aucun clic, aucune validation utilisateur XONE.
 4. Si la capture n'atteint pas 36/36 (timeout, câble, changement de programme, CC manquant), **ne pas écraser l'ancien miroir** : le miroir est conservé, la capture est abandonnée et son statut de synchronisation est incomplet. Les CC reçus peuvent rester connus dans LIVE, mais ne deviennent pas une sauvegarde.
-5. Pour PC0 et PC4..63, actualiser LIVE sans écrire aucun miroir.
+5. Pour PC0 et PC4..63, actualiser LIVE sans écrire aucun miroir. Un rappel du programme 1 initié sur le SH (PC0 reçu de sa route configurée) applique aussi les FX BASE locaux, une fois pour ce rappel. Il conserve la référence FX enregistrée. Traiter un retour du PC0 émis par CUE4 comme le même rappel, sans renvoyer de PC au SH ni appliquer deux fois les FX.
 
 ### 4.2 Rappel initié par XONE
 1. Le geste PATCH/CUE/LOAD autorisé garde sa quantification existante, notamment le **BAR pour CUE/LOAD**, son owner et sa politique STOP. Après admission, envoyer **uniquement le PC1, PC2 ou PC3** sur la sortie SH configurée.
