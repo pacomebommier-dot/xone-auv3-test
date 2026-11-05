@@ -28,6 +28,10 @@ CUE/LOAD 1 à 3 restent les trois PATCH. CUE4 désigne le quatrième choix de la
 - Une nouvelle attribution applique le BASE de la destination. Un rappel CUE4 applique le même BASE. La réouverture AUM reprend le LIVE sauvegardé et retrouve la référence BASE pour les actions suivantes.
 - SH-01A. Le programme 1 en façade est le BASE pour chaque destination SH configurée. CUE4 court envoie PC0 et applique les FX locaux. Un rappel du programme 1 depuis le Roland applique les mêmes FX BASE dans XONE et actualise le LIVE SH par les CC reçus. CUE4 long enregistre les FX locaux et le feedback confirme cette écriture XONE. Le son du programme 1 se sauvegarde par WRITE physique sur le Roland. CUE1–3 rappellent les programmes 2–4 par PC1–3. Les trois miroirs restent automatiques et les FX restent hors des PATCH SH.
 
+## Gestes PATCH locaux
+
+TOP1–3 en page MACHINE et CUE/LOAD1–3 utilisent les slots PATCH du propriétaire existant. Pour les quatre sources INST/YELLOW, les deux accès partagent la banque de la paire MACHINE et de sa destination active. Sur un slot vide, court et long capturent les réglages courants. Sur un slot rempli, le court arme le rappel selon le timing existant et le long (200 ms ou plus) remplace le PATCH. La décision se prend au relâchement. Une capture refusée ne déclenche aucun rappel. CUE/LOAD conserve le BAR et l’application à l’arrêt. Le raccourci BOT3 + TOP conserve son rôle de capture MACHINE. Sur SH‑01A, les PATCH sont sauvegardés par WRITE physique et le rappel XONE envoie le PC prévu.
+
 ## DRUMS et FILL
 
 Chacune des deux familles possède six sons. Chaque son dispose de quatre appels SOFT externes et de trois MEMORY locales.

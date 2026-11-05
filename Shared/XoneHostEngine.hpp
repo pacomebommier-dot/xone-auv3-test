@@ -238,7 +238,7 @@ public:
     unsigned topPatchRecallsDeferred() const noexcept {return topPatchRecallsDeferred_;}
     enum class TopAction : uint8_t { FilterReset, PatchRecall };
     struct TopIntent {int physical{-1};l01::NavRoute route{};uint32_t sequence{};TopAction action{TopAction::FilterReset};};
-    struct TopCapture {l01::NavRoute route{};int context{-2};std::uint64_t navRevision{};int root{-1};};
+    struct TopCapture {l01::NavRoute route{};int context{-2};std::uint64_t navRevision{};int root{-1};int64_t down{};};
     bool lastTopIntent(unsigned index,TopIntent& out) const noexcept {
         if(index>=4||!topIntentValid_[index])return false;
         out=topIntents_[index];return true;
@@ -838,27 +838,28 @@ private:
                !muteBaseOwned&&physical>=4&&physical<20&&
                !core_.longNavPending()&&!core_.nativeNav().hasStage())
                 soft_.requestFromRoute(physical,softRoute,softRoot);
-            if(accepted&&cueSource&&cueIndex%4==3){
-                cueBaseHolds_[static_cast<unsigned>(physical-4)]={static_cast<int>(cueGroup),cueIndex,activeAlternative(cueGroup),gestureMs};
+            if(accepted&&cueSource&&(cueIndex%4==3||!sh01aSource(cueGroup))){
+                cueHolds_[static_cast<unsigned>(physical-4)]={static_cast<int>(cueGroup),cueIndex,activeAlternative(cueGroup),gestureMs};
             }else if(accepted&&cueSource){
-                if(!sh01aSource(cueGroup)){
-                    cueLoad_.requestQualified(cueGroup,cueIndex);
-                    if(transportStopped_)cueLoad_.onStopped();
-                }
                 requestSourceRecall(cueGroup,cueIndex%4);
             }
             if(accepted&&baseEvent&&wasHeld&&(cmd==0x80||data[2]==0)){
-                auto& hold=cueBaseHolds_[static_cast<unsigned>(physical-4)];
+                auto& hold=cueHolds_[static_cast<unsigned>(physical-4)];
                 const auto captured=hold;
                 hold={};
                 if(captured.source>=0&&gestureMs>=captured.down&&
-                   activeAlternative(static_cast<unsigned>(captured.source))==captured.instrument){
+                   activeAlternative(static_cast<unsigned>(captured.source))==captured.instrument&&
+                   (captured.index%4==3||!sh01aSource(static_cast<unsigned>(captured.source)))){
                     const auto source=static_cast<unsigned>(captured.source);
-                    if(gestureMs-captured.down>=200){
+                    const unsigned slot=captured.index%4;
+                    const bool longPress=gestureMs-captured.down>=200;
+                    if(slot==3&&longPress){
                         if(saveSourceBase(source)){
                             baseWriteFeedback_={static_cast<int>(source),gestureMs};
                         }
-                    }else if(requestSourceRecall(source,3)&&!sh01aSource(source)){
+                    }else if(slot<3&&(longPress||!hasSourcePatch(source,slot))){
+                        saveSourcePatch(source,slot);
+                    }else if(requestSourceRecall(source,slot)&&!sh01aSource(source)){
                         cueLoad_.requestQualified(source,captured.index);
                         if(transportStopped_)cueLoad_.onStopped();
                     }
@@ -963,7 +964,7 @@ private:
                     topHold_[topIndex]=topSaveSuppress_[topIndex]?TopCapture{}:TopCapture{
                         core_.nativeRoute(physical),
                         core_.nativeNav().active().contextMode,
-                        core_.nativeNav().revision(),core_.nativeNav().active().at(291)
+                        core_.nativeNav().revision(),core_.nativeNav().active().at(291),gestureMs
                     };
                 }else{
                     if(topSaveSuppress_[topIndex]){
@@ -1022,7 +1023,7 @@ private:
                         topIntents_[index]={physical,captured.route,seq,patch?TopAction::PatchRecall:TopAction::FilterReset};
                         topIntentValid_[index]=true;
                         if(patch && captured.context==3)armSamplePatch(index);
-                        else if(patch && captured.context==7)armMachinePatch(index);
+                        else if(patch && captured.context==7)armMachinePatch(index,gestureMs-captured.down>=200);
                         if(patch)++topPatchRecallsDeferred_;
                         bool reset=false;
                         if(!patch){
@@ -1267,7 +1268,7 @@ public:
             alternativeFlight_={};alternatives_.stop();alternativeBaseValid_.fill(false);
             pendingPresetSlot_=-1;initPending_=false;redActive_=false;redImage_.valid=false;redHeld_=false;
             sourceRead_=sourceWrite_;sourceBlocked_=false;cueLoad_.stop();
-            cueBaseHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});
+            cueHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});
         }
         applyPendingResetDefaults();
         beginSh01aBuffer(appliedToken_!=beforeRestore);
@@ -1390,7 +1391,7 @@ public:
         for(auto& pending:memoryPending_)pending={};
         sourcePending_.fill(-1);sourceRead_=sourceWrite_;sourceBlocked_=false;
         for(auto& status:sourceStatus_)if(status==SourceRecallStatus::Pending)status=SourceRecallStatus::None;
-        cueBaseHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});
+        cueHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});
         cueLoad_.stop(); // cancel pending BAR intents, preserve actual CC-sent state
         topPulse_.stop(); // cancels unattempted pulses; retains every attempted OFF
         topSaveSuppress_.fill(false);
@@ -1574,7 +1575,11 @@ private:
         }
         topIntentValid_[index]=false; // command accepted once; BAR still has not applied it
     }
-    void armMachinePatch(unsigned index) noexcept {
+    bool hasSourcePatch(unsigned source,unsigned slot) const noexcept {
+        SourcePatchBank::Patch patch{};
+        return readSourcePatch(source,slot,patch);
+    }
+    void armMachinePatch(unsigned index,bool longPress) noexcept {
         if(samplePatchPending()||index>=3||!topIntentValid_[index])return;
         const auto& intent=topIntents_[index];
         const int packed=intent.route.address;
@@ -1589,14 +1594,26 @@ private:
         if(selected<=8){
             const unsigned source=static_cast<unsigned>((selected-1)/2);
             SourcePatchBank::Patch patch{};
-            if(!sh01aSource(source)&&(!readSourcePatch(source,static_cast<unsigned>(slot),patch)||patch.config!=core_.nativeLive().sessionConfig()))return;
+            if(!sh01aSource(source)){
+                if(longPress||!readSourcePatch(source,static_cast<unsigned>(slot),patch)){
+                    topIntentValid_[index]=false;
+                    saveMachinePatchFromLive(slot);
+                    return;
+                }
+                if(patch.config!=core_.nativeLive().sessionConfig())return;
+            }
             if(!requestSourceRecall(source,static_cast<unsigned>(slot)))return;
             pairedTopSource_=transportStopped_?-1:static_cast<int>(source);
             topIntentValid_[index]=false;return;
         }
         S8MachinePatchBank::Patch patch{};
-        if(!s8Machine_.read(static_cast<unsigned>(selected-1),static_cast<unsigned>(slot),patch)||
-           !patch.valid||patch.config!=core_.nativeLive().sessionConfig())return;
+        if(!s8Machine_.read(static_cast<unsigned>(selected-1),static_cast<unsigned>(slot),patch))return;
+        if(longPress||!patch.valid){
+            topIntentValid_[index]=false;
+            saveMachinePatchFromLive(slot);
+            return;
+        }
+        if(patch.config!=core_.nativeLive().sessionConfig())return;
         samplePatch_={selected-1,slot,patch.revision,true,true};
         topIntentValid_[index]=false;
     }
@@ -1959,7 +1976,7 @@ private:
             if(pairedTopSource_==static_cast<int>(source))pairedTopSource_=-1;
             for(auto& hold:spots_)if(sourceForCell(hold.cell)==static_cast<int>(source))hold={};
             for(auto& hold:topHold_)if(sourceForRoute(hold.route)==static_cast<int>(source))hold={};
-            for(auto& hold:cueBaseHolds_)if(hold.source==static_cast<int>(source))hold={};
+            for(auto& hold:cueHolds_)if(hold.source==static_cast<int>(source))hold={};
         }
         return offCount?true:finishAlternativeChange();
     }
@@ -2112,7 +2129,7 @@ private:
         openingLive_=live;rhythmDials_.fill({});
         s8Sample_=d.sample;s8Machine_=d.machine;sourcePatches_=d.source;alternativeBank_=d.alternative;sourceBases_=d.sourceBases;shBase_=d.shBase;shBaseSentMs_=-1;alternatives_=arbiter;
         presets_=d.presets;globalInit_=d.init;soft_=soft;muteBridge_=mute;muteGate_.restoreVisible(d.current.muteVisible);
-        cueBaseHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});
+        cueHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});
         cueLoad_=CueLoadBar{}; // desired selection is rebuilt below; no historical service pulse
         cueLoad_.restoreDocumentSelections(d.current.cueSelections);
         memoryEngaged_=d.current.memoryEngaged;presetEngaged_=d.current.presetEngaged;presetValid_.fill(false);
@@ -2214,7 +2231,7 @@ private:
             musicalScheduler_.cancel(1,static_cast<uint16_t>(source));sourcePending_[source]=-1;cue.cancelUnstarted(source);
             disengageSourceMemories(source);
             for(auto& hold:topHold_)if(sourceForRoute(hold.route)==static_cast<int>(source))hold={};
-            for(auto& hold:cueBaseHolds_)if(hold.source==static_cast<int>(source))hold={};
+            for(auto& hold:cueHolds_)if(hold.source==static_cast<int>(source))hold={};
         }
         alternatives_=alternativeDraft;alternativeFlight_={};bool pendingAlternative=false;
         for(unsigned source=0;source<4;++source){if(alternatives_.pending()[source]<0)alternativeBaseValid_[source]=false;else pendingAlternative=true;}
@@ -2542,8 +2559,8 @@ private:
     }
     std::array<SourceBaseImage,12> sourceBases_{};
     ShSourceBaseImage shBase_{};
-    struct CueBaseHold {int source{-1};unsigned index{};int instrument{-1};int64_t down{};};
-    std::array<CueBaseHold,16> cueBaseHolds_{};
+    struct CueHold {int source{-1};unsigned index{};int instrument{-1};int64_t down{};};
+    std::array<CueHold,16> cueHolds_{};
     struct BaseWriteFeedback {int source{-1};int64_t time{};};
     BaseWriteFeedback baseWriteFeedback_{};
     int64_t shBaseSentMs_{-1};

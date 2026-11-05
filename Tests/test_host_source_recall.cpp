@@ -75,7 +75,8 @@ int main(){
   assert(h.readSourcePatch(g,slot,stored)&&stored.values[0]==int(23+slot));
  }
  {HostEngine h;assert(h.setNavForDiagnostic(selected(0)));assert(h.restoreSessionBeforeRendering(session(70)));
-  press(h,0,0);h.onMusicalGrid(bar());assert(h.sourceRecallStatus(0)==HostEngine::SourceRecallStatus::EmptyPatch);
+  press(h,0,0);h.onMusicalGrid(bar());assert(h.sourceRecallStatus(0)==HostEngine::SourceRecallStatus::None);
+  SourcePatchBank::Patch captured{};assert(h.readSourcePatch(0,0,captured)&&captured.values[0]==70);
   assert(h.desiredLive(320).value==70&&!h.nextSourcePacket().valid);}
  {HostEngine h;assert(h.setNavForDiagnostic(selected(0)));assert(h.restoreSessionBeforeRendering(session(70)));
   press(h,0,3);h.stop(10);h.onMusicalGrid(bar());assert(h.desiredLive(320).value==70&&!h.nextSourcePacket().valid);}
