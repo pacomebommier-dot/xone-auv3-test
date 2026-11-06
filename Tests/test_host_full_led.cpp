@@ -37,6 +37,7 @@ int main(){
  alternatives.stop(2);assert(!alternatives.ledImage()[12].blinking);
  // Every MEMORY owner is derived from the visible route; no hidden page steals the LED.
  for(int family=3;family<=6;++family)for(int page=1;page<=8;++page){if(family<5&&(page==4||page==8))continue;
+  if(family>=5&&page>=7)continue; // group LEDs covered in test_host_rhythm_groups
   auto n=nav(0);const int root=family==4||family==6;n.at(291)=root;
   if(family<5){n.at(299+2*root)=page<5;n.at(300+2*root)=page>4;n.at(293+2*root)=page<5?page:1;n.at(294+2*root)=page>4?page:0;}
   else {n.at(303+root)=1;n.at(297+root)=page;}

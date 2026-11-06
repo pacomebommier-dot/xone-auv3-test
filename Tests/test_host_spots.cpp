@@ -39,14 +39,14 @@ int main(){
  exhausted.stop(220);assert(!exhausted.nextStopPacket().emit);
  // MACHINE NAV uses the genuine BOT2+BOT4 combo, with explicit known session fields.
  for(int mode:{-2,0,1,2,5,127}){
-  HostEngine m;auto i=image();i.desired[380]=0;i.desired[392]=mode;assert(m.restoreSessionBeforeRendering(i));
+  HostEngine m;xone::l01::NavS3 nav;assert(nav.initializeDefault());auto n=nav.active();n.at(314)=1;assert(xone::l01::NavS3::regenerate(n)&&m.setNavForDiagnostic(n));auto i=image();i.desired[338]=0;i.desired[350]=mode;assert(m.restoreSessionBeforeRendering(i));
   edge(m,13,true,0);edge(m,15,true,10);edge(m,15,false,20);edge(m,13,false,30);assert(m.navMode()==7);
   auto on=edge(m,48,true,40);
-  if(mode<1||mode>2){assert(!on.emit&&!edge(m,48,false,400).emit);assert(m.desiredLive(380).value==0);continue;}
-  assert(on.emit&&on.api==108&&on.bytes[0]==0x96);m.sent(on,0);
+  if(mode<1||mode>2){assert(!on.emit&&!edge(m,48,false,400).emit);assert(m.desiredLive(338).value==0);continue;}
+  assert(on.emit&&on.api==96&&on.bytes[0]==0x96);m.sent(on,0);
   auto up=edge(m,48,false,240);
   if(mode==1){assert(up.emit&&up.value==0);m.sent(up,0);}
-  else{assert(!up.emit&&m.desiredLive(380).value==1);edge(m,48,true,300);up=edge(m,48,false,500);assert(up.emit&&up.value==0);m.sent(up,0);}
+  else{assert(!up.emit&&m.desiredLive(338).value==1);edge(m,48,true,300);up=edge(m,48,false,500);assert(up.emit&&up.value==0);m.sent(up,0);}
  }
  std::cout<<"PASS SMART/MIX musical output, captured destination, 199/200ms, failed ON/OFF debts, multi-note STOP, UNKNOWN\n";
 }

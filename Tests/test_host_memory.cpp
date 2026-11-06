@@ -24,6 +24,7 @@ int main(){
 
  for(int family=3;family<=6;++family)for(int selection=1;selection<=8;++selection){
   if(family<5&&(selection==4||selection==8))continue;
+  if(family>=5&&selection>=7)continue; // group surface covered by test_host_rhythm_groups
   auto n=page(family,selection);xone::l01::NavS3 nav;assert(nav.initializeDefault());assert(nav.stage(n)&&nav.commit());
   unsigned found=0;for(int p=4;p<20;++p){int owner=-1,slot=-1;if(!HostEngine::deriveMemory(nav,p,owner,slot))continue;
    int expected=family<5?6*(family-3)+selection-1-(selection>4):12+8*(family-5)+selection-1;
@@ -39,8 +40,8 @@ int main(){
   GridBatch b{};b.valid=true;b.count=1;b.events[0]={GridKind::Bar,0,4};e.onMusicalGrid(b);
   for(int owner=0;owner<12;++owner){xone::l01::BankS6::MemoryRecord saved{};assert(e.readMemory(owner,0,saved)&&saved.values[0]==50);
    assert(e.memoryEngaged(owner,0)==(owner/3!=source));assert(e.pendingMemorySlot(owner)==-1);
-   assert(e.desiredLive(xone::l01::FxS6::addressFor(owner,0)).value==(owner/3==source?0:50));}
-  e.onMusicalGrid(beat());assert(e.desiredLive(1552+24*source).value==0);
+   assert(e.desiredLive(xone::l01::FxS6::addressFor(owner,0)).value==(owner/3==source&&!patch?0:50));}
+  e.onMusicalGrid(beat());assert(e.desiredLive(1552+24*source).value==(patch?50:0));
  }
  {HostEngine e;assert(e.restoreSessionBeforeRendering(session()));assert(e.captureMemory(0,0));assert(e.captureMemory(3,0));
   assert(e.requestSourceRecall(0,3));assert(e.requestMemoryRecall(0,0));assert(e.requestMemoryRecall(3,0));

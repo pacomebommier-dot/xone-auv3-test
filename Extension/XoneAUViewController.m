@@ -8,6 +8,7 @@
 @property (nonatomic, strong) UISwitch *presetSwitch;
 @property (nonatomic, strong) UIButton *refreshButton;
 @property (nonatomic, strong) UIButton *fixtureButton;
+@property (nonatomic, strong) UIButton *shButton;
 @property (nonatomic, strong) UIStackView *diagnostics;
 @property (nonatomic, strong) UIStackView *contentStack;
 @property (nonatomic, strong) UILabel *traceLabel;
@@ -47,6 +48,10 @@
     [self.refreshButton setTitle:@"Rafraîchir les LED" forState:UIControlStateNormal];
     [self.refreshButton addTarget:self action:@selector(refreshControllerLEDs) forControlEvents:UIControlEventTouchUpInside];
     [stack addArrangedSubview:self.refreshButton];
+    self.shButton=[UIButton buttonWithType:UIButtonTypeSystem];
+    [self.shButton setTitle:@"Configurer SH-01A · essais" forState:UIControlStateNormal];
+    [self.shButton addTarget:self action:@selector(configureSh01a) forControlEvents:UIControlEventTouchUpInside];
+    [stack addArrangedSubview:self.shButton];
     UISwitch *diagnostic=[UISwitch new];diagnostic.accessibilityLabel=@"Afficher le diagnostic";
     [diagnostic addTarget:self action:@selector(showDiagnostics:) forControlEvents:UIControlEventValueChanged];
     [stack addArrangedSubview:[self row:@"Diagnostic" control:diagnostic]];
@@ -75,7 +80,7 @@
 }
 - (void)refreshControls {
     XoneMidiAudioUnit *unit=self.xoneUnit;AUParameter *preset=[unit.parameterTree parameterWithAddress:0];
-    self.presetSwitch.enabled=preset!=nil;self.refreshButton.enabled=[unit.parameterTree parameterWithAddress:1]!=nil;self.fixtureButton.enabled=unit!=nil;
+    self.presetSwitch.enabled=preset!=nil;self.refreshButton.enabled=[unit.parameterTree parameterWithAddress:1]!=nil;self.fixtureButton.enabled=unit!=nil;self.shButton.enabled=unit!=nil;
     [self.presetSwitch setOn:preset.value>=0.5f animated:NO];
 }
 - (void)changePresetPage:(UISwitch *)sender {
@@ -84,6 +89,31 @@
 }
 - (void)refreshControllerLEDs {
     AUParameter *refresh=[self.xoneUnit.parameterTree parameterWithAddress:1];if(refresh)refresh.value=1;
+}
+- (void)configureSh01a {
+    UIAlertController *dialog=[UIAlertController alertControllerWithTitle:@"SH-01A · profil provisoire"
+        message:@"Source : 1 INST1, 2 INST2, 3 YELLOW1, 4 YELLOW2. Canal du Roland : 1–6 ou 16 ; 7–14 réservés à S7, 15 au K2. 36 CC à vérifier dans AUM ; FILTER1/2/3 pilotent VCF FREQ/RES/MOD. Sauvegarde sur le Roland uniquement."
+        preferredStyle:UIAlertControllerStyleAlert];
+    [dialog addTextFieldWithConfigurationHandler:^(UITextField *field){field.placeholder=@"Source 1–4";field.text=@"1";field.keyboardType=UIKeyboardTypeNumberPad;}];
+    [dialog addTextFieldWithConfigurationHandler:^(UITextField *field){field.placeholder=@"Canal MIDI 1–6 ou 16";field.text=@"1";field.keyboardType=UIKeyboardTypeNumberPad;}];
+    [dialog addAction:[UIAlertAction actionWithTitle:@"Annuler" style:UIAlertActionStyleCancel handler:nil]];
+    __weak XoneAUViewController *weakSelf=self;
+    __weak UIAlertController *weakDialog=dialog;
+    [dialog addAction:[UIAlertAction actionWithTitle:@"Configurer" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){
+        (void)action;XoneAUViewController *owner=weakSelf;if(!owner)return;
+        NSInteger source=0,channel=0;NSScanner *a=[NSScanner scannerWithString:weakDialog.textFields[0].text?:@""];
+        NSScanner *b=[NSScanner scannerWithString:weakDialog.textFields[1].text?:@""];
+        const BOOL valid=[a scanInteger:&source]&&a.isAtEnd&&[b scanInteger:&channel]&&b.isAtEnd;
+        const BOOL accepted=valid&&[owner.xoneUnit configureSh01aSource:source-1 channel:channel];
+        UIAlertController *result=[UIAlertController alertControllerWithTitle:accepted?@"Profil SH demandé":@"Configuration refusée"
+            message:accepted?@"Relâchez les touches avant les essais. Activez CC OUTPUT sur le SH et routez son retour MIDI vers XONE sans boucle. La table 36 CC reste à vérifier.":@"Vérifiez source et canal. Une route SH déjà configurée ne peut pas être réaffectée par ce bouton ; ses miroirs sont conservés."
+            preferredStyle:UIAlertControllerStyleAlert];
+        [result addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        [owner dismissViewControllerAnimated:YES completion:^{
+            [owner presentViewController:result animated:YES completion:nil];
+        }];
+    }]];
+    [self presentViewController:dialog animated:YES completion:nil];
 }
 - (void)showDiagnostics:(UISwitch *)sender {
     if(sender.isOn){if(!self.diagnostics.superview)[self.contentStack addArrangedSubview:self.diagnostics];}

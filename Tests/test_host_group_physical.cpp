@@ -47,13 +47,13 @@ int main(){
     edge(y,28,false,161);
     assert(y.pendingActionPulses()==1); // no duplicate release
     expect(y,625);
-    // FILL8 SPOT4 sixth action on physical 31: 632+7*6+5=679.
-    // The release itself crosses 120 ms; no fabricated timer is needed.
+    // FILL8 SPOT4 is now an individual GLOBAL RESET, even when held.
     HostEngine f;assert(f.setNavForDiagnostic(page(true,8)));
     edge(f,31,true,200);
     edge(f,31,false,320);
-    assert(f.pendingActionPulses()==1);
-    expect(f,679);
+    assert(f.pendingActionPulses()==0);
+    const auto reset=f.nextSourcePacket();
+    assert(reset.valid&&reset.api==704&&reset.value==63);
     // YELLOW1: release below 120ms must not make a GROUP action.
     HostEngine shortPress;assert(shortPress.setNavForDiagnostic(page(false,1)));
     edge(shortPress,20,true,500);
@@ -86,13 +86,18 @@ int main(){
             assert(h.pendingActionPulses()==1);
             expect(h,608+3*pageIndex+action);
         }
+        if(pageIndex>=6)continue; // pages 7/8 own RESET now
         for(unsigned action=0;action<6;++action){
             HostEngine h;assert(h.setNavForDiagnostic(page(true,static_cast<int>(pageIndex+1))));
+            auto live=h.sessionForHost();
+            for(int field=6;field<9;++field)
+                live.desired[xone::l01::FxS6::addressFor(20+static_cast<int>(pageIndex),field)]=-2;
+            assert(h.restoreSessionBeforeRendering(live));
             const unsigned physical=22+4*(action%3)+(action>=3?1:0);
             edge(h,physical,true,0);h.advance(120,120*48);
             assert(h.pendingActionPulses()==1);
             expect(h,632+6*pageIndex+action);
         }
     }
-    std::cout<<"PASS GROUP physical 72/72 S3 routes, 120ms edge/timer, STOP, no hidden page, no duplicates\n";
+    std::cout<<"PASS GROUP physical 60 S3 routes and FILL8 RESET, 120ms edge/timer, STOP, no hidden page, no duplicates\n";
 }

@@ -1,4 +1,5 @@
 #include "../Shared/XoneHostEngine.hpp"
+#include "../Shared/XoneSh01aProfile.hpp"
 #include <cassert>
 #include <iostream>
 using namespace xone::host;
@@ -78,12 +79,76 @@ int main(){
   assert(h.configureAlternativeBase(0,0,sounding,1)&&h.configureAlternativeBase(0,1,base(22),1));
   assert(h.bindAlternativeSlot(0,0,0)&&h.bindAlternativeSlot(0,1,1));assert(h.requestAlternative(0,0)==A::Request::Accepted);h.onMusicalGrid(bar(4));flush(h);
   assert(h.activeAlternative(0)==0&&h.desiredLive(320).value==11);assert(h.requestAlternative(0,1)==A::Request::Accepted);h.onMusicalGrid(bar(8));
-  auto off=h.nextSourcePacket();assert(off.valid&&off.type==11&&off.api==96&&off.value==0);h.ackSourcePacket(off,false,1);
+  auto off=h.nextSourcePacket();assert(off.valid&&off.type==11&&off.api==96&&off.value==0);
+  assert(h.midiOutputCable(off.api,off.type)==1);h.ackSourcePacket(off,false,1);
+  assert(h.midiOutputCable(off.api,off.type)==1);
   assert(!h.nextSourcePacket().valid&&h.activeAlternative(0)==0&&h.desiredLive(320).value==11);
   if(stop){h.stop(2);h.ackSourcePacket(off,true,3);h.onMusicalGrid(bar(12));assert(h.activeAlternative(0)==0&&h.desiredLive(320).value==11);}
-  else {flush(h);assert(h.activeAlternative(0)==1&&h.desiredLive(320).value==22);}
+  else {flush(h);assert(h.activeAlternative(0)==1&&h.desiredLive(320).value==22);
+   assert(h.midiOutputCable(off.api,off.type)==2);}
  }
 
+ // A free instrument keeps its last MACHINE LIVE across save and reopen.
+ {HostEngine h;machinePage(h);
+  assert(h.configureAlternativeBase(0,0,base(11),1)&&h.configureAlternativeBase(0,1,base(22),1));
+  assert(h.bindAlternativeSlot(0,0,0)&&h.bindAlternativeSlot(0,1,1));
+  assert(h.requestAlternative(0,0)==A::Request::Accepted);h.onMusicalGrid(bar(4));flush(h);
+  machineCC(h,11,1);machineCC(h,37,2);
+  assert(h.requestAlternative(0,1)==A::Request::Accepted);h.onMusicalGrid(bar(8));flush(h);
+  assert(h.desiredLive(320).value==22);
+  h.endRenderBuffer();DocumentBytes bytes;
+  assert(encodeDocument(h.documentForHost(),bytes));
+  DocumentImage saved{};assert(decodeDocument(bytes.data(),bytes.size(),saved));
+  HostEngine reopened;assert(reopened.requestDocumentRestore(saved));reopened.beginRenderBuffer();flush(reopened);
+  assert(reopened.activeAlternative(0)==1&&reopened.desiredLive(320).value==22);
+  assert(reopened.requestAlternative(0,0)==A::Request::Accepted);reopened.onMusicalGrid(bar(12));flush(reopened);
+  assert(reopened.activeAlternative(0)==0&&reopened.desiredLive(320).value==37);
+  assert(reopened.requestSourceRecall(0,3));reopened.onMusicalGrid(bar(16));flush(reopened);
+  assert(reopened.desiredLive(320).value==11);
+ }
+ // Cable numbers identify the AUM destination, independently of the logical slot.
+ {HostEngine h;
+  assert(h.configureAlternativeBase(0,2,base(11),1)&&h.configureAlternativeBase(1,0,base(22),1));
+  assert(h.bindAlternativeSlot(0,0,2)&&h.bindAlternativeSlot(2,0,0));
+  assert(h.midiOutputCable(128,10)==0);
+  assert(h.requestAlternative(0,0)==A::Request::Accepted);h.onMusicalGrid(bar(4));
+  assert(h.midiOutputCable(128,10)==3&&h.midiOutputCable(96,13)==3);
+  assert(h.midiOutputCable(699,10)==0);
+  assert(h.requestAlternative(2,0)==A::Request::Rejected);
+  flush(h);
+ }
+ // Production destinations can swap, including data carried by both tracks.
+ {HostEngine h;assert(h.initializeSynthDestinations());h.observeTransport(false);
+  auto live=h.sessionForHost();live.desired[320]=37;live.desired[404]=48;
+  for(int source=0;source<2;++source)for(int f=0;f<9;++f)
+    live.desired[xone::l01::FxS6::addressFor(3*source,f)]=f<6?20+source:0;
+  assert(h.restoreSessionBeforeRendering(live));
+  assert(h.captureMemory(0,0)&&h.captureMemory(3,0));
+  assert(h.requestSh01aAttachment(provisionalSh01aAttachment(0,1,0,17,0,0,1000)));
+  h.beginRenderBuffer();
+  assert(h.activeAlternative(0)==0&&h.activeAlternative(1)==1&&h.activeAlternative(2)==2&&h.activeAlternative(3)==3);
+  assert(h.consultPresetInstrumentGroup(0)&&h.showPresetPage());
+  assert(h.ledImage()[13].color==MuteLedColor::Yellow);
+  assert(h.requestAlternative(0,1)==A::Request::Accepted);flush(h);
+  assert(h.activeAlternative(0)==1&&h.activeAlternative(1)==0);
+  assert(h.desiredLive(320).value==48&&h.desiredLive(404).value==37);
+  xone::l01::BankS6::MemoryRecord memory{};
+  assert(h.readMemory(0,0,memory)&&memory.valid&&memory.values[0]==21&&h.memoryEngaged(0,0));
+  assert(h.readMemory(3,0,memory)&&memory.valid&&memory.values[0]==20&&h.memoryEngaged(3,0));
+  assert(h.midiOutputCable(164,10)==1&&h.midiOutputAddress(164,10)==128);
+  assert(h.sh01aOutputCable()==1&&h.requestSourceRecall(1,0));
+  const auto pc=h.nextSh01aPacket();assert(pc.valid&&pc.bytes[0]==0xC0&&pc.bytes[1]==1);
+  h.ackSh01aPacket(pc,true,0,0);
+  const uint8_t cc[]{0xB0,74,66};assert(!h.receive(0,cc,3,1,1).emit);
+  assert(h.desiredLive(419).value==66);
+  assert(h.requestAlternative(2,0)==A::Request::Accepted);flush(h);
+  assert(h.requestAlternative(1,2)==A::Request::Rejected);
+  h.endRenderBuffer();DocumentBytes bytes;assert(encodeDocument(h.documentForHost(),bytes)&&bytes[4]==5);
+  DocumentImage image{};assert(decodeDocument(bytes.data(),bytes.size(),image));
+  HostEngine reopened;assert(reopened.requestDocumentRestore(image));reopened.beginRenderBuffer();flush(reopened);
+  assert(reopened.activeAlternative(0)==1&&reopened.activeAlternative(1)==0&&reopened.activeAlternative(2)==0);
+  assert(reopened.readMemory(3,0,memory)&&memory.valid&&memory.values[0]==20);
+ }
  HostEngine e;assert(e.presetInstrumentGroup()==-1&&e.activeAlternative(0)==-1);
  assert(e.requestAlternative(0,0)==A::Request::Rejected);
  assert(e.configureAlternativeBase(0,2,base(11),1)&&e.bindAlternativeSlot(0,0,2));
@@ -94,6 +159,10 @@ int main(){
  SourcePatchBank::Patch p{};assert(!e.readSourcePatch(0,0,p));
  assert(e.requestAlternative(0,0)==A::Request::Accepted);e.onMusicalGrid(bar(12));flush(e);assert(e.readSourcePatch(0,0,p)&&p.values[0]==11);
  assert(e.bindAlternativeSlot(1,0,2));assert(e.requestAlternative(1,0)==A::Request::Rejected);
+ assert(e.showPresetPage()&&e.consultPresetInstrumentGroup(0));
+ assert(e.ledImage()[12].color==MuteLedColor::Green);
+ assert(e.consultPresetInstrumentGroup(1));
+ assert(e.ledImage()[12].color==MuteLedColor::Red);
  assert(e.configureAlternativeBase(1,2,base(33),1)&&e.bindAlternativeSlot(2,0,2));assert(e.requestAlternative(2,0)==A::Request::Accepted);
  e.onMusicalGrid(bar(16));flush(e);assert(e.activeAlternative(0)==2&&e.activeAlternative(2)==2);
  std::cout<<"PASS native alternative selection, configured BASE, independent pools and instrument-owned PATCH banks\n";

@@ -7,9 +7,9 @@ inline SessionImage aumValidationFixture() noexcept {
     SessionImage image{};image.schema=1;image.config=1;image.revision=1;
     image.desired.fill(-2);
     image.desired[1328]=64;image.desired[1768]=0;
-    image.desired[380]=0;image.desired[392]=3;
-    image.desired[381]=0;image.desired[393]=4;
-    image.desired[382]=1;image.desired[394]=4;
+    image.desired[338]=0;image.desired[350]=3;
+    image.desired[339]=0;image.desired[351]=4;
+    image.desired[340]=1;image.desired[352]=4;
     return image;
 }
 }

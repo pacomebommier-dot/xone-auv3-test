@@ -4,9 +4,9 @@
 #include <vector>
 using namespace xone::host;
 struct Bytes {int status,number,value;};
-static SessionImage image(int mode,int state=0){SessionImage i{};i.schema=1;i.config=1;i.revision=1;i.desired.fill(-2);i.desired[380]=state;i.desired[392]=mode;return i;}
+static SessionImage image(int mode,int state=0){SessionImage i{};i.schema=1;i.config=1;i.revision=1;i.desired.fill(-2);i.desired[338]=state;i.desired[350]=mode;return i;}
 static Result edge(HostEngine& e,int note,bool down,int ms){const uint8_t b[]{static_cast<uint8_t>(down?0x9E:0x8E),static_cast<uint8_t>(note),static_cast<uint8_t>(down?127:0)};return e.receive(0,b,3,ms,ms);}
-static void machine(HostEngine& e){edge(e,13,true,0);edge(e,15,true,10);edge(e,15,false,20);edge(e,13,false,30);assert(e.navMode()==7);}
+static void machine(HostEngine& e){xone::l01::NavS3 nav;assert(nav.initializeDefault());auto n=nav.active();n.at(314)=1;assert(xone::l01::NavS3::regenerate(n)&&e.setNavForDiagnostic(n));edge(e,13,true,0);edge(e,15,true,10);edge(e,15,false,20);edge(e,13,false,30);assert(e.navMode()==7);}
 // Uses the same callback protocol as the real AU adapter, including every packet gate.
 static std::vector<Bytes> deliver(HostEngine& e,const Result& r,int failAt=-1,bool absent=false){
  std::vector<Bytes> attempted;
@@ -16,15 +16,15 @@ static std::vector<Bytes> deliver(HostEngine& e,const Result& r,int failAt=-1,bo
  }
  return attempted;
 }
-static void offOnly(const std::vector<Bytes>& bytes){assert(bytes.size()==1&&bytes[0].status==0x86&&bytes[0].number==108&&bytes[0].value==0);}
+static void offOnly(const std::vector<Bytes>& bytes){assert(bytes.size()==1&&bytes[0].status==0x86&&bytes[0].number==96&&bytes[0].value==0);}
 int main(){
  for(int initial:{0,1}){
   HostEngine e;assert(e.restoreSessionBeforeRendering(image(3,initial)));machine(e);
-  auto on=edge(e,48,true,40);auto bytes=deliver(e,on);assert(bytes.size()==1&&bytes[0].status==0x96&&bytes[0].number==108&&bytes[0].value==127);
-  assert(e.desiredLive(380).value==1);assert(!edge(e,48,true,41).emit);
+  auto on=edge(e,48,true,40);auto bytes=deliver(e,on);assert(bytes.size()==1&&bytes[0].status==0x96&&bytes[0].number==96&&bytes[0].value==127);
+  assert(e.desiredLive(338).value==1);assert(!edge(e,48,true,41).emit);
   // Physical selection cannot change the captured release address.
-  edge(e,36,true,42);edge(e,36,false,43);
-  offOnly(deliver(e,edge(e,48,false,44)));assert(e.desiredLive(380).value==0);
+  edge(e,37,true,42);edge(e,37,false,43);
+  offOnly(deliver(e,edge(e,48,false,44)));assert(e.desiredLive(338).value==0);
   e.stop(45);assert(!e.nextStopPacket().emit);assert(!edge(e,48,false,46).emit);
  }
  for(int initial:{0,1}){
@@ -32,19 +32,19 @@ int main(){
   auto flash=edge(e,48,true,40);assert(flash.packetCount()==3);
   auto bytes=deliver(e,flash);assert(bytes.size()==3);
   const int statuses[]{0x86,0x96,0x86};const int values[]{0,127,0};
-  for(unsigned n=0;n<3;++n)assert(bytes[n].status==statuses[n]&&bytes[n].number==108&&bytes[n].value==values[n]);
-  assert(e.desiredLive(380).value==0);assert(!edge(e,48,true,41).emit);assert(!edge(e,48,false,42).emit);
+  for(unsigned n=0;n<3;++n)assert(bytes[n].status==statuses[n]&&bytes[n].number==96&&bytes[n].value==values[n]);
+  assert(e.desiredLive(338).value==0);assert(!edge(e,48,true,41).emit);assert(!edge(e,48,false,42).emit);
   bytes=deliver(e,edge(e,48,true,43));assert(bytes.size()==2&&bytes[0].status==0x96&&bytes[1].status==0x86); // a new pulse is never deduplicated
   assert(!edge(e,48,false,44).emit);e.stop(45);assert(!e.nextStopPacket().emit);
  }
  // S2 qualifies LONG before this same SPOT input; capture the newly qualified NAV.
  {
   HostEngine e;assert(e.restoreSessionBeforeRendering(image(3)));
-  edge(e,13,true,0);edge(e,15,true,10);
+  xone::l01::NavS3 nav;assert(nav.initializeDefault());auto n=nav.active();n.at(314)=1;assert(xone::l01::NavS3::regenerate(n)&&e.setNavForDiagnostic(n));edge(e,13,true,0);edge(e,15,true,10);
   auto on=edge(e,48,true,220);assert(e.navMode()==7&&e.longNavPending());
-  auto bytes=deliver(e,on);assert(bytes.size()==1&&bytes[0].status==0x96&&bytes[0].number==108);
+  auto bytes=deliver(e,on);assert(bytes.size()==1&&bytes[0].status==0x96&&bytes[0].number==96);
   edge(e,15,false,230);edge(e,13,false,240);assert(e.navMode()==0&&!e.longNavPending());
-  offOnly(deliver(e,edge(e,48,false,250)));assert(e.desiredLive(380).value==0);
+  offOnly(deliver(e,edge(e,48,false,250)));assert(e.desiredLive(338).value==0);
  }
  // No FLASH ON after failed nominal OFF. No later replay, even after unrelated success.
  {
@@ -73,7 +73,7 @@ int main(){
  // Failed TOUCH ON and OFF, STOP while held, and true UP without a ghost ON.
  {
   HostEngine e;assert(e.restoreSessionBeforeRendering(image(3)));machine(e);
-  assert(deliver(e,edge(e,48,true,40),0).size()==1);e.stop(41);assert(e.surfaceHeld(20)&&e.desiredLive(380).value==0);
+  assert(deliver(e,edge(e,48,true,40),0).size()==1);e.stop(41);assert(e.surfaceHeld(20)&&e.desiredLive(338).value==0);
   offOnly(deliver(e,e.nextStopPacket(),0));assert(!edge(e,48,false,42).emit);
   e.stop(43);offOnly(deliver(e,e.nextStopPacket()));assert(!e.nextStopPacket().emit);
   auto on=edge(e,48,true,44);deliver(e,on);offOnly(deliver(e,edge(e,48,false,45),0));
@@ -90,19 +90,19 @@ int main(){
  {
   HostEngine e;assert(e.restoreSessionBeforeRendering(image(3)));machine(e);deliver(e,edge(e,48,true,40));
   offOnly(deliver(e,edge(e,48,false,41),0));auto restored=image(4,1);restored.revision=7;
-  assert(e.requestSessionRestore(restored));e.beginRenderBuffer();assert(e.desiredLive(380).value==0);
-  e.stop(42);offOnly(deliver(e,e.nextStopPacket()));e.beginRenderBuffer();assert(e.desiredLive(380).value==1);
+  assert(e.requestSessionRestore(restored));e.beginRenderBuffer();assert(e.desiredLive(338).value==0);
+  e.stop(42);offOnly(deliver(e,e.nextStopPacket()));e.beginRenderBuffer();assert(e.desiredLive(338).value==1);
  }
  // At the LIVE revision bound, an owned TOUCH OFF remains owed and must not restore ON.
  {
   HostEngine e;auto i=image(3);i.revision=xone::l01::LiveState::MaxRevision-1;
   assert(e.restoreSessionBeforeRendering(i));machine(e);deliver(e,edge(e,48,true,40));
-  offOnly(deliver(e,edge(e,48,false,41)));assert(e.desiredLive(380).value==1);
+  offOnly(deliver(e,edge(e,48,false,41)));assert(e.desiredLive(338).value==1);
   e.stop(42);assert(!e.nextStopPacket().emit);
  }
  for(int mode:{3,4}){
   HostEngine e;assert(e.restoreSessionBeforeRendering(image(mode,-2)));machine(e);
-  assert(!edge(e,48,true,40).emit&&!edge(e,48,false,41).emit);assert(!e.desiredLive(380).known);
+  assert(!edge(e,48,true,40).emit&&!edge(e,48,false,41).emit);assert(!e.desiredLive(338).known);
  }
  std::cout<<"PASS TOUCH/FLASH source sequences, ownership, conditional pulse, failed ON/OFF, STOP, revision bound, deferred restore, UNKNOWN\n";
 }

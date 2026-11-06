@@ -13,6 +13,13 @@ static xone::l01::NavImage selected(int root,bool high){
     assert(xone::l01::NavS3::regenerate(n)&&xone::l01::NavS3::validate(n));
     return n;
 }
+static void fillPatchSlots(HostEngine& h,unsigned group){
+    auto live=h.sessionForHost();
+    for(unsigned field=0;field<SourcePatchBank::Fields;++field)
+        if(SourcePatchBank::included(field))live.desired[SourcePatchBank::cell(group,field)]=0;
+    assert(h.restoreSessionBeforeRendering(live));
+    for(unsigned slot=0;slot<SourcePatchBank::Slots;++slot)assert(h.saveSourcePatch(group,slot));
+}
 static GridBatch bar(){
     GridBatch b{};b.valid=true;b.count=1;b.events[0]={GridKind::Bar,0,4};return b;
 }
@@ -57,11 +64,12 @@ int main(){
         assert(found==4);
         for(int k=0;k<4;++k){
             HostEngine h;assert(h.setNavForDiagnostic(navImage));
+            fillPatchSlots(h,group);
             edge(h,static_cast<unsigned>(physical[k]),true,10);
-            assert(h.pendingCueLoad()==1);
+            assert(h.pendingCueLoad()==0);
             assert(!h.nextCueLoadPacket().valid); // not before BAR
             edge(h,static_cast<unsigned>(physical[k]),false,11);
-            assert(!h.nextCueLoadPacket().valid);
+            assert(h.pendingCueLoad()==1&&!h.nextCueLoadPacket().valid);
             h.onMusicalGrid(bar());
             const auto q=h.nextCueLoadPacket();
             const int expected=(root?939:931)+static_cast<int>(base)+k;
@@ -73,7 +81,7 @@ int main(){
     // Different CUE/LOAD groups remain independent, including when changing
     // NAV between captured downs before the same host BAR.
     {
-        HostEngine e;assert(e.setNavForDiagnostic(selected(0,false)));
+        HostEngine e;assert(e.setNavForDiagnostic(selected(0,false)));fillPatchSlots(e,0);
         // Find a physical CUE group0 note (index0).
         xone::l01::NavS3 n;assert(n.initializeDefault());
         assert(n.stage(selected(0,false))&&n.commit());

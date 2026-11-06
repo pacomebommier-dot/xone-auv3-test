@@ -5,7 +5,7 @@ Date : 28 octobre 2026. 5 gros blocs de reprise couvrent les 6 tâches historiqu
 Couverture verticale des commandes S1/S2/S3/S4 -> AU : CC/PICKUP, SPOT, TOP/BOT, SOFT, GROUP/LONG, DJ, LOOP, MUTE/SOLO, NEXT_BAR/BEAT et OFF/STOP ; préserver adresses S7 et exceptions S8. Lister seulement les familles manquantes, les raccorder sans refaire S4. Tester les octets par moniteur, sans fixture automatique ni instrument. Sortie : dispatch de toutes les commandes admissibles + CI PASS.
 
 ## 2/5 — Banques locales et opérations complètes
-PATCH SAMPLE/MACHINE, MEMORY, SAVE, RECALL, slots, CURRENT/ALTERED/EMPTY, CUE/LOAD1..3 -> PATCH, 4 -> BASE local0/OFF/MIX, propriétaires et annulation des MEMORY de la source, PICKUP, LED associés. Respecter TOP immédiat, CUE/LOAD au BAR, MEMORY au BEAT et nuances arrêt transport. Nouveau plugin AU sans banque initiale fictive, mais opération SAVE->RECALL réellement exécutable. Sortie : roundtrip de banque, MIDI nominal, CI PASS.
+PATCH SAMPLE/MACHINE, MEMORY, SAVE, RECALL, slots, CURRENT/ALTERED/EMPTY, CUE/LOAD1..3 -> PATCH, 4 -> rappel ou WRITE BASE selon le geste, propriétaires et annulation des MEMORY de la source, PICKUP, LED associés. Respecter TOP immédiat, CUE/LOAD au BAR, MEMORY au BEAT et nuances arrêt transport. Nouveau plugin AU sans banque initiale fictive, mais opération SAVE->RECALL réellement exécutable. Sortie : roundtrip de banque, MIDI nominal, CI PASS.
 
 ## 3/5 — PRESET/RED et alternatives S8
 Snapshots globaux PRESET1..4/INIT, RED/TEMP, états de mix/FX/MUTE/SOLO, alternatives INST/YELLOW, destinations fixes SAMPLE/DRUMS/FILL, arbitrage, OFF ancienne destination puis activation nouvelle si conditions remplies, sans double autorité ni chargement externe simulé. Respecter exclusion des modes SPOT MACHINE et règle Q10 DJ/track. Sortie : captures/reprises globales + scénarios de concurrence + CI PASS.
@@ -24,6 +24,10 @@ Contrats actifs : `04_ADDENDUM_SH01A_MACHINES_PAIRES_2026-11-04.md` pour les MAC
 - MACHINE paires 2/4/6/8 : 12 CC et 12 SPOT centraux = alias FX des quatre sous-pages INST, vue native ou empruntée par LONG sur page paire déjà active. Ces commandes sortent des PATCH MACHINE. POTs et faders restent MACHINE. Statut : À DÉVELOPPER / TESTER.
 
 Ces deux extensions ne remplacent pas les cinq blocs universels et n'en changent pas le compteur. Aucune CI ni recette AUM nouvelle revendiquée.
+
+## Correctifs décidés le 05/11/2026
+
+Le [contrat BASE et DRUMS/FILL](11_ADDENDUM_BASE_CUE4_DRUMS_FILL_20261105.md) fixe les nouvelles règles. Le [plan de patch AUv3](../reprise/PLAN_PATCH_BASE_DRUMS_FILL_20261105.md) complète les cinq blocs sans modifier leur historique.
 
 ## Règle anti-freeze
 Un bloc = un gros parcours livrable, pas des dizaines de mini-lots. Plusieurs commits cohérents possibles sans STOP demandé entre eux. Avant chaque ajout, localiser la fonction existante ; pas de troisième moteur ni d'audit L01-L16. Tests ciblés après changements, CI complète lors de fermeture du bloc et aux risques importants. Si rouge, diagnostiquer première cause, corriger localement, rejouer ; si configuration externe inconnue, classer CONFIG_FUTURE et avancer.

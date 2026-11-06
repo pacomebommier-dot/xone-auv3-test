@@ -34,8 +34,17 @@ public:
         if(family==3+root && page>=5&&page<=8 &&
            kind==(page==8?6+root:5))
             owner=4*root+page-5;
-        else if(kind==8&&family==5+root&&page>=1&&page<=8)
-            owner=8+page-1;
+        else if(kind==8&&family==5+root&&page>=1&&page<=8){
+            if(page>=7){
+                const unsigned first=page==8?0u:static_cast<unsigned>(root);
+                const unsigned last=page==8?2u:first+1;
+                for(unsigned soundFamily=first;soundFamily<last;++soundFamily)
+                    for(unsigned sound=0;sound<6;++sound)
+                        requestVerified(soundFamily,sound,static_cast<unsigned>(route.position));
+                return true;
+            }
+            owner=8*root+page-1;
+        }
         if(owner<0)return false;
         const int choice=route.position;
         pending_[static_cast<unsigned>(owner)]=choice;return true;

@@ -4,6 +4,7 @@
 // No assumed musical mapping, routing, current-mode, or backend readiness.
 // The previous Engine.hpp remains a separate structural oracle, not a musical owner.
 #include "../Core/Engine.hpp"
+#include "MachineFxAliases.hpp"
 #include "../Core/GestureS2.hpp"
 #include "../Core/OutputS4.hpp"
 #include "../Core/S3DecisionBoundary.hpp"
@@ -28,7 +29,7 @@ public:
         // Stage *all* components, including surface; invalid input cannot leave a phantom Held.
         auto surf=surface_;auto gest=gesture_;auto s3=s3_;auto nav=nav_;auto tx=longTx_;auto touch=touch_;
         int machineLow=machineLastLow_,machineHigh=machineLastHigh_;
-        auto save=localSave_;
+        auto save=localSave_;auto fxHold=machineFxHold_;bool fxView=machineFxBorrowed_;int fxMachine=machineFxViewMachine_;
         const auto item=surf.accept(msg);
         GestureBatch b{};S3ProposalBatch proposals{};
         if(item.kind!=SurfaceKind::None){
@@ -58,6 +59,19 @@ public:
             }
             save={};
         }
+        if(nav.revision()!=nav_.revision()){
+            updateMachineFxNavigation(nav_,nav,longTx_.pending(),tx.pending(),fxView,fxMachine);fxHold={};
+        }
+        else {
+            if(fxHold.physical>=0&&surface_.held(static_cast<unsigned>(fxHold.physical)))qualifyMachineFxHold(fxHold,fxView,ms,nav,tx.pending());
+            if(item.kind==SurfaceKind::Edge&&item.control>=4&&item.control<20){
+                if(item.phase==1&&touch.physicalOwner()==item.control&&machineFxEligible(nav)){
+                    const auto r=nav.active().route(item.control);
+                    if(r.address==2*1024+2*32+nav.active().at(314)){fxHold={item.control,ms,nav.revision(),false};fxMachine=nav.active().at(314);}
+                }else if(item.phase==0&&fxHold.physical==item.control)fxHold={};
+            }
+        }
+        machineFxHold_=fxHold;machineFxBorrowed_=fxView;machineFxViewMachine_=fxMachine;
         surface_=surf;gesture_=gest;s3_=s3;nav_=nav;longTx_=tx;touch_=touch;machineLastLow_=machineLow;machineLastHigh_=machineHigh;
         localSave_=save;
         append(b);appendS3(proposals);lastMs_=ms;started_=true;return true;
@@ -70,6 +84,9 @@ public:
         S3ProposalBatch proposals{};if(!s3.accept(b,proposals,ms))return false;
         if(!touch.process(b,ms,nav,s3,diagnosticTouch_,tx.pending() || touchOwner_!=-1))return false;
         if(!processQualifiedNav(nav,s3,tx,proposals,machineLow,machineHigh,touch.busy(),localSave_.bot))return false;
+        if(nav.revision()!=nav_.revision()){
+            updateMachineFxNavigation(nav_,nav,longTx_.pending(),tx.pending(),machineFxBorrowed_,machineFxViewMachine_);machineFxHold_={};
+        }
         gesture_=gest;s3_=s3;nav_=nav;longTx_=tx;touch_=touch;machineLastLow_=machineLow;machineLastHigh_=machineHigh;
         append(b);appendS3(proposals);lastMs_=ms;started_=true;return true;
     }
@@ -153,6 +170,28 @@ public:
         return readNativeMemory(owner,slot,prior)&&prior.revision<BankS6::MaxRevision-1&&
             nativeBank_.saveMemory(owner,slot,live_.sessionConfig(),image,prior.revision-memoryRevisionBase_[static_cast<unsigned>(index)]);
     }
+    bool captureRhythmMemories(const std::array<int,12>& owners,unsigned count,int slot) noexcept {
+        if(!diagnosticLive_||!count||count>owners.size()||live_.sessionConfig()<1)return false;
+        auto staged=nativeBank_;
+        if(!staged.initialized()&&!staged.initializeEmpty())return false;
+        for(unsigned n=0;n<count;++n){
+            const int owner=owners[n];
+            const int index=BankS6::memoryIndex(owner,slot);
+            if(index<0||index>=96)return false;
+            BankS6::MemoryImage image{};
+            for(int field=0;field<9;++field){
+                const auto value=live_.desired(FxS6::addressFor(owner,field));
+                if(!value.known)return false;
+                image[static_cast<unsigned>(field)]=value.value;
+            }
+            BankS6::MemoryRecord prior{};
+            if(!staged.readMemory(owner,slot,prior)||
+               prior.revision+memoryRevisionBase_[static_cast<unsigned>(index)]>=BankS6::MaxRevision-1||
+               !staged.saveMemory(owner,slot,live_.sessionConfig(),image,prior.revision))return false;
+        }
+        nativeBank_=staged;
+        return true;
+    }
     // Explicit diagnostic recall of native MEMORY into the native single-writer
     // desired LIVE image. Source caller still has to qualify real gesture routing.
     bool recallNativeFxMemoryForDiagnostic(int owner,int slot,std::uint32_t expectedLiveRevision) noexcept {
@@ -212,6 +251,17 @@ public:
         }
         live_=next;return true;
     }
+    // Numeric RESET changes LIVE only. A stable LONG context keeps its NAV
+    // return archive; unlike a PATCH recall, it must remain playable while held.
+    bool commitNativeReset(const std::array<int,97>& cells,
+            const std::array<int,97>& values,unsigned count,int config) noexcept {
+        if(!diagnosticLive_||count==0||count>cells.size()||config!=live_.sessionConfig()||
+           !nav_.stable()||touch_.busy()||nav_.hasStage()||touchOwner_!=-1)return false;
+        auto next=live_;
+        for(unsigned i=0;i<count;++i)
+            if(!next.commitDesired(cells[i],values[i],next.revision(),config))return false;
+        live_=next;return true;
+    }
     // Qualified local source recalls use the same S3 LIVE writer. No backend ACK.
     bool commitNativeSourceRecall(const std::array<int,97>& cells,
             const std::array<int,97>& values,unsigned count,int config) noexcept {
@@ -239,6 +289,9 @@ public:
         auto nextLive=live_;auto nextNav=nav_;auto nextS3=s3_;
         if(!nextLive.restoreSession(image))return false;
         if(!(navigation==nextNav.active())&&(!nextNav.stage(navigation)||!nextNav.commit()||!nextS3.observeNav(navigation.at(292),true)))return false;
+        if(!(navigation==nav_.active())){
+            updateMachineFxNavigation(nav_,nextNav,longTx_.pending(),longTx_.pending(),machineFxBorrowed_,machineFxViewMachine_);machineFxHold_={};
+        }
         live_=nextLive;nav_=nextNav;s3_=nextS3;return true;
     }
     bool commitNativeDocument(LiveState::SessionImage image,const NavImage& nav,const BankS6& bank,
@@ -248,6 +301,7 @@ public:
         auto nextLive=live_;auto nextNav=nav_;auto nextS3=s3_;
         if(!nextLive.restoreSession(image))return false;
         if(!(nav==nextNav.active())&&(!nextNav.stage(nav)||!nextNav.commit()||!nextS3.observeNav(nav.at(292),true)))return false;
+        machineFxHold_={};machineFxBorrowed_=false;machineFxViewMachine_=nav.at(314);
         live_=nextLive;nav_=nextNav;s3_=nextS3;nativeBank_=bank;memoryRevisionBase_=memoryBases;patchRevisionBase_=patchBases;fx_=FxS6{};return true;
     }
     // Preserve document revisions without changing the frozen BankS6 corpus.
@@ -317,7 +371,7 @@ public:
         if(longTx_.pending())return false; // no retargeting while source h1=1
         NavS3 copy=nav_;if(!copy.commit())return false;
         auto s=s3_;if(!s.observeNav(copy.active().at(292),true))return false;
-        nav_=copy;s3_=s;return true;
+        nav_=copy;s3_=s;machineFxHold_={};machineFxBorrowed_=false;machineFxViewMachine_=copy.active().at(314);return true;
     }
     int localSaveCandidateMode()const noexcept {return localSave_.bot<0?-1:localSave_.mode;}
     bool localSaveCandidateConsumed()const noexcept {return localSave_.consumed;}
@@ -336,11 +390,28 @@ public:
         localSave_.consumed=true;return true;
     }
     const NavS3& nativeNav() const noexcept{return nav_;}
+    NavRoute nativeRoute(int physical) const noexcept {
+        const auto route=MachineFxAliases::route(nav_.active(),physical,
+            machineFxBorrowed_&&nav_.active().at(314)==machineFxViewMachine_);
+        if(route.address<0||route.position<0||route.position>=6)return route;
+        const int family=(route.address%1024)/32;
+        if((family!=5&&family!=6)||route.address%32!=8)return route;
+        // DRUM8 and FILL8 share the existing BUS3/TOTAL INIT cells.
+        const int globalFamily=11+route.position/3;
+        if(physical>=40&&physical<52)return {32*globalFamily,route.position%3};
+        if(physical>=20&&physical<32)return {1024+32*globalFamily,route.position%3};
+        return route;
+    }
+    bool machineFxBorrowed()const noexcept{return machineFxBorrowed_&&nav_.active().contextMode==7&&nav_.active().at(314)==machineFxViewMachine_;}
+    bool advanceMachineFxView(int64_t ms)noexcept {
+        if(machineFxHold_.physical<0||!surface_.held(static_cast<unsigned>(machineFxHold_.physical)))return false;
+        return qualifyMachineFxHold(machineFxHold_,machineFxBorrowed_,ms,nav_,longTx_.pending());
+    }
     bool onHostStop()noexcept {
         if(!projection_.onHostStop())return false;
         live_.onHostStop();
         surface_.onHostStop();gesture_.onHostStop();s3_.onHostStop();longTx_.onHostStop();touch_.onHostStop();touchOwner_=-1;
-        localSave_={};
+        localSave_={};machineFxHold_={};
         // The prototype has its own STOP contract and must be tested separately;
         // do not inject an unsequenced synthetic STOP into it.
         return true;
@@ -433,6 +504,25 @@ private:
     }
     void append(const GestureBatch& b)noexcept{for(std::size_t i=0;i<b.count;++i)trace_[count_++]=b.items[i];}
     void appendS3(const S3ProposalBatch& b)noexcept{for(std::size_t i=0;i<b.count;++i)s3Trace_[s3Count_++]=b.items[i];}
+    struct MachineFxHold {int physical{-1};int64_t down{};uint64_t revision{};bool fired{};};
+    static bool machineFxEligible(const NavS3& nav)noexcept {
+        const auto& n=nav.active();const int selected=n.at(314);
+        return nav.stable()&&!nav.hasStage()&&n.at(292)==7&&n.contextMode==7&&n.presetFlag==0&&selected>=2&&selected<=8&&selected%2==0;
+    }
+    static bool qualifyMachineFxHold(MachineFxHold& hold,bool& borrowed,int64_t ms,const NavS3& nav,bool longPending)noexcept {
+        if(hold.physical<0||hold.fired||ms<hold.down||ms-hold.down<200||longPending||!machineFxEligible(nav)||nav.revision()!=hold.revision)return false;
+        borrowed=!borrowed;hold.fired=true;return true;
+    }
+    // Presentation owner survives the existing LONG NAV archive. It is never
+    // a second FX value/memory; other temporary MACHINE targets see native.
+    static void updateMachineFxNavigation(const NavS3& before,const NavS3& after,bool wasLong,bool isLong,bool& borrowed,int& owner)noexcept {
+        if(isLong)return;
+        const auto& old=before.active();const auto& next=after.active();
+        if((wasLong&&next.contextMode==7&&next.at(314)==owner)||
+           (!wasLong&&old.contextMode==7&&next.contextMode==7&&old.at(314)==next.at(314)))return;
+        borrowed=false;owner=next.contextMode==7?next.at(314):-1;
+    }
+    MachineFxHold machineFxHold_{};bool machineFxBorrowed_{};int machineFxViewMachine_{-1};
     SurfaceInput surface_{};
     struct LocalSaveCandidate {
         int bot{-1},mode{-1};std::uint64_t revision{};bool consumed{};

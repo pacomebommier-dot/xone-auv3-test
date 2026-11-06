@@ -33,7 +33,14 @@ int main(){
  // Exit RESET then enter MACHINE with its real BOT2 -> BOT4 combo.
  edge(e,14,true,220);edge(e,15,true,230);edge(e,15,false,240);edge(e,14,false,250);assert(e.navMode()==0);
  edge(e,13,true,260);edge(e,15,true,270);edge(e,15,false,280);edge(e,13,false,290);assert(e.navMode()==7);
- for(int i=0;i<3;++i){auto machine=top(e,i,300+2*i);assert(machine.action==HostEngine::TopAction::PatchRecall&&machine.route.position==i);}
+ // An empty MACHINE slot now tries capture at UP. UNKNOWN LIVE rejects it
+ // without a deferred PATCH recall or a saved image.
+ for(int i=0;i<3;++i){
+  edge(e,52+i,true,300+2*i);edge(e,52+i,false,301+2*i);
+  SourcePatchBank::Patch patch{};
+  assert(!e.lastTopIntent(static_cast<unsigned>(i),out)&&!e.samplePatchPending());
+  for(unsigned source=0;source<4;++source)assert(!e.readSourcePatch(source,static_cast<unsigned>(i),patch));
+ }
  assert(top(e,3,310).route==global);
  std::cout<<"PASS TOP contextual NORMAL/YELLOW, SAMPLE PATCH through PRESET/RESET, invariant GLOBAL and UNKNOWN\n";
 }

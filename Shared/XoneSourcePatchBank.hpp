@@ -7,8 +7,13 @@
 namespace xone::host {
 class SourcePatchBank {
 public:
- static constexpr unsigned Sources=4,Slots=3,Fields=60;
+ static constexpr unsigned Sources=4,Slots=3,Fields=60,IncludedFields=36;
+ // Wire shape stays60 for old V2 documents. The even central24 fields are
+ // opaque legacy data; new SAVE stores UNKNOWN there and playback skips them.
+ static constexpr bool included(unsigned field)noexcept{return field<30||(field>=42&&field<48);}
+
  using Values=std::array<int,Fields>;
+ static Values canonical(Values values)noexcept {for(unsigned f=0;f<Fields;++f)if(!included(f))values[f]=-2;return values;}
  struct Patch {bool valid{};int config{-2};std::uint32_t revision{};Values values{};Patch(){values.fill(-2);}};
  static int cell(unsigned source,unsigned field) noexcept {
   return source<Sources&&field<Fields?320+84*static_cast<int>(source)+42*static_cast<int>(field/30)+static_cast<int>(field%30):-1;
@@ -20,13 +25,16 @@ public:
  }
  static int type(unsigned field) noexcept {return field%30<18?10:11;}
  static bool validate(const Values& values) noexcept {
-  for(unsigned f=0;f<Fields;++f)if(values[f]<0||values[f]>127||(f%30>=18&&values[f]>1))return false;
+  for(unsigned f=0;f<Fields;++f){
+   if(!included(f)&&values[f]==-2)continue;
+   if(values[f]<0||values[f]>127||(f%30>=18&&values[f]>1))return false;
+  }
   return true;
  }
  bool save(unsigned source,unsigned slot,int config,const Values& values) noexcept {
   if(source>=Sources||slot>=Slots||config<1||config>127||!validate(values))return false;
   auto& p=bank_[source*Slots+slot];if(p.revision>=16777212u||(p.valid&&p.config!=config))return false;
-  p.valid=true;p.config=config;p.values=values;++p.revision;return true;
+  p.valid=true;p.config=config;p.values=canonical(values);++p.revision;return true;
  }
  bool read(unsigned source,unsigned slot,Patch& p)const noexcept {
   if(source>=Sources||slot>=Slots)return false;
