@@ -78,6 +78,18 @@ public:
         documents_->ui.image=captureDocument();
         // Opt-in native BOT2 overlay; legacy diagnostic harness retains NAV role1.
     }
+    bool initializeSynthDestinations() noexcept {
+        if(started_||sixSynths_)return false;
+        SourcePatchBank::Values base{}; // documented universal local MACHINE BASE
+        for(unsigned record=0;record<6;++record)
+            if(!alternativeBank_.configureBase(record/4,record%4,1,base))return false;
+        for(unsigned source=0;source<4;++source)for(unsigned slot=0;slot<4;++slot)
+            if(!alternativeBank_.bind(source,slot,static_cast<int>(slot)))return false;
+        AlternativeArbiter::Ready ready{};ready.fill(true);
+        if(!alternatives_.finalize(alternatives_.prepareRecall({{0,1,2,3}},ready),true))return false;
+        sixSynths_=true;documents_->ui.image=captureDocument();documentDirty_=true;
+        return true;
+    }
     // Historical CH1 remap is an opt-in test seam, never production MIDI API.
     bool enableHistoricalL02BenchForDiagnostic(bool yes) noexcept {
         if(started_)return false;
@@ -204,8 +216,9 @@ public:
             s8Machine_.setMode(static_cast<unsigned>(machine),static_cast<unsigned>(index),mode);
     }
     int s8MachineMode(int machine,int index)const noexcept {
-        if(machine>=0&&machine<8&&index>=0&&index<12){const int instrument=activeAlternative(static_cast<unsigned>(machine/2));
-            if(instrument>=0)return alternativeBank_.mode(static_cast<unsigned>(machine/4),static_cast<unsigned>(instrument),static_cast<unsigned>(12*(machine%2)+index));}
+        if(machine>=0&&machine<8&&index>=0&&index<12){const auto source=static_cast<unsigned>(machine/2);const int instrument=activeAlternative(source);
+            if(instrument>=0){const auto record=alternativeRecord(sixSynths_,source,instrument);
+                return alternativeBank_.mode(record/4,record%4,static_cast<unsigned>(12*(machine%2)+index));}}
         return machine>=0&&index>=0?s8Machine_.mode(static_cast<unsigned>(machine),
                                                    static_cast<unsigned>(index)):-2;
     }
@@ -285,6 +298,11 @@ public:
            (attachment.enabled&&attachment.config!=documents_->ui.image.live.config))return false;
         return sh01a_.request(attachment,followRestore?requestedToken_:0);
     }
+    uint8_t sh01aOutputCable() const noexcept {return sixSynths_?1:0;}
+    void loadSharedShBaseBeforeRender(const ShSourceBaseImage& image) noexcept {
+        if(started_||!sixSynths_||!image.base.valid)return;
+        shBase_=image;documents_->ui.image.shBase=image;documentDirty_=true;
+    }
     Sh01aAttachment sh01aForHost()noexcept{return sh01a_.forHost();}
     int sh01aLive(unsigned cc)const noexcept{return sh01a_.mirror().live(cc);}
     Sh01aHostBridge::Packet nextSh01aPacket()noexcept {
@@ -303,6 +321,18 @@ public:
         if(!synthCables_||source<0)return 0;
         return static_cast<uint8_t>(synthCable(static_cast<unsigned>(source),activeAlternative(static_cast<unsigned>(source))));
     }
+    int midiOutputAddress(int api,int type) const noexcept {
+        if(!sixSynths_||!midiOutputCable(api,type))return api;
+        if(type==10){
+            if(api>=128&&api<272)return 128+(api-128)%36;
+            if(api>=709&&api<713)return 709;
+            if(api>=715&&api<811)return 715+(api-715)%24;
+        }else{
+            if(api>=96&&api<192)return 96+(api-96)%24;
+            if(api>=384&&api<432)return 384+(api-384)%12;
+        }
+        return api;
+    }
     int presetInstrumentGroup()const noexcept {return presetInstrumentGroup_;}
     bool consultPresetInstrumentGroup(unsigned source) noexcept {
         if(source>=4)return false;
@@ -317,10 +347,17 @@ public:
         using Request=AlternativeArbiter::Request;
         if(source>=4||slot>=4||alternativeFlight_.valid)return Request::Rejected;
         const int instrument=alternativeBank_.binding(source,slot);SourcePatchBank::Values values{};
-        if(instrument<0||!alternativeBank_.base(source/2,static_cast<unsigned>(instrument),core_.nativeLive().sessionConfig(),values))return Request::Rejected;
+        if(instrument<0||!alternativeBase(source,instrument,values))return Request::Rejected;
+        if(sixSynths_&&exchangePending())return Request::Rejected;
+        const int peer=sixSynths_?occupiedSynth(source,instrument):-1;
+        const int peerTarget=peer>=0?exchangeTarget(source,static_cast<unsigned>(peer)):-1;
+        SourcePatchBank::Values peerValues{};
+        if(peer>=0&&(peerTarget<0||!alternativeBase(static_cast<unsigned>(peer),peerTarget,peerValues)))return Request::Rejected;
         if(arbitration==0){if(alternativeArbitration_==UINT64_MAX)return Request::Rejected;arbitration=alternativeArbitration_+1;}
         if(arbitration<alternativeArbitration_)return Request::Rejected;
-        auto draft=alternatives_;const auto result=draft.request(source,instrument,arbitration);
+        auto draft=alternatives_;
+        const auto result=peer<0?draft.request(source,instrument,arbitration):
+            draft.exchange(source,instrument,static_cast<unsigned>(peer),peerTarget,arbitration);
         if(result==Request::Rejected)return result;
         auto projected=draft.active();
         for(unsigned i=0;i<projected.size();++i)
@@ -329,6 +366,11 @@ public:
         if(result==Request::Accepted&&!transportStopped_&&!musicalScheduler_.replace(5,0,ScheduleWhen::NextBar))return Request::Rejected;
         alternatives_=draft;alternativeArbitration_=arbitration;
         if(result==Request::Accepted){alternativeBases_[source]=values;alternativeBaseValid_[source]=true;alternativePendingOrder_[source]=transportStopped_?0:musicalScheduler_.orderOf(5,0);}
+        if(peer>=0&&result==Request::Accepted){
+            alternativeBases_[static_cast<unsigned>(peer)]=peerValues;
+            alternativeBaseValid_[static_cast<unsigned>(peer)]=true;
+            alternativePendingOrder_[static_cast<unsigned>(peer)]=alternativePendingOrder_[source];
+        }
         if(result==Request::Cancelled)alternativeBaseValid_[source]=false;
         if(transportStopped_&&result==Request::Accepted)beginAlternativeChange();
         return result;
@@ -398,7 +440,19 @@ public:
     // Native commands use contractual owner IDs, not external destinations.
     bool captureMemory(int owner,int slot) noexcept { documentDirty_=true;
         const int index=l01::BankS6::memoryIndex(owner,slot);
-        if(index<0||(owner<12&&alternativeSourceBusy(owner/3))||!core_.captureNativeMemory(owner,slot))return false;
+        if(index<0||(owner<12&&alternativeSourceBusy(owner/3)))return false;
+        if(auto* synth=memorySynth(owner)){
+            auto& record=synth->memories[static_cast<unsigned>(index)%12];
+            if(record.revision>=l01::BankS6::MaxRevision-1)return false;
+            l01::BankS6::MemoryImage image{};
+            for(int field=0;field<9;++field){
+                const auto value=core_.nativeLive().desired(l01::FxS6::addressFor(owner,field));
+                if(!value.known)return false;
+                image[static_cast<unsigned>(field)]=value.value;
+            }
+            if(!l01::BankS6::validateMemory(image))return false;
+            record.valid=true;record.config=core_.nativeLive().sessionConfig();++record.revision;record.values=image;
+        }else if(!core_.captureNativeMemory(owner,slot))return false;
         memoryEngaged_[static_cast<unsigned>(index)]=true;return true;
     }
     void observeTransport(bool running) noexcept {if(running&&transportStopped_)muteLeds_.invalidate();transportStopped_=!running;}
@@ -406,7 +460,7 @@ public:
     bool requestMemoryRecall(int owner,int slot) noexcept { documentDirty_=true;
         if(!memoryEngaged(owner,slot)||(owner<12&&alternativeSourceBusy(owner/3)))return false;
         l01::BankS6::MemoryRecord saved{};
-        if(!core_.readNativeMemory(owner,slot,saved)||!saved.valid||saved.config!=core_.nativeLive().sessionConfig())return false;
+        if(!readMemory(owner,slot,saved)||!saved.valid||saved.config!=core_.nativeLive().sessionConfig())return false;
         if(!transportStopped_&&!musicalScheduler_.replace(2,static_cast<uint16_t>(owner),ScheduleWhen::NextBeat))return false;
         memoryPending_[static_cast<unsigned>(owner)]={slot,saved.config,saved.values};
         if(transportStopped_)applyMemoryRecall(static_cast<unsigned>(owner));
@@ -423,10 +477,16 @@ public:
         int index=l01::BankS6::memoryIndex(owner,slot);return index>=0&&memoryEngaged_[static_cast<unsigned>(index)];
     }
     int pendingMemorySlot(unsigned owner)const noexcept {return owner<28?memoryPending_[owner].slot:-1;}
-    bool readMemory(int owner,int slot,l01::BankS6::MemoryRecord& out)const noexcept {return core_.readNativeMemory(owner,slot,out);}
+    bool readMemory(int owner,int slot,l01::BankS6::MemoryRecord& out)const noexcept {
+        const int index=l01::BankS6::memoryIndex(owner,slot);
+        if(index<0)return false;
+        if(const auto* synth=memorySynth(owner)){out=synth->memories[static_cast<unsigned>(index)%12];return true;}
+        return core_.readNativeMemory(owner,slot,out);
+    }
     // Render-thread local source API. An external adapter is never treated as loaded.
     bool saveSourcePatch(unsigned source,unsigned slot) noexcept { documentDirty_=true;
-        if(source>=4||slot>=3||sourcePending_[source]>=0||redActive_||sh01aSource(source))return false;
+        if(source>=4||slot>=3||sourcePending_[source]>=0||redActive_||sh01aSource(source)||
+           (sixSynths_&&source<2&&activeAlternative(source)==0))return false;
         SourcePatchBank::Values values{};values.fill(-2);
         for(unsigned f=0;f<values.size();++f){
             if(!SourcePatchBank::included(f))continue;
@@ -437,12 +497,15 @@ public:
         }
         if(alternativeFlight_.valid&&alternativeFlight_.plan.from[source]!=alternativeFlight_.plan.to[source])return false;
         const int instrument=activeAlternative(source);
-        if(instrument>=0)return alternativeBank_.save(source/2,static_cast<unsigned>(instrument),slot,core_.nativeLive().sessionConfig(),values);
+        if(instrument>=0){const auto record=alternativeRecord(sixSynths_,source,instrument);
+            return alternativeBank_.save(record/4,record%4,slot,core_.nativeLive().sessionConfig(),values);}
         return sourcePatches_.save(source,slot,core_.nativeLive().sessionConfig(),values);
     }
     bool readSourcePatch(unsigned source,unsigned slot,SourcePatchBank::Patch& out)const noexcept {
         const int instrument=activeAlternative(source);
-        return instrument>=0?alternativeBank_.patch(source/2,static_cast<unsigned>(instrument),slot,out):sourcePatches_.read(source,slot,out);
+        if(instrument<0)return sourcePatches_.read(source,slot,out);
+        const auto record=alternativeRecord(sixSynths_,source,instrument);
+        return alternativeBank_.patch(record/4,record%4,slot,out);
     }
     SourceRecallStatus sourceRecallStatus(unsigned source)const noexcept {
         return source<4?sourceStatus_[source]:SourceRecallStatus::None;
@@ -646,6 +709,12 @@ public:
                 if(id<0)continue;
                 set(12+slot,MuteLedColor::Off);const unsigned peer=group^1u;
                 if(activeAlternative(group)==id)set(12+slot,MuteLedColor::Green);
+                else if(sixSynths_){
+                    const int owner=occupiedSynth(group,id);
+                    if(pendingAlternative(group)==id)set(12+slot,MuteLedColor::Green,true);
+                    else if(owner>=0)set(12+slot,exchangeTarget(group,static_cast<unsigned>(owner))>=0?
+                                         MuteLedColor::Yellow:MuteLedColor::Red);
+                }
                 else if(activeAlternative(peer)==id)set(12+slot,MuteLedColor::Red);
                 else if(synthCables_){
                     auto projected=alternatives_.active();projected[group]=id;
@@ -690,6 +759,7 @@ public:
     Result receive(uint8_t cable,const uint8_t* data,size_t length,int64_t sample,int64_t gestureMs=0) noexcept {
         if(sh01aActive()){
             const auto& a=sh01a_.attachment();
+            const auto source=static_cast<unsigned>(sh01aSourceIndex(alternatives_.active()));
             // The explicit route is configured by the host/user; cable/channel
             // matching alone is not an independently authenticated device ID.
             if(data&&length==3&&data[0]==0xB0+a.image.profile.channel&&cable==a.image.profile.cable&&
@@ -700,14 +770,14 @@ public:
                 if(length==2){
                     const bool matchingEcho=shBaseSentMs_>=0&&gestureMs>=shBaseSentMs_&&gestureMs-shBaseSentMs_<=100;
                     shBaseSentMs_=-1;
-                    if(data[1]==ShBaseProgram&&!matchingEcho)applySourceRecall(a.source,true);
+                    if(data[1]==ShBaseProgram&&!matchingEcho)applySourceRecall(source,true);
                 }
-                if(observation.index>=0){const auto i=static_cast<unsigned>(observation.index);const int cell=a.cell(i);
+                if(observation.index>=0){const auto i=static_cast<unsigned>(observation.index);const int cell=sh01aFieldCell(source,i);
                     if(cell>=0){const auto prior=core_.nativeLive().desired(cell);
                         if(core_.commitNativeLive(cell,observation.value,core_.nativeLive().revision(),a.config)&&
-                           (!prior.known||prior.value!=observation.value))pickup_.rearm(a.api(i));}}
+                           (!prior.known||prior.value!=observation.value))pickup_.rearm(SourcePatchBank::api(source,static_cast<unsigned>(a.fields[i])));}}
                 if(observation.mirrorReplaced){
-                    sourceStatus_[a.source]=SourceRecallStatus::ObservedMirror;
+                    sourceStatus_[source]=SourceRecallStatus::ObservedMirror;
                     record(++sequence_,sample,Stage::RxFeedback,Reason::ShMirrorComplete,cable,data,length,sh01a_.mirror().program());
                 }
                 record(++sequence_,sample,Stage::RxFeedback,Reason::Received,cable,data,length);return {};
@@ -1825,7 +1895,7 @@ private:
         // Seeding pickup with raw also latches this physical controller, so
         // the next movement does not spuriously wait for a second pickup.
         if(core_.nativeLive().revision()>=l01::LiveState::MaxRevision)return {};
-        const int shIndex=sh01aActive()?sh01a_.attachment().indexForCell(target.cell):-1;
+        const int shIndex=sh01aIndexForCell(target.cell);
         const int observed=shIndex>=0?sh01a_.mirror().live(sh01a_.attachment().image.profile.cc[static_cast<unsigned>(shIndex)]):-2;
         const int reference=shIndex>=0?(observed>=0?observed:raw):(live.known?live.value:raw);
         const int value=pickup_.consider(cc,target.api,reference,raw,ms);
@@ -1849,7 +1919,7 @@ private:
             }
         }else if(!projection.apply({10,target.api,value,127}))return {};
         if(!core_.commitNativeLive(target.cell,value,core_.nativeLive().revision()))return {};
-        if(shIndex>=0){sh01a_.localEdit(static_cast<unsigned>(shIndex),value);sourceStatus_[sh01a_.attachment().source]=SourceRecallStatus::None;}
+        if(shIndex>=0){sh01a_.localEdit(static_cast<unsigned>(shIndex),value);sourceStatus_[static_cast<unsigned>(sh01aSourceIndex(alternatives_.active()))]=SourceRecallStatus::None;}
         if(projection.emitted()==0)return {};
         Result r{};
         for(std::size_t i=0;i<projection.emitted();++i){
@@ -1931,7 +2001,52 @@ private:
         }
         return true;
     }
-    bool synthCables_{true};
+    bool synthCables_{true},sixSynths_{};
+    std::array<SynthSessionState,6> synthState_{};
+    const SynthSessionState* memorySynth(int owner) const noexcept {
+        if(!sixSynths_||owner<0||owner>=12)return nullptr;
+        const auto source=static_cast<unsigned>(owner/3);
+        const int active=activeAlternative(source);
+        return active<0?nullptr:&synthState_[synthRecord(source,active)];
+    }
+    SynthSessionState* memorySynth(int owner) noexcept {
+        return const_cast<SynthSessionState*>(static_cast<const HostEngine*>(this)->memorySynth(owner));
+    }
+    void rememberSynthEffects(unsigned source,int alternative,const SessionImage& before) noexcept {
+        if(!sixSynths_||alternative<0)return;
+        auto& synth=synthState_[synthRecord(source,alternative)];
+        for(unsigned i=0;i<synth.effects.size();++i)
+            synth.effects[i]=before.desired[static_cast<unsigned>(sourceBaseCell(source,36+i))];
+        for(unsigned i=0;i<synth.engaged.size();++i)synth.engaged[i]=memoryEngaged_[12*source+i];
+    }
+    void projectSynthEngagement(unsigned source,int alternative) noexcept {
+        if(!sixSynths_||alternative<0)return;
+        const auto& synth=synthState_[synthRecord(source,alternative)];
+        for(unsigned i=0;i<synth.engaged.size();++i)memoryEngaged_[12*source+i]=synth.engaged[i];
+    }
+    int occupiedSynth(unsigned source,int instrument) const noexcept {
+        const auto cable=synthCable(source,instrument);
+        for(unsigned peer=0;peer<4;++peer)
+            if(peer!=source&&synthCable(peer,activeAlternative(peer))==cable)return static_cast<int>(peer);
+        return -1;
+    }
+    int exchangeTarget(unsigned source,unsigned peer) const noexcept {
+        const int active=activeAlternative(source);
+        if(active<0)return -1;
+        const int target=static_cast<int>(synthRecord(source,active))-2*static_cast<int>(peer/2);
+        return target>=0&&target<4?target:-1;
+    }
+    bool exchangePending() const noexcept {
+        for(unsigned source=0;source<4;++source){
+            const int pending=pendingAlternative(source);
+            if(pending>=0&&occupiedSynth(source,pending)>=0)return true;
+        }
+        return false;
+    }
+    bool alternativeBase(unsigned source,int instrument,SourcePatchBank::Values& out) const noexcept {
+        const auto record=alternativeRecord(sixSynths_,source,instrument);
+        return alternativeBank_.base(record/4,record%4,core_.nativeLive().sessionConfig(),out);
+    }
     static int sourceForPacket(int api,int type) noexcept {
         if(type==10){
             if(api>=128&&api<272)return (api-128)/36;
@@ -2017,7 +2132,9 @@ private:
             const bool applied=applyGlobal(flight.image,flight.redRestore);applyingGlobalOrder_=previous;return applied;}
         auto draft=alternatives_;
         if(!draft.finalize(flight.plan,true))return false;
-        const int config=core_.nativeLive().sessionConfig();std::array<SourcePatchBank::Values,4> before{};
+        const int config=core_.nativeLive().sessionConfig();
+        const auto beforeLive=core_.nativeLive().snapshot();
+        std::array<SourcePatchBank::Values,4> before{};
         std::array<int,388> cells{},values{};unsigned fields=0;
         std::array<SourcePacket,388> packets{};unsigned count=0;
         for(unsigned source=0;source<4;++source)if(flight.plan.from[source]!=flight.plan.to[source]){
@@ -2031,12 +2148,30 @@ private:
             const auto& base=sourceBases_[sourceBaseIndex(source,flight.plan.to[source])];
             if(base.valid&&base.config==config)
                 for(unsigned f=0;f<SourceBaseImage::Count;++f)values[firstField+f]=base.values[f];
-            const auto& last=alternativeBank_.last(source/2,static_cast<unsigned>(flight.plan.to[source]));
+            if(sixSynths_&&sh01aSourceIndex(flight.plan.to)==static_cast<int>(source)&&
+               shBase_.base.valid&&shBase_.base.config==config&&shBase_.destination==sh01a_.attachment().image.profile.destination)
+                for(unsigned f=36;f<SourceBaseImage::Count;++f)values[firstField+f]=shBase_.base.values[f];
+            const auto record=alternativeRecord(sixSynths_,source,flight.plan.to[source]);
+            const auto& last=alternativeBank_.last(record/4,record%4);
+            int currentOwner=-1;
+            if(sixSynths_)for(unsigned prior=0;prior<4;++prior)
+                if(flight.plan.from[prior]>=0&&synthRecord(prior,flight.plan.from[prior])==record)
+                    currentOwner=static_cast<int>(prior);
             unsigned liveField=firstField;
             for(unsigned f=0;f<last.size();++f){
                 if(!SourcePatchBank::included(f))continue;
-                if(last[f]>=0)values[liveField]=last[f];
+                const int saved=currentOwner<0?last[f]:
+                    beforeLive.desired[static_cast<unsigned>(SourcePatchBank::cell(static_cast<unsigned>(currentOwner),f))];
+                if(saved>=0)values[liveField]=saved;
                 ++liveField;
+            }
+            if(sixSynths_){
+                const auto& synth=synthState_[record];
+                for(unsigned i=0;i<synth.effects.size();++i){
+                    const int saved=currentOwner<0?synth.effects[i]:
+                        beforeLive.desired[static_cast<unsigned>(sourceBaseCell(static_cast<unsigned>(currentOwner),36+i))];
+                    if(saved>=0)values[liveField+i]=saved;
+                }
             }
             unsigned field=firstField;
             for(unsigned f=0;f<97;++f){
@@ -2051,10 +2186,19 @@ private:
             }
         }
         if(sourceWrite_-sourceRead_+count>sourceMidi_.size()||!core_.commitNativeAlternativeBases(cells,values,fields,config))return false;
+        if(sh01aSourceIndex(flight.plan.from)!=sh01aSourceIndex(flight.plan.to)){
+            sh01a_.stop();shBaseSentMs_=-1;
+        }
         alternatives_=draft;alternativeFlight_={};alternativeBaseValid_.fill(false);
+        for(unsigned source=0;source<4;++source)if(flight.plan.from[source]!=flight.plan.to[source])
+            rememberSynthEffects(source,flight.plan.from[source],beforeLive);
         for(unsigned source=0;source<4;++source)if(flight.plan.from[source]!=flight.plan.to[source]){
-            if(flight.plan.from[source]>=0)alternativeBank_.remember(source/2,static_cast<unsigned>(flight.plan.from[source]),before[source]);
+            if(flight.plan.from[source]>=0){
+                const auto record=alternativeRecord(sixSynths_,source,flight.plan.from[source]);
+                alternativeBank_.remember(record/4,record%4,before[source]);
+            }
             disengageSourceMemories(source);
+            projectSynthEngagement(source,flight.plan.to[source]);
         }
         for(unsigned n=0;n<count;++n){auto packet=packets[n];packet.token=++sourcePacketToken_;sourceMidi_[sourceWrite_++%sourceMidi_.size()]=packet;
             if(packet.type==10)pickup_.rearm(packet.api);}
@@ -2098,7 +2242,7 @@ private:
         musicalScheduler_.cancel(3,0);musicalScheduler_.cancel(4,0);
     }
     DocumentImage captureDocument()const noexcept {
-        DocumentImage d{};d.live=core_.nativeLive().snapshot();d.current=captureGlobal();
+        DocumentImage d{};d.sixSynths=sixSynths_;d.synthState=synthState_;d.live=core_.nativeLive().snapshot();d.current=captureGlobal();
         // SOFT choices are persistent selection; sounding gates are transient.
         d.current.soft.sounding.fill(false);
         for(const auto& hold:spots_)if(hold.cell>=0&&(hold.mode==3||hold.mode==4)){
@@ -2109,7 +2253,7 @@ private:
         d.presets=presets_;d.init=globalInit_;
         for(int owner=0;owner<28;++owner){
             for(int slot=0;slot<(owner<12?4:3);++slot){l01::BankS6::MemoryRecord m{};
-                if(core_.readNativeMemory(owner,slot,m))d.memories[static_cast<unsigned>(l01::BankS6::memoryIndex(owner,slot))]=m;}
+                if(readMemory(owner,slot,m))d.memories[static_cast<unsigned>(l01::BankS6::memoryIndex(owner,slot))]=m;}
             for(int slot=0;slot<3;++slot){l01::BankS6::PatchRecord p{};
                 if(core_.readNativePatch(owner,slot,p))d.legacyPatches[static_cast<unsigned>(3*owner+slot)]=p;}
         }
@@ -2164,7 +2308,7 @@ private:
         seedOpeningValues(live,openingDefaults(token));
         if(!core_.commitNativeDocument(live,d.current.nav,bank,memoryBases,patchBases))return false;
         openingLive_=live;rhythmDials_.fill({});
-        s8Sample_=d.sample;s8Machine_=d.machine;sourcePatches_=d.source;alternativeBank_=d.alternative;sourceBases_=d.sourceBases;shBase_=d.shBase;shBaseSentMs_=-1;alternatives_=arbiter;synthCables_=uniqueSynthCables(arbiter.active());
+        s8Sample_=d.sample;s8Machine_=d.machine;sourcePatches_=d.source;alternativeBank_=d.alternative;sourceBases_=d.sourceBases;shBase_=d.shBase;shBaseSentMs_=-1;alternatives_=arbiter;sixSynths_=d.sixSynths;synthState_=d.synthState;synthCables_=uniqueSynthCables(arbiter.active());
         presets_=d.presets;globalInit_=d.init;soft_=soft;muteBridge_=mute;muteGate_.restoreVisible(d.current.muteVisible);
         cueHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});
         cueLoad_=CueLoadBar{}; // desired selection is rebuilt below; no historical service pulse
@@ -2214,7 +2358,7 @@ private:
         if(!image.admissible(live.sessionConfig())||live.revision()>=l01::LiveState::MaxRevision||globalApplySerial_==UINT64_MAX)return false;
         AlternativeArbiter::Ready ready{};
         for(unsigned source=0;source<4;++source){SourcePatchBank::Values ignored{};
-            ready[source]=image.alternatives[source]<0||alternativeBank_.base(source/2,static_cast<unsigned>(image.alternatives[source]),live.sessionConfig(),ignored);}
+            ready[source]=image.alternatives[source]<0||alternativeBase(source,image.alternatives[source],ignored);}
         const auto plan=alternatives_.prepareRecall(image.alternatives,ready);if(!plan.valid||(synthCables_&&!uniqueSynthCables(plan.to)))return false;
         bool closing=false;
         for(int api=0;api<528;++api){const int source=sourceForPacket(api,11);
@@ -2225,10 +2369,17 @@ private:
         const auto cutoff=applyingGlobalOrder_?applyingGlobalOrder_:musicalScheduler_.lastOrder();
         AlternativeArbiter::Ready preserve{};
         for(unsigned source=0;source<4;++source)preserve[source]=alternatives_.pending()[source]>=0&&alternativePendingOrder_[source]>cutoff;
+        if(sixSynths_&&exchangePending()&&plan.from!=plan.to)preserve.fill(false);
         auto alternativeDraft=alternatives_;if(!alternativeDraft.finalize(plan,true,preserve))return false;
         const auto before=live.snapshot();auto target=before;target.revision=live.revision()+1;
+        const int oldSh=sh01aSourceIndex(plan.from),newSh=sh01aSourceIndex(plan.to);
         for(unsigned cell=0;cell<target.desired.size();++cell)
-            if(GlobalSnapshot::inScope(cell)&&!(sh01aCell(static_cast<int>(cell))&&image.alternatives[sh01a_.attachment().source]==sh01a_.attachment().alternative))target.desired[cell]=image.live.desired[cell];
+            if(GlobalSnapshot::inScope(cell))target.desired[cell]=image.live.desired[cell];
+        if(newSh>=0)for(unsigned i=0;i<36;++i){
+            const int cell=sh01aFieldCell(static_cast<unsigned>(newSh),i);
+            if(cell>=0)target.desired[static_cast<unsigned>(cell)]=oldSh<0?-2:
+                before.desired[static_cast<unsigned>(sh01aFieldCell(static_cast<unsigned>(oldSh),i))];
+        }
         auto mute=muteBridge_;auto soft=soft_;auto cue=cueLoad_;
         if(!mute.restoreApplied(image.mute,redRestore)||!soft.restoreApplied(image.soft)||!cue.restoreSelections(image.cueSelections))return false;
         std::array<SourcePacket,2048> packets{};unsigned count=0;std::array<bool,544> off{};
@@ -2261,8 +2412,10 @@ private:
         const bool wasPresetFrame=core_.nativeNav().active().at(292)==1&&core_.nativeNav().active().presetFlag==1&&!mutePageVisible();
         if(count>sourceMidi_.size()||!core_.commitNativeGlobalRecall(target,image.nav))return false;
         for(unsigned source=0;source<4;++source)if(plan.from[source]>=0&&plan.from[source]!=plan.to[source]){
+            rememberSynthEffects(source,plan.from[source],before);
             SourcePatchBank::Values last{};for(unsigned f=0;f<60;++f)last[f]=before.desired[static_cast<unsigned>(SourcePatchBank::cell(source,f))];
-            alternativeBank_.remember(source/2,static_cast<unsigned>(plan.from[source]),last);
+            const auto record=alternativeRecord(sixSynths_,source,plan.from[source]);
+            alternativeBank_.remember(record/4,record%4,last);
         }
         for(unsigned source=0;source<4;++source)if(plan.from[source]!=plan.to[source]){
             musicalScheduler_.cancel(1,static_cast<uint16_t>(source));sourcePending_[source]=-1;cue.cancelUnstarted(source);
@@ -2270,6 +2423,7 @@ private:
             for(auto& hold:topHold_)if(sourceForRoute(hold.route)==static_cast<int>(source))hold={};
             for(auto& hold:cueHolds_)if(hold.source==static_cast<int>(source))hold={};
         }
+        if(oldSh!=newSh){sh01a_.stop();shBaseSentMs_=-1;}
         alternatives_=alternativeDraft;alternativeFlight_={};bool pendingAlternative=false;
         for(unsigned source=0;source<4;++source){if(alternatives_.pending()[source]<0)alternativeBaseValid_[source]=false;else pendingAlternative=true;}
         if(!pendingAlternative)musicalScheduler_.cancel(5,0);
@@ -2287,18 +2441,34 @@ private:
         memoryEngaged_=image.memoryEngaged;presetEngaged_=image.presetEngaged;
         for(unsigned owner=0;owner<28;++owner)for(int slot=0;slot<(owner<12?4:3);++slot){
             l01::BankS6::MemoryRecord record{};
-            if(!core_.readNativeMemory(static_cast<int>(owner),slot,record)||!record.valid||record.config!=target.config)
+            if(!readMemory(static_cast<int>(owner),slot,record)||!record.valid||record.config!=target.config)
                 memoryEngaged_[static_cast<unsigned>(l01::BankS6::memoryIndex(static_cast<int>(owner),slot))]=false;
         }
         for(auto& hold:spots_)hold={};
         ++globalApplySerial_;return true;
     }
-    bool sh01aActive()const noexcept {
+    int sh01aSourceIndex(const AlternativeArbiter::Targets& targets)const noexcept {
         const auto& a=sh01a_.attachment();
-        return a.enabled&&a.config==core_.nativeLive().sessionConfig()&&activeAlternative(a.source)==a.alternative;
+        if(!a.enabled||a.config!=core_.nativeLive().sessionConfig())return -1;
+        if(!sixSynths_)return targets[a.source]==a.alternative?a.source:-1;
+        for(unsigned source=0;source<2;++source)
+            if(targets[source]==0)return static_cast<int>(source);
+        return -1;
     }
-    bool sh01aSource(unsigned source)const noexcept{return sh01aActive()&&source==sh01a_.attachment().source;}
-    bool sh01aCell(int cell)const noexcept{return sh01aActive()&&sh01a_.attachment().indexForCell(cell)>=0;}
+    int sh01aFieldCell(unsigned source,unsigned index)const noexcept {
+        const int field=sh01a_.attachment().fields[index];
+        return field<0?-1:SourcePatchBank::cell(source,static_cast<unsigned>(field));
+    }
+    int sh01aIndexForCell(int cell)const noexcept {
+        const int source=sh01aSourceIndex(alternatives_.active());
+        if(source<0||cell<0)return -1;
+        for(unsigned i=0;i<36;++i)
+            if(sh01aFieldCell(static_cast<unsigned>(source),i)==cell)return static_cast<int>(i);
+        return -1;
+    }
+    bool sh01aActive()const noexcept{return sh01aSourceIndex(alternatives_.active())>=0;}
+    bool sh01aSource(unsigned source)const noexcept{return sh01aSourceIndex(alternatives_.active())==static_cast<int>(source);}
+    bool sh01aCell(int cell)const noexcept{return sh01aIndexForCell(cell)>=0;}
     void beginSh01aBuffer(bool justRestored=false)noexcept {
         if(!sh01a_.hasPending()){sh01a_.beginBuffer(false,appliedToken_);return;}
         bool safe=false;
@@ -2487,7 +2657,7 @@ private:
             }
             SourcePatchBank::Values patch{};patch.fill(0);
             const int instrument=activeAlternative(source);
-            if(!sh&&slot==3&&instrument>=0&&!alternativeBank_.base(source/2,static_cast<unsigned>(instrument),config,patch)){
+            if(!sh&&slot==3&&instrument>=0&&!alternativeBase(source,instrument,patch)){
                 sourceStatus_[source]=SourceRecallStatus::UnknownConfig;return;}
             if(slot<3){SourcePatchBank::Patch saved{};
                 if(!readSourcePatch(source,static_cast<unsigned>(slot),saved)||saved.config!=config){
@@ -2540,8 +2710,8 @@ private:
     unsigned sourceBaseIndex(unsigned source) const noexcept {
         return sourceBaseIndex(source,activeAlternative(source));
     }
-    static unsigned sourceBaseIndex(unsigned source,int instrument) noexcept {
-        return instrument<0?source:4+4*(source/2)+static_cast<unsigned>(instrument);
+    unsigned sourceBaseIndex(unsigned source,int instrument) const noexcept {
+        return instrument<0?source:4+alternativeRecord(sixSynths_,source,instrument);
     }
     static int sourceBaseCell(unsigned source,unsigned index) noexcept {
         if(index<36)return SourcePatchBank::cell(source,index<30?index:index+12);
@@ -2552,8 +2722,8 @@ private:
     const SourceBaseImage* sourceBase(unsigned source) const noexcept {
         if(!sh01aSource(source))return &sourceBases_[sourceBaseIndex(source)];
         const auto& attachment=sh01a_.attachment();
-        if(shBase_.destination!=attachment.image.profile.destination||shBase_.source!=static_cast<int>(source)||
-           shBase_.alternative!=activeAlternative(source))return nullptr;
+        if(shBase_.destination!=attachment.image.profile.destination||
+           (!sixSynths_&&(shBase_.source!=static_cast<int>(source)||shBase_.alternative!=activeAlternative(source))))return nullptr;
         return &shBase_.base;
     }
     int sourceBaseValue(unsigned source,int cell,int config) const noexcept {

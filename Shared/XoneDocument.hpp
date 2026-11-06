@@ -26,7 +26,22 @@ struct ShSourceBaseImage {
  int source{-1},alternative{-1};
  SourceBaseImage base{};
 };
+// Local IDs 2/3 in INST and 0/1 in YELLOW are the same physical synth.
+inline unsigned synthRecord(unsigned source,int local) noexcept {
+ return static_cast<unsigned>(local)+2*(source/2);
+}
+inline unsigned alternativeRecord(bool sixSynths,unsigned source,int local) noexcept {
+ return sixSynths?synthRecord(source,local):static_cast<unsigned>(local)+4*(source/2);
+}
+struct SynthSessionState {
+ std::array<int,37> effects{};
+ std::array<l01::BankS6::MemoryRecord,12> memories{};
+ std::array<bool,12> engaged{};
+ SynthSessionState() noexcept {effects.fill(-2);}
+};
 struct DocumentImage {
+ bool sixSynths{};
+ std::array<SynthSessionState,6> synthState{};
  SessionImage live{};
  GlobalSnapshot current{};
  S8SamplePatchBank sample{};
@@ -98,7 +113,12 @@ template<class A> inline bool documentFields(A& a,DocumentImage& d)noexcept {
  for(unsigned i=0;i<4;++i)if(d.current.presetEngaged[i]&&!d.presets[i].valid)return false;
  // Active IDs must have an explicit configured local BASE. No synthetic binding.
  for(unsigned s=0;s<4;++s){SourcePatchBank::Values base{};const int id=d.current.alternatives[s];
-  if(id>=0&&!d.alternative.base(s/2,static_cast<unsigned>(id),d.live.config,base))return false;
+  if(id>=0){
+   const unsigned record=alternativeRecord(d.sixSynths,s,id);
+   if(!d.alternative.base(record/4,record%4,d.live.config,base))return false;
+   if(d.sixSynths)for(unsigned prior=0;prior<s;++prior)
+    if(d.current.alternatives[prior]>=0&&synthRecord(prior,d.current.alternatives[prior])==record)return false;
+  }
  }
  return a.ok();
 }
@@ -123,22 +143,42 @@ template<class Archive> inline bool documentShBase(Archive& archive,ShSourceBase
  for(unsigned f=0;f<36;++f)if(image.base.values[f])return false;
  return true;
 }
+template<class Archive> inline bool documentSynthState(Archive& a,DocumentImage& d) noexcept {
+ if(!d.sixSynths)return true;
+ for(auto& synth:d.synthState){
+  a(synth.effects);a(synth.engaged);
+  for(unsigned i=0;i<synth.effects.size();++i){
+   const int value=synth.effects[i], max=(i>=24&&i<36)?1:127;
+   if(value!=-2&&(value<0||value>max))return false;
+  }
+  for(unsigned slot=0;slot<synth.memories.size();++slot){
+   auto& m=synth.memories[slot];a(m.valid);a(m.config);a(m.revision);a(m.values);
+   if(m.valid){
+    if(m.config!=d.live.config||!m.revision||m.revision>=l01::BankS6::MaxRevision||!l01::BankS6::validateMemory(m.values))return false;
+   }else{
+    if(m.config||m.revision||synth.engaged[slot])return false;
+    for(int v:m.values)if(v!=-2)return false;
+   }
+  }
+ }
+ return a.ok();
+}
 inline bool validDocument(DocumentImage& d)noexcept {
- DocumentValidator a;return documentFields(a,d)&&documentSourceBases(a,d)&&documentShBase(a,d.shBase);
+ DocumentValidator a;return documentFields(a,d)&&documentSourceBases(a,d)&&documentShBase(a,d.shBase)&&documentSynthState(a,d);
 }
 inline bool encodeDocument(const DocumentImage& image,DocumentBytes& out) {
  auto d=image;const bool extended=std::any_of(d.sourceBases.begin(),d.sourceBases.end(),[](const auto& base){return base.valid;});
- DocumentBytes bytes{'X','D','O','C',static_cast<uint8_t>(d.shBase.base.valid?4:extended?3:2),0,0,0};bytes.reserve(MaxDocumentBytes);
+ DocumentBytes bytes{'X','D','O','C',static_cast<uint8_t>(d.sixSynths?5:d.shBase.base.valid?4:extended?3:2),0,0,0};bytes.reserve(MaxDocumentBytes);
  DocumentValidator validator;
  if(!documentSourceBases(validator,d)||!documentShBase(validator,d.shBase))return false;
- DocumentWire wire(bytes);if(!documentFields(wire,d)||(bytes[4]>=3&&!documentSourceBases(wire,d))||(bytes[4]==4&&!documentShBase(wire,d.shBase))||bytes.size()+4>MaxDocumentBytes)return false;
+ DocumentWire wire(bytes);if(!documentFields(wire,d)||(bytes[4]>=3&&!documentSourceBases(wire,d))||(bytes[4]>=4&&!documentShBase(wire,d.shBase))||!documentSynthState(wire,d)||bytes.size()+4>MaxDocumentBytes)return false;
  const auto crc=sessionCrc(bytes.data(),bytes.size());for(unsigned i=0;i<4;++i)bytes.push_back(static_cast<uint8_t>(crc>>(8*i)));
  out=std::move(bytes);return true;
 }
 inline bool decodeDocument(const uint8_t* bytes,std::size_t size,DocumentImage& out)noexcept {
- if(!bytes||size<12||size>MaxDocumentBytes||bytes[0]!='X'||bytes[1]!='D'||bytes[2]!='O'||bytes[3]!='C'||(bytes[4]<2||bytes[4]>4)||bytes[5]||bytes[6]||bytes[7]||sessionGet32(bytes+size-4)!=sessionCrc(bytes,size-4))return false;
- DocumentImage d{};DocumentWire wire(bytes+8,size-12);
- if(!documentFields(wire,d)||(bytes[4]>=3&&!documentSourceBases(wire,d))||(bytes[4]==4&&!documentShBase(wire,d.shBase))||!wire.complete())return false;
+ if(!bytes||size<12||size>MaxDocumentBytes||bytes[0]!='X'||bytes[1]!='D'||bytes[2]!='O'||bytes[3]!='C'||(bytes[4]<2||bytes[4]>5)||bytes[5]||bytes[6]||bytes[7]||sessionGet32(bytes+size-4)!=sessionCrc(bytes,size-4))return false;
+ DocumentImage d{};d.sixSynths=bytes[4]>=5;DocumentWire wire(bytes+8,size-12);
+ if(!documentFields(wire,d)||(bytes[4]>=3&&!documentSourceBases(wire,d))||(bytes[4]>=4&&!documentShBase(wire,d.shBase))||!documentSynthState(wire,d)||!wire.complete())return false;
  out=d;return true;
 }
 struct DocumentFrame {DocumentImage image{};uint32_t token{};};

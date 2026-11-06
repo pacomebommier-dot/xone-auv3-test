@@ -56,6 +56,15 @@ public:
         ++revision_;
         return Request::Accepted;
     }
+    Request exchange(unsigned first,int firstTarget,unsigned second,int secondTarget,std::uint64_t arbitration) noexcept {
+        if(first>=4||second>=4||first==second||firstTarget<0||firstTarget>3||secondTarget<0||secondTarget>3||
+           !arbitration||arbitration<lastArbitration_||revision_==std::numeric_limits<std::uint64_t>::max())return Request::Rejected;
+        for(int target:pending_)if(target>=0)return Request::Rejected;
+        pending_[first]=firstTarget;pending_[second]=secondTarget;
+        pendingArbitration_[first]=pendingArbitration_[second]=lastArbitration_=arbitration;
+        ++revision_;
+        return Request::Accepted;
+    }
     // STOP before the BAR cancels pending requests; previously active owners remain.
     void stop() noexcept {clearPending();}
     void clearPending() noexcept {

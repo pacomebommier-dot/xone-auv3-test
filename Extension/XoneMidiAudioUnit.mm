@@ -8,17 +8,35 @@
 #include "../Shared/XoneHostScheduler.hpp"
 #include <cmath>
 
+namespace {
+NSString *const SharedShBaseKey=@"XONE_SHARED_SH01A_BASE_V1";
+constexpr uint32_t ShDestination=0x53483031u;
+NSData *encodeSharedShBase(xone::host::ShSourceBaseImage image) {
+    if(!image.base.valid||image.destination!=ShDestination)return nil;
+    xone::host::DocumentBytes bytes;
+    xone::host::DocumentWire wire(bytes);
+    if(!xone::host::documentShBase(wire,image))return nil;
+    return [NSData dataWithBytes:bytes.data() length:bytes.size()];
+}
+bool decodeSharedShBase(NSData *bytes,xone::host::ShSourceBaseImage& image) {
+    if(![bytes isKindOfClass:[NSData class]])return false;
+    xone::host::DocumentWire wire(static_cast<const uint8_t *>(bytes.bytes),bytes.length);
+    return xone::host::documentShBase(wire,image)&&wire.complete()&&image.base.valid&&image.destination==ShDestination;
+}
+}
+
 @implementation XoneMidiAudioUnit {
     AUAudioUnitBusArray *_inputBusArray;
     AUAudioUnitBusArray *_outputBusArray;
     AUParameterTree *_nativeParameterTree;
-    // Établi avant de démarrer la boucle de rendu ; ne pas muter en cours de rendu.
+    // Ãƒâ€°tabli avant de dÃƒÂ©marrer la boucle de rendu ; ne pas muter en cours de rendu.
     AUMIDIOutputEventBlock _cachedMIDIOutput;
     AUHostTransportStateBlock _cachedTransport;
     AUHostMusicalContextBlock _cachedMusicalContext;
     xone::host::HostGrid _musicalGrid;
     xone::host::HostEngine _engine;
     xone::host::ResetDefaults _resetDefaultsForHost; // host thread, protected by @synchronized
+    NSData *_loadedSharedShBase;
     bool _transportKnown, _moving;
     double _gestureElapsedMs, _gestureSampleRate;
 }
@@ -28,8 +46,17 @@
                                        error:(NSError * _Nullable __autoreleasing *)outError {
     self = [super initWithComponentDescription:componentDescription options:options error:outError];
     if (!self) return nil;
+#if TARGET_OS_IOS
+    if (!_engine.initializeSynthDestinations()) return nil;
+    xone::host::ShSourceBaseImage shared{};
+    NSData *saved=[[NSUserDefaults standardUserDefaults] dataForKey:SharedShBaseKey];
+    if(decodeSharedShBase(saved,shared)){
+        _engine.loadSharedShBaseBeforeRender(shared);
+        _loadedSharedShBase=saved;
+    }
+#endif
 
-    // Busses requis par le contrat AUAudioUnit, même pour un processeur MIDI pur.
+    // Busses requis par le contrat AUAudioUnit, mÃƒÂªme pour un processeur MIDI pur.
     AVAudioFormat *format = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:44100 channels:2];
     AUAudioUnitBus *inputBus = [[AUAudioUnitBus alloc] initWithFormat:format error:outError];
     AUAudioUnitBus *outputBus = [[AUAudioUnitBus alloc] initWithFormat:format error:outError];
@@ -116,7 +143,15 @@
         if (xone::host::encodeSession(image, bytes))
             state[@"XONE_LAST_LIVE_V1"] = [NSData dataWithBytes:bytes.data() length:bytes.size()];
         xone::host::DocumentBytes document;
-        if(xone::host::encodeDocument(_engine.documentForHost(),document))
+        const auto imageForDocument=_engine.documentForHost();
+        if(imageForDocument.sixSynths){
+            NSData *updated=encodeSharedShBase(imageForDocument.shBase);
+            if(updated&&![updated isEqualToData:_loadedSharedShBase]){
+                [[NSUserDefaults standardUserDefaults] setObject:updated forKey:SharedShBaseKey];
+                _loadedSharedShBase=updated;
+            }
+        }
+        if(xone::host::encodeDocument(imageForDocument,document))
             state[@"XONE_DOCUMENT_V2"]=[NSData dataWithBytes:document.data() length:document.size()];
         return state;
     }
@@ -148,7 +183,15 @@
             if(![document isKindOfClass:[NSData class]])return;
             NSData *data=(NSData *)document;xone::host::DocumentImage image{};
             if(!xone::host::decodeDocument((const uint8_t *)data.bytes,data.length,image)||
-               (sh.enabled&&sh.config!=image.live.config)||!_engine.requestDocumentRestore(image))return;
+               (sh.enabled&&sh.config!=image.live.config))return;
+            if(image.sixSynths){
+                xone::host::ShSourceBaseImage shared{};
+                NSData *saved=[[NSUserDefaults standardUserDefaults] dataForKey:SharedShBaseKey];
+                if(decodeSharedShBase(saved,shared)&&shared.base.config==image.live.config)
+                    image.shBase=shared;
+            }
+            if(!_engine.requestDocumentRestore(image))return;
+            _loadedSharedShBase=image.sixSynths?encodeSharedShBase(image.shBase):nil;
             configureDefaults(true);[super setFullState:state];return;
         }
         bool restored=false;
@@ -171,11 +214,12 @@
         if(source<0||source>3||channel<1||channel>16||(channel>=7&&channel<=15))return NO;
         const auto old=_engine.sh01aForHost();const auto document=_engine.documentForHost();
         // Reconfiguration must never silently assign another route to existing mirrors.
-        if(old.enabled)return old.source==source&&old.image.profile.channel==channel-1&&
+        if(document.sixSynths&&(source>=2||document.current.alternatives[static_cast<unsigned>(source)]!=0))return NO;
+        if(old.enabled)return (document.sixSynths||old.source==source)&&old.image.profile.channel==channel-1&&
             old.config==document.live.config&&old.alternative==document.current.alternatives[static_cast<unsigned>(source)];
         const auto attachment=xone::host::provisionalSh01aAttachment(static_cast<uint8_t>(source),
             document.live.config,document.current.alternatives[static_cast<unsigned>(source)],
-            0x53483031u,static_cast<uint8_t>(channel-1),0,1000);
+            ShDestination,static_cast<uint8_t>(channel-1),0,1000);
         return _engine.requestSh01aAttachment(attachment);
     }
 }
@@ -187,8 +231,8 @@
 }
 
 - (AUInternalRenderBlock)internalRenderBlock {
-    // Capturer seulement l'adresse du slot de sortie, pas d'envoi de message à self
-    // dans le rendu temps réel. Ne pas allouer ni journaliser dans ce bloc.
+    // Capturer seulement l'adresse du slot de sortie, pas d'envoi de message ÃƒÂ  self
+    // dans le rendu temps rÃƒÂ©el. Ne pas allouer ni journaliser dans ce bloc.
     AUMIDIOutputEventBlock __strong *slot = &_cachedMIDIOutput;
     auto *engine = &_engine;
     auto *known = &_transportKnown;
@@ -212,12 +256,20 @@
         AUMIDIOutputEventBlock __unsafe_unretained sendMIDI = *slot;
         AUHostTransportStateBlock __unsafe_unretained transport = *transportSlot;
         AUHostMusicalContextBlock __unsafe_unretained music = *musicSlot;
+        const auto sendNominal = [&](AUEventSampleTime sample,int api,int type,const uint8_t* bytes) {
+            const uint8_t cable=engine->midiOutputCable(api,type);
+            const int address=engine->midiOutputAddress(api,type);
+            if(address==api)return sendMIDI(sample,cable,3,bytes);
+            const uint8_t mapped[]{static_cast<uint8_t>((bytes[0]&0xF0)+6+address/128),
+                                   static_cast<uint8_t>(address%128),bytes[2]};
+            return sendMIDI(sample,cable,3,mapped);
+        };
         const auto flushStop = [&]() {
             for (unsigned n=0; n<702; ++n) {
                 const auto packet=engine->nextStopPacket();
                 if (!packet.emit) break;
                 if (!engine->canSend(packet)) continue;
-                if (sendMIDI) engine->sent(packet,sendMIDI(packet.sample,engine->midiOutputCable(packet.api,packet.type),3,packet.bytes));
+                if (sendMIDI) engine->sent(packet,sendNominal(packet.sample,packet.api,packet.type,packet.bytes));
                 else engine->noOutput(packet);
             }
         };
@@ -267,7 +319,7 @@
             if(!sendMIDI)return;
             for(unsigned n=0;n<2048;++n){
                 const auto packet=engine->nextSourcePacket();if(!packet.valid)break;
-                const bool ok=sendMIDI(sample,engine->midiOutputCable(packet.api,packet.type),3,packet.bytes.data())==noErr;
+                const bool ok=sendNominal(sample,packet.api,packet.type,packet.bytes.data())==noErr;
                 engine->ackSourcePacket(packet,ok,sample);if(!ok)break;
             }
         };
@@ -275,7 +327,7 @@
             if(!sendMIDI)return;
             for(unsigned n=0;n<37;++n){
                 const auto packet=engine->nextSh01aPacket();if(!packet.valid)break;
-                const bool ok=sendMIDI(sample,0,static_cast<NSInteger>(packet.length),packet.bytes.data())==noErr;
+                const bool ok=sendMIDI(sample,engine->sh01aOutputCable(),static_cast<NSInteger>(packet.length),packet.bytes.data())==noErr;
                 engine->ackSh01aPacket(packet,ok,sample,ms);if(!ok)break;
             }
         };
@@ -364,7 +416,7 @@
                 for(unsigned n=0;n<patch.packetCount();++n){
                     const auto packet=patch.packet(n);
                     if(!engine->canSend(packet))continue;
-                    if(sendMIDI)engine->sent(packet,sendMIDI(packet.sample,engine->midiOutputCable(packet.api,packet.type),3,packet.bytes));
+                    if(sendMIDI)engine->sent(packet,sendNominal(packet.sample,packet.api,packet.type,packet.bytes));
                     else engine->noOutput(packet);
                 }
                 flushMute(bufferStart+one.events[0].offset);
@@ -407,7 +459,7 @@
             for (unsigned n=0; n<result.packetCount(); ++n) {
                 const auto packet = result.packet(n);
                 if (!engine->canSend(packet)) continue;
-                if (sendMIDI) engine->sent(packet, sendMIDI(sample, engine->midiOutputCable(packet.api,packet.type), 3, packet.bytes));
+                if (sendMIDI) engine->sent(packet, sendNominal(sample,packet.api,packet.type,packet.bytes));
                 else engine->noOutput(packet);
             }
             flushCueLoad(sample);flushSource(sample); // explicit stopped recalls, no synthetic grid

@@ -1,4 +1,5 @@
 #include "../Shared/XoneHostEngine.hpp"
+#include "../Shared/XoneSh01aProfile.hpp"
 #include <cassert>
 #include <iostream>
 using namespace xone::host;
@@ -115,6 +116,38 @@ int main(){
   assert(h.midiOutputCable(699,10)==0);
   assert(h.requestAlternative(2,0)==A::Request::Rejected);
   flush(h);
+ }
+ // Production destinations can swap, including data carried by both tracks.
+ {HostEngine h;assert(h.initializeSynthDestinations());h.observeTransport(false);
+  auto live=h.sessionForHost();live.desired[320]=37;live.desired[404]=48;
+  for(int source=0;source<2;++source)for(int f=0;f<9;++f)
+    live.desired[xone::l01::FxS6::addressFor(3*source,f)]=f<6?20+source:0;
+  assert(h.restoreSessionBeforeRendering(live));
+  assert(h.captureMemory(0,0)&&h.captureMemory(3,0));
+  assert(h.requestSh01aAttachment(provisionalSh01aAttachment(0,1,0,17,0,0,1000)));
+  h.beginRenderBuffer();
+  assert(h.activeAlternative(0)==0&&h.activeAlternative(1)==1&&h.activeAlternative(2)==2&&h.activeAlternative(3)==3);
+  assert(h.consultPresetInstrumentGroup(0)&&h.showPresetPage());
+  assert(h.ledImage()[13].color==MuteLedColor::Yellow);
+  assert(h.requestAlternative(0,1)==A::Request::Accepted);flush(h);
+  assert(h.activeAlternative(0)==1&&h.activeAlternative(1)==0);
+  assert(h.desiredLive(320).value==48&&h.desiredLive(404).value==37);
+  xone::l01::BankS6::MemoryRecord memory{};
+  assert(h.readMemory(0,0,memory)&&memory.valid&&memory.values[0]==21&&h.memoryEngaged(0,0));
+  assert(h.readMemory(3,0,memory)&&memory.valid&&memory.values[0]==20&&h.memoryEngaged(3,0));
+  assert(h.midiOutputCable(164,10)==1&&h.midiOutputAddress(164,10)==128);
+  assert(h.sh01aOutputCable()==1&&h.requestSourceRecall(1,0));
+  const auto pc=h.nextSh01aPacket();assert(pc.valid&&pc.bytes[0]==0xC0&&pc.bytes[1]==1);
+  h.ackSh01aPacket(pc,true,0,0);
+  const uint8_t cc[]{0xB0,74,66};assert(!h.receive(0,cc,3,1,1).emit);
+  assert(h.desiredLive(419).value==66);
+  assert(h.requestAlternative(2,0)==A::Request::Accepted);flush(h);
+  assert(h.requestAlternative(1,2)==A::Request::Rejected);
+  h.endRenderBuffer();DocumentBytes bytes;assert(encodeDocument(h.documentForHost(),bytes)&&bytes[4]==5);
+  DocumentImage image{};assert(decodeDocument(bytes.data(),bytes.size(),image));
+  HostEngine reopened;assert(reopened.requestDocumentRestore(image));reopened.beginRenderBuffer();flush(reopened);
+  assert(reopened.activeAlternative(0)==1&&reopened.activeAlternative(1)==0&&reopened.activeAlternative(2)==0);
+  assert(reopened.readMemory(3,0,memory)&&memory.valid&&memory.values[0]==20);
  }
  HostEngine e;assert(e.presetInstrumentGroup()==-1&&e.activeAlternative(0)==-1);
  assert(e.requestAlternative(0,0)==A::Request::Rejected);
