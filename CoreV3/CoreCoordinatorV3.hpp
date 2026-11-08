@@ -574,7 +574,9 @@ private:
     S3DecisionBoundary s3_{};
     bool retainDjLoopPage_{},djLoopStopPush_{};
     NavS3 nav_{};bool shortNavDiagnostic_{};bool qualifiedNavDiagnostic_{};bool muteBot2Exclusive_{};
-    struct SocleBaseHold {int physical{-1};std::int64_t down{};NavImage before{};};\n    SocleBaseHold socleBase_{};\n    S3LongTransaction longTx_{};S3TouchNav touch_{};bool diagnosticTouch_{};int touchOwner_{-1};
+    struct SocleBaseHold {int physical{-1};std::int64_t down{};NavImage before{};};
+    SocleBaseHold socleBase_{};
+    S3LongTransaction longTx_{};S3TouchNav touch_{};bool diagnosticTouch_{};int touchOwner_{-1};
     int machineLastLow_{-1},machineLastHigh_{-1};
     std::array<std::uint32_t,96> memoryRevisionBase_{};std::array<std::uint32_t,84> patchRevisionBase_{};
     LiveState live_{};bool diagnosticLive_{};FxS6 fx_{};BankS6 nativeBank_{};std::uint32_t fxOrigin_{};
