@@ -1,5 +1,5 @@
 // SOC-01 characterization: standalone native reproducer (expected to FAIL until fixed).
-// Build: c++ -std=c++17 -I. NativeTests/test_soc01_base_contract.cpp -o /tmp/soc01 && /tmp/soc01
+// Build: c++ -std=c++17 -I. Tests/test_host_soc01_base.cpp -o /tmp/soc01 && /tmp/soc01
 #include "../Core/CoreCoordinator.hpp"
 #include <cassert>
 #include <iostream>
@@ -30,5 +30,5 @@ int main(){
         edge(c,36,true,100);edge(c,36,false,300);
         assert(c.nativeNav().active()==before && "ON + long must restore ON");
     }
-    std::cout << "PASS SOC-01 four transitions\\n";
+    std::cout << "PASS SOC-01 four transitions\n";
 }
