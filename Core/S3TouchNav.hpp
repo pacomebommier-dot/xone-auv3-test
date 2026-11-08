@@ -63,6 +63,7 @@ private:
             owner_=physical;start_=now;group_=group;primary_=primary;flag_=flag;page_=page;before_=current;history_=nav.undoSnapshot();wasSelected_=true;
             ++stats_.deferred;return;
         }
+        const NavImage priorUndo=nav.undoSnapshot();
         NavImage next=current;
         if(group>=9&&group<=12){ // source @zh: reorder priorities 1..4
             int old=next.at(flag);if(old==0)old=5;
@@ -82,7 +83,7 @@ private:
         }
         ++stats_.commits;
         owner_=physical;start_=now;group_=group;primary_=primary;flag_=flag;page_=page;
-        before_=current;history_=nav.undoSnapshot();wasSelected_=false;
+        before_=current;history_=priorUndo;wasSelected_=false;
     }
     void onUp(std::int64_t now,NavS3& nav) noexcept {
         // @zl: a4=1,h1=1,h3=a9. SOURCE v2=200 and strict elapsed <200.
