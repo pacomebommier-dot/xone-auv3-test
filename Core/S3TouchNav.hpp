@@ -35,7 +35,7 @@ public:
         return true;
     }
 private:
-    void clear() noexcept {owner_=-1;start_=0;group_=-1;primary_=-1;flag_=-1;page_=0;}
+    void clear() noexcept {owner_=-1;start_=0;group_=-1;primary_=-1;flag_=-1;page_=0;wasSelected_=false;}
     void onDown(int physical,std::int64_t now,NavS3& nav,const S3DecisionBoundary& s3,bool longPending) noexcept {
         if(!nav.stable()||nav.hasStage()||longPending||busy()||s3.physicalOwner(1)!=-1||s3.physicalOwner(2)!=-1||s3.physicalOwner(3)!=-1){++stats_.blocked;return;}
         const auto route=nav.active().route(physical);
@@ -60,7 +60,7 @@ private:
             }
         }
         if(same){ // @zk a4=1,h1=1,h3=a9, awaiting @zl
-            owner_=physical;start_=now;group_=group;primary_=primary;flag_=flag;page_=page;
+            owner_=physical;start_=now;group_=group;primary_=primary;flag_=flag;page_=page;before_=current;history_=nav.undoSnapshot();wasSelected_=true;
             ++stats_.deferred;return;
         }
         NavImage next=current;
@@ -81,10 +81,16 @@ private:
             ++stats_.rejected;return;
         }
         ++stats_.commits;
+        owner_=physical;start_=now;group_=group;primary_=primary;flag_=flag;page_=page;
+        before_=current;history_=nav.undoSnapshot();wasSelected_=false;
     }
     void onUp(std::int64_t now,NavS3& nav) noexcept {
         // @zl: a4=1,h1=1,h3=a9. SOURCE v2=200 and strict elapsed <200.
-        if(now>=start_ && now-start_<200 && flag_>=0 && nav.stable() && !nav.hasStage()){
+        if(now>=start_ && now-start_>=200 && nav.stable() && !nav.hasStage()){
+            // GOLDEN: a held BASE is temporary, regardless of its state on DOWN.
+            if(nav.restoreLong(before_,history_))++stats_.commits;
+            else ++stats_.rejected;
+        }else if(now>=start_ && now-start_<200 && wasSelected_ && flag_>=0 && nav.stable() && !nav.hasStage()){
             NavImage next=nav.active();
             if(group_>8){
                 const int rank=next.at(flag_);next.at(flag_)=0;
@@ -98,6 +104,7 @@ private:
         ++stats_.released;clear();
     }
     int owner_{-1};std::int64_t start_{};int group_{-1},primary_{-1},flag_{-1},page_{};
+    NavImage before_{},history_{};bool wasSelected_{};
     Stats stats_{};
 };
 }
