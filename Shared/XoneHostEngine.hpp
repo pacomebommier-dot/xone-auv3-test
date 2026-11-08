@@ -845,11 +845,28 @@ private:
                (inputSource>=0||(alternativeFlight_.global&&cmd==0xB0&&data[1]<20))){
                 record(seq,sample,Stage::Decision,Reason::Rejected,0,data,3);return {};
             }
+            // SOC-01: capture the original K2 BASE navigation before legacy TOUCH mutates it.
+            const bool socBaseDown=baseEvent&&cmd==0x90&&data[2]!=0&&!wasHeld;
+            const bool socBaseUp=baseEvent&&(cmd==0x80||(cmd==0x90&&data[2]==0))&&wasHeld;
+            if(socBaseDown){
+                auto& hold=socBaseHolds_[static_cast<unsigned>(physical-4)];hold={};
+                if(!muteBaseOwned&&!mutePageVisible()&&inputRoute.address>=0&&inputRoute.address/1024==2&&
+                   core_.nativeNav().stable()&&!core_.nativeNav().hasStage())
+                    hold={true,gestureMs,core_.nativeNav().active(),core_.nativeNav().undoSnapshot()};
+            }
             const int previousNav=navMode();
             core_.retainDjLoopPage(dj2LoopObserved_!=Dj2LoopObserved::Off || dj2LoopStartRequested_);
             const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs,muteBaseOwned);
             if(accepted)documentDirty_=true;
             if(accepted&&physical>=20&&physical<32)inputRoute=core_.nativeRoute(physical);
+            if(baseEvent&&socBaseUp){
+                auto& hold=socBaseHolds_[static_cast<unsigned>(physical-4)];
+                const auto captured=hold;hold={};
+                if(accepted&&captured.valid&&!muteBaseOwned&&gestureMs>=captured.down&&
+                   gestureMs-captured.down>=200&&core_.nativeNav().stable()&&!core_.nativeNav().hasStage()){
+                    if(core_.nativeNav().restoreLong(captured.before,captured.history))documentDirty_=true;
+                }
+            }
             if(accepted&&baseEvent){
                 auto& reset=resetBaseHolds_[static_cast<unsigned>(physical-4)];
                 const bool down=cmd==0x90&&data[2]!=0;
@@ -1450,6 +1467,7 @@ public:
         sh01a_.stop();shBaseSentMs_=-1;
         traceShIncomplete(sample);
         resetBaseHolds_.fill(ResetBaseHold{});
+        socBaseHolds_.fill(SocBaseHold{});
         started_=true;transportStopped_=true;presetFaceRequest_.store(-1,std::memory_order_release);
         alternativeFlight_={};alternatives_.stop();alternativeBaseValid_.fill(false);
         for(auto& selector:alternativeSelectors_)selector={};
@@ -2785,6 +2803,8 @@ private:
     DjBrowserWindow browser_{};
     struct ResetBaseHold {bool valid{};l01::NavRoute route{};uint64_t navRevision{};int64_t down{};};
     std::array<ResetBaseHold,16> resetBaseHolds_{};
+    struct SocBaseHold {bool valid{};int64_t down{};l01::NavImage before{},history{};};
+    std::array<SocBaseHold,16> socBaseHolds_{};
     std::array<RhythmDial,20> rhythmDials_{};
     std::array<TopCapture,4> topHold_{};
     std::array<TopIntent,4> topIntents_{};
