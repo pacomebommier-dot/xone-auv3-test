@@ -11,7 +11,7 @@ int main(){
     // First press selects immediately; its UP has no captured owner.
     auto c=ready();const auto before=c.nativeNav().active();
     edge(c,36,true,100);const auto selected=c.nativeNav().active();
-    assert(selected!=before && "first diagnostic NAV press selects");
+    assert(!(selected==before) && "first diagnostic NAV press selects");
     edge(c,36,false,150);
     assert(c.nativeNav().active()==selected && "first release leaves selection");
     // Repeated press captures the owner. Short UP clears flag, long UP retains it.
