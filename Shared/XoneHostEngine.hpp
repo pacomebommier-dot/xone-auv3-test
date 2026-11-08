@@ -864,7 +864,7 @@ private:
                 const auto captured=hold;hold={};
                 if(accepted&&captured.valid&&!muteBaseOwned&&gestureMs>=captured.down&&
                    gestureMs-captured.down>=200&&core_.nativeNav().stable()&&!core_.nativeNav().hasStage()){
-                    if(core_.nativeNav().restoreLong(captured.before,captured.history))documentDirty_=true;
+                    if(core_.stageNativeNav(captured.before)&&core_.commitNativeNav())documentDirty_=true;
                 }
             }
             if(accepted&&baseEvent){
