@@ -845,11 +845,35 @@ private:
                (inputSource>=0||(alternativeFlight_.global&&cmd==0xB0&&data[1]<20))){
                 record(seq,sample,Stage::Decision,Reason::Rejected,0,data,3);return {};
             }
+            // SOC-01: only diagnostic NAV TOUCH routes, never a musical BASE owner.
+            const bool socDown=baseEvent&&cmd==0x90&&data[2]!=0&&!wasHeld;
+            const bool socUp=baseEvent&&(cmd==0x80||(cmd==0x90&&data[2]==0))&&wasHeld;
+            if(socDown){
+                auto& h=socNavHolds_[static_cast<unsigned>(physical-4)];h={};
+                if(!muteBaseOwned&&!cueSource&&!memorySource&&!presetSource&&
+                   !core_.longNavPending()&&inputRoute.address>=0&&inputRoute.address/1024==2&&
+                   core_.nativeNav().stable()&&!core_.nativeNav().hasStage())
+                    h={true,gestureMs,core_.nativeNav().active(),0};
+            }
             const int previousNav=navMode();
             core_.retainDjLoopPage(dj2LoopObserved_!=Dj2LoopObserved::Off || dj2LoopStartRequested_);
             const bool accepted=core_.onMidi({14,cmd,data[1],data[2]},gestureMs,muteBaseOwned);
             if(accepted)documentDirty_=true;
             if(accepted&&physical>=20&&physical<32)inputRoute=core_.nativeRoute(physical);
+            if(baseEvent&&socDown){
+                auto& h=socNavHolds_[static_cast<unsigned>(physical-4)];
+                if(h.valid)h.revision=core_.nativeNav().revision();
+            }
+            if(baseEvent&&socUp){
+                auto& h=socNavHolds_[static_cast<unsigned>(physical-4)];
+                const auto old=h;h={};
+                if(accepted&&old.valid&&!muteBaseOwned&&!mutePageVisible()&&
+                   gestureMs>=old.down&&gestureMs-old.down>=200&&
+                   core_.nativeNav().revision()==old.revision&&
+                   core_.nativeNav().stable()&&!core_.nativeNav().hasStage()){
+                    if(core_.stageNativeNav(old.before)&&core_.commitNativeNav())documentDirty_=true;
+                }
+            }
             if(accepted&&baseEvent){
                 auto& reset=resetBaseHolds_[static_cast<unsigned>(physical-4)];
                 const bool down=cmd==0x90&&data[2]!=0;
@@ -1450,6 +1474,7 @@ public:
         sh01a_.stop();shBaseSentMs_=-1;
         traceShIncomplete(sample);
         resetBaseHolds_.fill(ResetBaseHold{});
+        socNavHolds_.fill(SocNavHold{});
         started_=true;transportStopped_=true;presetFaceRequest_.store(-1,std::memory_order_release);
         alternativeFlight_={};alternatives_.stop();alternativeBaseValid_.fill(false);
         for(auto& selector:alternativeSelectors_)selector={};
@@ -2785,6 +2810,8 @@ private:
     DjBrowserWindow browser_{};
     struct ResetBaseHold {bool valid{};l01::NavRoute route{};uint64_t navRevision{};int64_t down{};};
     std::array<ResetBaseHold,16> resetBaseHolds_{};
+    struct SocNavHold {bool valid{};int64_t down{};l01::NavImage before{};uint64_t revision{};};
+    std::array<SocNavHold,16> socNavHolds_{};
     std::array<RhythmDial,20> rhythmDials_{};
     std::array<TopCapture,4> topHold_{};
     std::array<TopIntent,4> topIntents_{};
