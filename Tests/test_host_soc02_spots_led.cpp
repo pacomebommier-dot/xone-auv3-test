@@ -30,14 +30,16 @@ static void check(HostEngine& e,int a,int b,int c){
     const int positions[]{16,20,24};
     for(int k=0;k<3;++k){
         auto led=image[static_cast<unsigned>(positions[k])];
-        assert(led.known&&!led.blinking);
-        assert(led.color==(values[k]?MuteLedColor::Red:MuteLedColor::Off));
+        assert(!led.blinking); // stable state, not a borrowed RESET flash
+        const int saved=live.desired[1768+k];
+        if(saved==-2)assert(values[k]==0&&!led.known);
+        else assert(led.known&&led.color==(values[k]?MuteLedColor::Red:MuteLedColor::Off));
     }
 }
 int main(){
     HostEngine e;
     // Missing LIVE states remain UNKNOWN in documents, but the SOCLE SPOT
-    // default-OFF resolves for input and LEDs without startup MIDI floods.
+    // default-OFF resolves for input, while UNKNOWN LEDs remain dark before a real write.
     assert(!e.desiredLive(1768).known);
     selectInst1(e);check(e,0,0,0);
     auto r=key(e,48,true,20);assert(r.emit&&r.api==384);e.sent(r,0);
