@@ -795,6 +795,12 @@ public:
         // The semantic LED retains authority. A light already shown in a
         // different active color must blink OFF, not receive a second color.
         const auto baseline=ledImage(ms)[static_cast<unsigned>(physical-4)];
+        // A CC may arrive before the first LED render after a source
+        // navigation. Adopt that context NOW so prepareMuteLeds does not
+        // mistake this fresh witness for a stale previous-page flash.
+        if(ledNavRevision_!=navRevision){
+            muteLeds_.cancelFlashes();ledNavRevision_=navRevision;
+        }
         // Never mask an armed NEXT_BAR/MEMORY/PRESET LED blink.
         if(baseline.blinking)return;
         if(baseline.known && baseline.color!=MuteLedColor::Off)
