@@ -38,7 +38,11 @@ int main(){
  assert(!e.desiredLive(350).known&&!e.desiredLive(404).known&&!e.desiredLive(1328).known);
  // Known local SOCLE now supports genuine physical SMART and a MEMORY roundtrip.
  rig.tap(36);const unsigned beforeSpot=rig.post.count;rig.down(48);rig.up(48,220);
- assert(rig.post.contains(beforeSpot,11,384,1)&&rig.post.contains(beforeSpot,11,384,0));
+ // SOC-02 GOLDEN: LONG from OFF enables all three FX, no contradictory OFF.
+  assert(rig.post.contains(beforeSpot,11,384,1)&&
+         rig.post.contains(beforeSpot,11,385,1)&&
+         rig.post.contains(beforeSpot,11,386,1)&&
+         !rig.post.contains(beforeSpot,11,384,0));
  rig.tap(37);assert(e.memoryEngaged(0,0));rig.cc(4,0);rig.cc(4,100);assert(e.desiredLive(1552).value==100);
  rig.tap(37);assert(e.pendingMemorySlot(0)==0&&e.desiredLive(1552).value==100);rig.grid(5);assert(e.desiredLive(1552).value==0);
  // Physical MACHINE mode and common pair SAVE. Modes remain UNKNOWN, outside PATCH36.
