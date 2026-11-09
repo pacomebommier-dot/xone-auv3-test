@@ -11,7 +11,13 @@ if [[ "${SANITIZE:-0}" == 1 ]]; then
 fi
 for src in NativeTests/test_*.cpp Tests/test_host_*.cpp Tests/test_s8_*.cpp; do
   name=$(basename "$src" .cpp)
-  "$compiler" "${flags[@]}" "$src" -o "$out/$name" >"$out/$name.compile.log" 2>&1
+  test_flags=("${flags[@]}")
+  # SOC-06 diagnostic: get a precise ASan/UBSan trace for the MEMORY crash
+  # without changing the historic test's behavior.
+  if [[ "$name" == test_host_memory && "${SANITIZE:-0}" != 1 ]]; then
+    test_flags+=(-O0 -g -fsanitize=address,undefined -fno-omit-frame-pointer)
+  fi
+  "$compiler" "${test_flags[@]}" "$src" -o "$out/$name" >"$out/$name.compile.log" 2>&1
   "$out/$name" >"$out/$name.run.log" 2>&1
   tail -1 "$out/$name.run.log"
 done
