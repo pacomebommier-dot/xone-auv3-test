@@ -608,14 +608,10 @@ public:
                     const int machine=(cell-320)/42,m=s8MachineMode(machine,(cell-320)%42-18);
                     if(m>=1&&m<=4)mode={true,m};else if(machine<8&&activeAlternative(static_cast<unsigned>(machine/2))>=0)mode={};
                 }
-                auto value=core_.nativeLive().desired(cell);
-                // SOC-02: absent persisted effect-switch state is the
-                // source's default OFF for genuine SOCLE 3-FX strips.
-                // Do not write synthetic OFF into the saved LIVE image:
-                // reopening must not emit 48 additional NoteOff packets.
-                if(!value.known && n.at(292)==0 && n.contextMode==0 &&
-                   kind==3 && family>=3 && family<=6 && slot<3)
-                    value={true,0};
+                const auto value=core_.nativeLive().desired(cell);
+                // Uninitialized FX default OFF is resolved on physical
+                // interaction only. Preserve UNKNOWN LED semantics across
+                // native and borrowed-machine views until LIVE is committed.
                 if(value.known&&value.value<=1&&mode.known&&mode.value>=1&&mode.value<=4){
                     MuteLedColor color=MuteLedColor::Red;
                     if(family>=9&&family<=12)color=static_cast<MuteLedColor>(1+(family-9)%3);
