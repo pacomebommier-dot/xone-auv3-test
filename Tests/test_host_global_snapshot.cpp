@@ -4,7 +4,7 @@
 using namespace xone::host;
 static auto session(int value){xone::l01::LiveState::SessionImage s{};s.schema=1;s.config=1;s.revision=1;s.desired.fill(-2);s.desired[1328]=int16_t(value);s.desired[0]=22;s.desired[28]=4;return s;}
 static GridBatch edge(GridKind kind,int ordinal){GridBatch b{};b.valid=true;b.count=1;b.events[0]={kind,0,ordinal};return b;}
-static void cc(HostEngine& h,int value,int ms){uint8_t raw[]={0xbe,16,uint8_t(value)};auto r=h.receive(0,raw,3,ms,ms);assert(r.emit);h.sent(r,0);}
+static void cc(HostEngine& h,int value,int ms){uint8_t raw[]={0xbe,16,uint8_t(value)};auto r=h.receive(0,raw,3,ms,ms);if(!r.emit)std::cerr<<"SOC06 cc failed value="<<value<<" ms="<<ms<<" nav="<<h.navMode()<<" held="<<h.surfaceHeld(4)<<"\n";assert(r.emit);h.sent(r,0);}
 static void button(HostEngine& e,int note,bool down,int ms){uint8_t midi[]={uint8_t(down?0x9e:0x8e),uint8_t(note),uint8_t(down?127:0)};assert(!e.receive(0,midi,3,ms,ms).emit);}
 static void click(HostEngine& e,int note,int ms){button(e,note,true,ms);button(e,note,false,ms+1);}
 int main(){
