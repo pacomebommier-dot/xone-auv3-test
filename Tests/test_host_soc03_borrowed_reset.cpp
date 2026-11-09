@@ -47,11 +47,13 @@ static Strip strip(int family,int page=1) {
 }
 static Strip eq(int side) {
     xone::l01::NavS3 root;assert(root.initializeDefault());
-    Strip s{};s.nav=root.active();s.nav.at(291)=side;s.nav.at(292)=5;
+    Strip s{};s.nav=root.active();s.nav.at(291)=side;s.nav.at(292)=0;
+    // No sound page and no RESET overlay: the bare EQ SPOT already
+    // owns its short/long RESET. Do not treat DRUMS/FILL SOLO like this.
     assert(xone::l01::NavS3::regenerate(s.nav)&&xone::l01::NavS3::validate(s.nav));
     for(int k=0;k<3;++k){
         const int p=20+4*k;const auto r=s.nav.route(p);
-        assert(r.address/1024==1);const auto t=continuousTarget({r.address-1024,r.position});
+        assert(r.address/1024==9);const auto t=continuousTarget({r.address-9*1024,r.position});
         assert(t.valid());s.controls[unsigned(k)]=p;s.cells[unsigned(k)]=t.cell;s.apis[unsigned(k)]=t.api;
     }
     s.color=side?MuteLedColor::Yellow:MuteLedColor::Red;return s;
