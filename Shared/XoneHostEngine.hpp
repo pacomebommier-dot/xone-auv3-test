@@ -1649,6 +1649,12 @@ private:
         }
     }
     std::array<GroupHold,12> groupHolds_{};
+    // SOC-02: source-qualified ON/OFF groups only (SOCLE), distinct from
+    // S7 GROUP pulse and the borrowed RESET contexts.
+    struct SocleSpotGroup {
+        int physical{-1};int64_t down{};std::uint64_t navRevision{};
+        std::array<int,3> cells{},apis{},previous{};int target{};bool fired{};
+    };
     static constexpr std::int64_t SocleSpotLongMs=120;
     void fireSocleSpotGroup(SocleSpotGroup& hold,std::int64_t now) noexcept {
         if(hold.physical<20||hold.physical>=32||hold.fired||
@@ -1791,12 +1797,6 @@ private:
     MuteMidiProjection muteMidi_{};
     MuteLedOutput muteLeds_{};std::uint64_t ledNavRevision_{};std::atomic<bool> ledRefreshRequest_{false};
     struct SpotHold {int cell{-1},api{-1},mode{},previous{};int64_t downMs{};};
-    // SOC-02: source-qualified ON/OFF groups only (SOCLE), distinct from
-    // S7 GROUP pulse and the borrowed RESET contexts.
-    struct SocleSpotGroup {
-        int physical{-1};int64_t down{};std::uint64_t navRevision{};
-        std::array<int,3> cells{},apis{},previous{};int target{};bool fired{};
-    };
     std::array<SocleSpotGroup,12> socleSpotGroups_{};
     static int spotApi(int cell) noexcept {
         if(cell<320&&cell%40>=16&&cell%40<28)return 12*(cell/40)+cell%40-16;
