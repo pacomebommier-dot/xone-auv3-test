@@ -67,12 +67,13 @@ int main(){
  h.advance(420,420);flush(h,1,2);check(h,cells,physical,1);
  assert(!edge(h,physical[0],false,450).emit);
  assert(!h.nextActionPulse().valid);
- // Fresh UNKNOWN opening: first physical press still operates the effect.
+ // DRUMS/FILL were already seeded OFF in the historical opening;
+ // the formerly UNKNOWN INST/YELLOW case is separately tested.
  HostEngine fresh;assert(fresh.setNavForDiagnostic(selected));
- assert(!fresh.desiredLive(cells[0]).known);
+ assert(fresh.desiredLive(cells[0]).known&&fresh.desiredLive(cells[0]).value==0);
  auto first=edge(fresh,physical[0],true,10);assert(first.emit&&first.api==apis[0]&&first.value==1);
  fresh.sent(first,0);
  assert(fresh.desiredLive(cells[0]).known&&fresh.desiredLive(cells[0]).value==1);
  assert(fresh.ledImage()[unsigned(physical[0]-4)].color==MuteLedColor::Green);
- std::cout<<"PASS SOC-02 DRUMS SPOT3 short/long, 120ms, GREEN LED, UNKNOWN opening, no S7 pulse\n";
+ std::cout<<"PASS SOC-02 DRUMS SPOT3 short/long, 120ms, GREEN LED, seeded-OFF opening, no S7 pulse\n";
 }
