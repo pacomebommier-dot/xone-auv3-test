@@ -39,7 +39,7 @@ static unsigned flush(HostEngine& e,int value){
  }
  return count;
 }
-static void pulse(HostEngine& e,int api){
+static void pulse(HostEngine& e,unsigned api){
  auto p=e.nextActionPulse();assert(p.valid&&p.api==api&&p.on);
  e.ackTopPulse(p,true,0);p=e.nextActionPulse();
  assert(p.valid&&p.api==api&&!p.on);e.ackTopPulse(p,true,0);
