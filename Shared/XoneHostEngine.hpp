@@ -2768,10 +2768,14 @@ private:
                 musicalScheduler_.cancel(2,static_cast<uint16_t>(sound));
                 memoryPending_[sound]={};
             }
-            const unsigned family=(sound-12)/8;
-            for(unsigned pending:{family,2u})if(rhythmMemoryPending_[pending].slot==slot){
-                musicalScheduler_.cancel(6,static_cast<uint16_t>(pending));
-                rhythmMemoryPending_[pending]={};
+            // SOC-06: INST/YELLOW owners 0..11 have no rhythm family.
+            // Unsigned (sound-12) underflows and indexes outside [0..2].
+            if(sound>=12){
+                const unsigned family=(sound-12)/8;
+                for(unsigned pending:{family,2u})if(rhythmMemoryPending_[pending].slot==slot){
+                    musicalScheduler_.cancel(6,static_cast<uint16_t>(pending));
+                    rhythmMemoryPending_[pending]={};
+                }
             }
         }
     }
