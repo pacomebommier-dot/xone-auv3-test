@@ -464,10 +464,14 @@ public:
     void observeTransport(bool running) noexcept {if(running&&transportStopped_)muteLeds_.invalidate();transportStopped_=!running;}
     void forgetTransport() noexcept {transportStopped_=false;}
     bool requestMemoryRecall(int owner,int slot) noexcept { documentDirty_=true;
-        if(!memoryEngaged(owner,slot)||(owner<12&&alternativeSourceBusy(owner/3)))return false;
+        const int index=l01::BankS6::memoryIndex(owner,slot);
+        if(index<0||(owner<12&&alternativeSourceBusy(owner/3)))return false;
         l01::BankS6::MemoryRecord saved{};
         if(!readMemory(owner,slot,saved)||!saved.valid||saved.config!=core_.nativeLive().sessionConfig())return false;
         if(!transportStopped_&&!musicalScheduler_.replace(2,static_cast<uint16_t>(owner),ScheduleWhen::NextBeat))return false;
+        // SOC-06: a filled but disengaged slot is still a RECALL target,
+        // never an implicit SAVE just because its active marker was cleared.
+        memoryEngaged_[static_cast<unsigned>(index)]=true;
         memoryPending_[static_cast<unsigned>(owner)]={slot,saved.config,saved.values};
         if(transportStopped_)applyMemoryRecall(static_cast<unsigned>(owner));
         return true;
@@ -2744,9 +2748,13 @@ private:
         unsigned count=1;
         owners[0]=owner;
         if(group>=0)count=rhythmMemoryOwners(group,owners);
-        bool engaged=false;
-        for(unsigned i=0;i<count;++i)engaged|=memoryEngaged(owners[i],slot);
-        if(engaged&&!longPress){
+        bool filled=false;
+        for(unsigned i=0;i<count;++i){
+            l01::BankS6::MemoryRecord record{};
+            filled|=readMemory(owners[i],slot,record)&&record.valid;
+        }
+        // Distinguish EMPTY content from merely disengaged status.
+        if(filled&&!longPress){
             if(group<0)requestMemoryRecall(owner,slot);
             else requestRhythmMemory(group,slot);
             return;
