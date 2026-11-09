@@ -22,9 +22,12 @@ static int tx(HostEngine& e,int expectValue) {
 }
 static void check(HostEngine& e,int a,int b,int c){
     const auto live=e.documentForHost().live;
-    assert(live.desired[1768]==a&&live.desired[1769]==b&&live.desired[1770]==c);
+    const int values[]{a,b,c};
+    for(int k=0;k<3;++k){const int saved=live.desired[1768+k];
+        assert(saved==values[k]||(saved==-2&&values[k]==0));}
+
     const auto image=e.ledImage();
-    const int values[]{a,b,c},positions[]{16,20,24};
+    const int positions[]{16,20,24};
     for(int k=0;k<3;++k){
         auto led=image[static_cast<unsigned>(positions[k])];
         assert(led.known&&!led.blinking);
@@ -33,9 +36,9 @@ static void check(HostEngine& e,int a,int b,int c){
 }
 int main(){
     HostEngine e;
-    // 28 real FX owners, including INST/YELLOW formerly UNKNOWN.
-    for(int owner=0;owner<28;++owner)for(int field=6;field<9;++field)
-        assert(e.desiredLive(xone::l01::FxS6::addressFor(owner,field)).known);
+    // Missing LIVE states remain UNKNOWN in documents, but the SOCLE SPOT
+    // default-OFF resolves for input and LEDs without startup MIDI floods.
+    assert(!e.desiredLive(1768).known);
     selectInst1(e);check(e,0,0,0);
     auto r=key(e,48,true,20);assert(r.emit&&r.api==384);e.sent(r,0);
     r=key(e,48,false,70);assert(!r.emit);check(e,1,0,0); // short: only touched
