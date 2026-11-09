@@ -39,9 +39,9 @@ int main(){
     assert(e.routeForControl(40)==on && "late UP after STOP is inert");
     // The existing test_host_musical_routes exercises real CC4 -> API715.
     assert(e.navMode()==0);
-    // Exhaustively exercise all 16 BASE notes, both header families (3/5)
+    // Exhaustively exercise S1's 16 BASE MIDI notes 24..39 (40..51 are GROUP), both header families (3/5)
     // and both short/long transitions using the true V3 coordinator.
-    for(int note=36;note<52;++note){
+    for(int note=24;note<40;++note){
         xone::l01::CoreCoordinatorV3 c;
         assert(c.initializeSourceDefaultNav());
         c.enableDiagnosticTouchNav(true);
