@@ -45,13 +45,13 @@ static void pulse(HostEngine& e,int api){
  assert(p.valid&&p.api==api&&!p.on);e.ackTopPulse(p,true,0);
  assert(!e.nextActionPulse().valid);
 }
-static void leds(HostEngine& e,const std::array<int,3>& controls,bool on,int ms){
+static void leds(HostEngine& e,const std::array<int,3>& controls,bool on,MuteLedColor color,int ms){
  e.beginRenderBuffer();e.prepareMuteLeds(ms);
  unsigned cursor=0,n=0;
  for(unsigned i=0;i<136;++i){
   auto p=e.nextMuteLedPacket(cursor);if(!p.valid)break;
   for(int control:controls)
-   if(p.target==unsigned(control-4) && p.color==unsigned(on?1:0) && p.on==on)++n;
+   if(p.target==unsigned(control-4) && p.color==unsigned(color)-1 && p.on==on)++n;
   e.ackMuteLedPacket(p,true);
  }
  assert(n==3); // exact physical output for three FX, not only UI snapshot
@@ -97,7 +97,7 @@ int main(){
   verify(e,cells,controls,1,color);
   pulse(e,fill?632:608);
   r=edge(e,controls[0],false,450);assert(!r.emit);
-  leds(e,controls,true,450);
+  leds(e,controls,true,color,450);
   // A mixed group uses the touched SPOT's original state, not majority.
   r=edge(e,controls[1],true,500);assert(!r.emit);
   r=edge(e,controls[1],false,550);assert(r.emit&&r.api==apis[1]&&r.value==0);e.sent(r,0);
@@ -110,7 +110,7 @@ int main(){
   r=edge(e,controls[2],false,920);assert(!r.emit);
   assert(flush(e,0)==3);verify(e,cells,controls,0,color);
   pulse(e,(fill?632:608)+2);
-  leds(e,controls,false,920);
+  leds(e,controls,false,color,920);
  }
  std::cout<<"PASS SOC-02 YELLOW/FILL short vs 120ms long, mixed, S7 pulses and physical LED output\n";
 }
