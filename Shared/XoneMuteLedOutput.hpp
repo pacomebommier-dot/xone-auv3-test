@@ -11,17 +11,27 @@ public:
  struct Packet {bool valid{};unsigned target{},color{};bool on{};std::uint8_t bytes[3]{};};
  void invalidate() noexcept {known_.fill(0);until_.fill(0);owned_=true;}
  void cancelFlashes() noexcept {until_.fill(0);}
+ // CC witness is a temporary visual overlay, NEVER an alteration
+ // of the semantic LED image. GOLDEN CLInterval=50ms; the separate
+ // lock/timer arbitration window is 2*CLInterval=100ms.
  void flash(unsigned position,MuteLedColor color,std::int64_t now) noexcept {
   const auto c=static_cast<unsigned>(color);
-  if(position>=32||c<1||c>3||now<0||now>INT64_MAX-100)return;
-  const auto bit=static_cast<std::uint8_t>(1u<<(c-1));
-  flash_[position]=(known_[position]==7&&sent_[position]==bit)?0:bit;
-  until_[position]=now+100;
+  if(position>=32||c<1||c>3||now<0||now>INT64_MAX-50)return;
+  const auto& base=previous_[position];
+  const auto baseColor=static_cast<unsigned>(base.color);
+  const bool lit=base.known&&baseColor>=1&&baseColor<=3&&
+                 (!base.blinking||(now/100)%2==0);
+  // If any real color is lit, briefly extinguish it. Otherwise blink
+  // the context color. Do not infer status from asynchronous LED ACKs.
+  flash_[position]=lit?0:static_cast<std::uint8_t>(1u<<(c-1));
+  until_[position]=now+50;
  }
  void observeFull(const Image& context,std::int64_t ms) noexcept {
-  owned_=true;count_=34;bool changed=false;
-  for(unsigned i=0;i<34;++i)if(context[i].known!=previous_[i].known||context[i].color!=previous_[i].color||context[i].blinking!=previous_[i].blinking)changed=true;
-  if(changed)cancelFlashes();
+  owned_=true;count_=34;
+  // A state change on another LED must NOT cancel our CC witness; nor
+  // may the witness overwrite a new semantic state after expiry.
+  // Context changes invalidate flashes only at their physical NAV boundary
+  // (HostEngine::prepareMuteLeds) or STOP, not during independent redraws.
   previous_=context;
   for(unsigned i=0;i<34;++i){const auto& led=context[i];const unsigned color=static_cast<unsigned>(led.color);
    const bool lit=led.known&&(!led.blinking||(ms>=0&&(ms/100)%2==0));
