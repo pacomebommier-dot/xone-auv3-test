@@ -1158,12 +1158,16 @@ private:
                     return {};
                 }
             }
-            // A RESET SPOT owns a continuous parameter, never the effect's ON/OFF.
-            // In MUTE the same knob underneath is reset; BASE remain MUTE/SOLO.
+            // RESET overlay borrows the knob (kind1). In bare SOCLE,
+            // without an active sound page, SPOT EQ (kind9) is already a
+            // RESET control: do not require BOT3+BOT4 for this case.
+            // DRUMS/FILL SOLO kind9 under an active page is excluded.
+            const bool socleEq=isBareSocleEqSpot(inputRoute);
             if(accepted&&cmd==0x90&&data[2]!=0&&!wasHeld&&physical>=20&&physical<32&&
-               (inputRoute.address/1024==1||mutePageVisible())){
+               (inputRoute.address/1024==1||mutePageVisible()||socleEq)){
                 std::array<ContinuousTarget,97> scope{};
-                scope[0]=mutePageVisible()?continuousTarget(core_.nativeRoute(physical+20)):
+                scope[0]=socleEq?continuousTarget({inputRoute.address-9*1024,inputRoute.position}):
+                    mutePageVisible()?continuousTarget(core_.nativeRoute(physical+20)):
                     continuousTarget({inputRoute.address-1024,inputRoute.position});
                 const bool reset=resetContinuousTargets(scope,1);
                 // Capture only qualified RESET SPOT owners with three
@@ -1171,9 +1175,11 @@ private:
                 // short individual RESET has already been committed.
                 auto& hold=resetSpotHolds_[static_cast<unsigned>(physical-20)];
                 hold={};
-                if(reset && inputRoute.address>=0 && inputRoute.address/1024==1 &&
+                if(reset && inputRoute.address>=0 &&
+                   (inputRoute.address/1024==1||socleEq) &&
                    core_.nativeNav().stable()&&!core_.nativeNav().hasStage()){
-                    const auto underlying=continuousTarget({inputRoute.address-1024,inputRoute.position});
+                    const int offset=socleEq?9*1024:1024;
+                    const auto underlying=continuousTarget({inputRoute.address-offset,inputRoute.position});
                     if(underlying.valid()&&underlying.cell>=1552&&underlying.cell<1768){
                         ResetSpotHold candidate{};
                         candidate.physical=physical;candidate.down=gestureMs;
@@ -1184,12 +1190,13 @@ private:
                         for(int row=0;row<3;++row){
                             const int other=20+4*row+column;
                             const auto source=core_.nativeRoute(other);
-                            if(source.address!=inputRoute.address||source.address/1024!=1){
+                            if(source.address!=inputRoute.address ||
+                               source.address/1024!=(socleEq?9:1)){
                                 valid=false;break;
                             }
                             candidate.physicalPeers[static_cast<unsigned>(row)]=other;
                             candidate.targets[static_cast<unsigned>(row)]=
-                                continuousTarget({source.address-1024,source.position});
+                                continuousTarget({source.address-offset,source.position});
                             if(!candidate.targets[static_cast<unsigned>(row)].valid())valid=false;
                         }
                         if(valid)hold=candidate;
@@ -1722,6 +1729,15 @@ private:
     std::array<ResetSpotHold,12> resetSpotHolds_{};
     std::array<std::int64_t,12> resetSpotPulseUntil_{};
     std::array<MuteLedColor,12> resetSpotPulseColor_{};
+    bool isBareSocleEqSpot(l01::NavRoute route) const noexcept {
+        const auto& n=core_.nativeNav().active();
+        if(navMode()!=0||n.contextMode!=0||route.address<0||
+           route.address/1024!=9||
+           (route.address%1024)/32!=7+n.at(291))return false;
+        for(int flag=299;flag<=304;++flag)
+            if(n.at(flag)!=0)return false;
+        return true;
+    }
     static MuteLedColor resetSpotColor(int cell) noexcept {
         if((cell>=1600&&cell<1648)||(cell>=1756&&cell<1768))return MuteLedColor::Yellow;
         if(cell>=1648&&cell<1696)return MuteLedColor::Green;
