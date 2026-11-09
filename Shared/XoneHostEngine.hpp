@@ -2269,8 +2269,11 @@ private:
             const int value=defaults.get(globalApi(cell,type),image.config);
             image.desired[cell]=value>=0?value:universal;
         }
-        // MEMORY for each real sound includes three FX switches.
-        for(int owner:{12,13,14,15,16,17,20,21,22,23,24,25})
+        // SOC-02: all 28 instrument/rhythm owners have three known
+        // on/off FX switches at opening. Historically only 12 owners were
+        // seeded, leaving INST/YELLOW SPOT paths silent (UNKNOWN).
+        // Preserve explicitly stored 0/1 values; fill holes only.
+        for(int owner=0;owner<static_cast<int>(l01::FxS6::OwnerCount);++owner)
             for(int field=6;field<9;++field){
                 const auto cell=static_cast<unsigned>(l01::FxS6::addressFor(owner,field));
                 if(image.desired[cell]==-2)image.desired[cell]=0;
