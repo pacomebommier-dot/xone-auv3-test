@@ -39,5 +39,44 @@ int main(){
     assert(e.routeForControl(40)==on && "late UP after STOP is inert");
     // The existing test_host_musical_routes exercises real CC4 -> API715.
     assert(e.navMode()==0);
-    std::cout<<"PASS SOC-01 SOCLE four BASE gestures, true UP, STOP and musical routes\n";
+    // Exhaustively exercise all 16 BASE notes, both header families (3/5)
+    // and both short/long transitions using the true V3 coordinator.
+    for(int note=36;note<52;++note){
+        xone::l01::CoreCoordinatorV3 c;
+        assert(c.initializeSourceDefaultNav());
+        c.enableDiagnosticTouchNav(true);
+        auto send=[&](bool down,int ms){
+            assert(c.onMidi({14,down?144:128,note,down?127:0},ms));
+        };
+        auto selectedFlags=[&](){
+            const auto& n=c.nativeNav().active();
+            return n.at(299)+n.at(300)+n.at(303);
+        };
+        const auto initial=c.nativeNav().active();
+        send(true,10);assert(selectedFlags()==1);
+        const auto selected=c.nativeNav().active();
+        send(false,60);assert(c.nativeNav().active()==selected); // short ON
+        send(true,100);assert(selectedFlags()==0); // temporary OFF starts at DOWN
+        send(false,150);assert(selectedFlags()==0); // short OFF
+        send(true,200);assert(selectedFlags()==1);
+        const auto onAgain=c.nativeNav().active();
+        send(false,400);assert(selectedFlags()==0); // long from OFF restores OFF
+        send(true,450);send(false,500);assert(selectedFlags()==1);
+        const auto onBeforeLong=c.nativeNav().active();
+        send(true,600);assert(selectedFlags()==0);
+        send(false,800);assert(c.nativeNav().active()==onBeforeLong); // long from ON
+        send(true,900);assert(selectedFlags()==0);
+        assert(c.onHostStop());
+        assert(c.nativeNav().active()==onBeforeLong); // STOP cancels pending
+        send(false,910);assert(c.nativeNav().active()==onBeforeLong);
+        assert(!(selected==initial) && !(onAgain==initial));
+        xone::l01::CoreCoordinatorV3 firstLong;
+        assert(firstLong.initializeSourceDefaultNav());
+        firstLong.enableDiagnosticTouchNav(true);
+        const auto before=firstLong.nativeNav().active();
+        assert(firstLong.onMidi({14,144,note,127},10));
+        assert(firstLong.onMidi({14,128,note,0},210));
+        assert(firstLong.nativeNav().active()==before); // initial long with no previous short
+    }
+    std::cout<<"PASS SOC-01 SOCLE 16 BASE gestures, true UP, STOP and musical routes\n";
 }
