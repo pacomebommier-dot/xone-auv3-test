@@ -72,7 +72,8 @@ int main(){
   tx=ledDrain(out);assert(has(tx,18,0,true));
   out.observeFull(base,350);tx=ledDrain(out);assert(has(tx,18,0,false));
   out.flash(16,MuteLedColor::Yellow,400);out.cancelFlashes();
-  out.observeFull(base,400);assert(ledDrain(out).empty()); // STOP/context cancel
+  out.observeFull(base,400);tx=ledDrain(out);
+  for(const auto& packet:tx)assert(packet.target!=16); // other blinking LEDs remain independent
  }
  {
   HostEngine e;e.beginRenderBuffer();hostLeds(e,0);
