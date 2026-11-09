@@ -56,6 +56,20 @@ int main(){
  }
 
  HostEngine h;auto n=page();assert(h.setNavForDiagnostic(n));assert(h.restoreSessionBeforeRendering(session()));
+ // SOC-06: an existing but disengaged MEMORY is FILLED, not EMPTY.
+ // Short must RECALL rather than overwriting its original revision.
+ {
+  HostEngine e;const auto n=page(3,1);
+  assert(e.setNavForDiagnostic(n)&&e.restoreSessionBeforeRendering(session()));
+  const int p=memoryButton(n,0);physical(e,p,10);
+  xone::l01::BankS6::MemoryRecord m{};
+  assert(e.readMemory(0,0,m)&&m.valid&&m.revision==1);
+  assert(e.requestSourceRecall(0,3));GridBatch b{};b.valid=true;b.count=1;
+  b.events[0]={GridKind::Bar,0,4};e.onMusicalGrid(b);
+  assert(!e.memoryEngaged(0,0)&&e.readMemory(0,0,m)&&m.revision==1);
+  physical(e,p,20);
+  assert(e.pendingMemorySlot(0)==0&&e.readMemory(0,0,m)&&m.revision==1);
+ }
  // SOC-06: INST/YELLOW MEMORY now use the same true-UP grammar as DRUMS/FILL.
  // No RECALL is fired before the physical UP confirms a SHORT.
  for(int family:{3,4}){
