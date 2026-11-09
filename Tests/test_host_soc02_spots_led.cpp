@@ -21,18 +21,19 @@ static int tx(HostEngine& e,int expectValue) {
     return count;
 }
 static void check(HostEngine& e,int a,int b,int c){
-    const auto live=e.documentForHost().live;
     const int values[]{a,b,c};
-    for(int k=0;k<3;++k){const int saved=live.desired[1768+k];
-        assert(saved==values[k]||(saved==-2&&values[k]==0));}
+    for(int k=0;k<3;++k){
+        const auto saved=e.desiredLive(1768+k);
+        assert((saved.known&&saved.value==values[k])||(!saved.known&&values[k]==0));
+    }
 
     const auto image=e.ledImage();
     const int positions[]{16,20,24};
     for(int k=0;k<3;++k){
         auto led=image[static_cast<unsigned>(positions[k])];
         assert(!led.blinking); // stable state, not a borrowed RESET flash
-        const int saved=live.desired[1768+k];
-        if(saved==-2)assert(values[k]==0&&!led.known);
+        const auto saved=e.desiredLive(1768+k);
+        if(!saved.known)assert(values[k]==0&&!led.known);
         else assert(led.known&&led.color==(values[k]?MuteLedColor::Red:MuteLedColor::Off));
     }
 }
