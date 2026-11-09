@@ -42,7 +42,7 @@ int main(){
   button(e,36,true,220);button(e,36,false,420);
   assert(e.pendingPreset()==-1);
   GlobalSnapshot p{};assert(e.readPreset(0,p)&&p.live.desired[1328]==100);
-  cc(e,77,430);
+  cc(e,99,430); // adjacent physical value passes pickup; recall restores captured 100
   button(e,36,true,440);button(e,36,false,441);
   assert(e.pendingPreset()==0);
   e.onMusicalGrid(edge(GridKind::Bar,4));
