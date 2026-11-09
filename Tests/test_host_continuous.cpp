@@ -70,8 +70,14 @@ int main() {
     assert(rapid.consider(0,0,64,61,20)==-1);
     assert(rapid.consider(0,0,64,60,30)==60); // source direction reversal acquisition
     ContinuousPickup catchup;
-    for(int i=0;i<99;++i)assert(catchup.consider(0,0,64,0,i*2)==-1);
-    assert(catchup.consider(0,0,64,0,198)==58); // source 100th attempt, 1/10 catch-up
+    // A duplicate of the same physical value is now the explicit GOLDEN
+    // bypass. Exercise 100 genuinely different *far* CC messages instead:
+    // 0..49 then 48..0, just one reversal before the final attempt.
+    for(int i=0;i<99;++i){
+        const int raw=i<50?i:98-i;
+        assert(catchup.consider(0,0,64,raw,i*2)==-1);
+    }
+    assert(catchup.consider(0,0,64,1,198)==58); // source 100th miss, ~1/10 catch-up
 
     assert(pickup.desiredLive(1328).value==64);
     std::cout<<"PASS host physical CC->source target->pickup->LIVE->S4 MIDI7..14, UNKNOWN, no observed inference\n";

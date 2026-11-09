@@ -32,7 +32,12 @@ class ContinuousPickup {
 public:
     ContinuousPickup() noexcept {physical_.fill(-1);}
     // Caller has checked known LIVE, channel, route and monotonic gesture time.
-    int consider(int cc,int api,int previous,int raw,int64_t now) noexcept {
+    // One logical destination owns the pickup history; a physical CC
+    // remembers which logical API it most recently controlled.
+    // feedback is a short LIVE cue, not a persistent LED state. It is raised
+    // only for actual output, first fast crossing, or assisted glide.
+    int consider(int cc,int api,int previous,int raw,int64_t now,bool* feedback=nullptr) noexcept {
+        if(feedback)*feedback=false;
         if(cc<0||cc>=20||api<0||api>=931||previous<0||previous>127||raw<0||raw>127||now<0)return -1;
         auto& a=state_[static_cast<std::size_t>(api)];
         const auto age=a.time<0?now+1:now-a.time;
@@ -40,14 +45,19 @@ public:
         const int threshold=a.time<0?4:age<51?12:age<151?6:4;
         const int distance=raw>=previous?raw-previous:previous-raw;
         const bool fresh=physical_[static_cast<std::size_t>(cc)]!=api||a.known!=previous;
+        // GOLDEN @MessageCC: same Index + same physical Velocity as the
+        // previous message bypasses the barrier, even outside tolerance.
+        // Never apply this to a NEW route or a changed logical target.
+        const bool repeated=!fresh&&a.wait&&a.time>=0&&a.raw==raw;
         if(fresh){a.wait=true;a.initialDistance=distance;a.direction=0;a.attempts=0;a.previousDirection=0;a.age=0;a.reversals=0;}
         const int direction=a.raw<0?0:raw>a.raw?1:raw<a.raw?-1:0;
         int output=-1;
-        if(!a.wait)output=raw;
+        bool firstFastPass=false;
+        if(repeated||!a.wait)output=raw;
         else if(distance<=threshold){
             if((fresh&&2*a.initialDistance<3*threshold+1)||threshold<12)output=raw;
             else if(a.direction!=0){if((direction!=0&&direction!=a.direction)||age>a.age+50)output=raw;}
-            else if(direction!=0)a.direction=direction;
+            else if(direction!=0){a.direction=direction;firstFastPass=true;}
         }else{
             if(direction!=0&&a.previousDirection!=0&&direction!=a.previousDirection)++a.reversals;
             ++a.attempts;
@@ -56,6 +66,8 @@ public:
             if(direction!=0)a.previousDirection=direction;
             a.age=age;
         }
+        // The cue is transient and never changes the owner or LIVE value.
+        if(feedback)*feedback=output>=0||firstFastPass;
         // Source type2 catch-up does not latch pickup; only direct acquisition does.
         if(output==raw){a.wait=false;a.direction=0;a.attempts=0;}
         a.known=output>=0?output:previous;physical_[static_cast<std::size_t>(cc)]=api;a.raw=raw;a.time=now;
