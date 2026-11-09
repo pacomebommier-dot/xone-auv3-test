@@ -68,7 +68,10 @@ int main(){
   // Short one: immediate CC and temporary LED only while held.
   edge(h,physical[0],true,10);flush(h,apis,value,1);
   assert(h.desiredLive(cells[0]).value==value);
-  inspect(h,physical,color,10,false); // peers remain dark; inspect single below
+  {const auto led=h.ledImage(10);assert(led[unsigned(physical[0]-4)].known&&
+     led[unsigned(physical[0]-4)].color==color);
+   assert(led[unsigned(physical[1]-4)].color==MuteLedColor::Off&&
+          led[unsigned(physical[2]-4)].color==MuteLedColor::Off);}
   edge(h,physical[0],false,60);
   inspect(h,physical,color,60,false);
   assert(h.desiredLive(cells[1]).value==64&&h.desiredLive(cells[2]).value==64);
