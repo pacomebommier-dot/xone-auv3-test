@@ -755,18 +755,42 @@ public:
         return image;
     }
     void pickupLedFeedback(int cc,int64_t ms) noexcept {
-        if(cc<4||cc>15)return;
-        const auto route=core_.nativeRoute(16+cc);
-        int cell=-1,modeCell=-1;
-        if(route.address<0||route.address/1024!=3||!l01::LiveState::spotAddresses(route.address,route.position,cell,modeCell))return;
-        const int family=(route.address%1024)/32;int mode=1;
-        if(family==1||family==2){auto v=core_.nativeLive().desired(modeCell);mode=v.known?v.value:-2;
-            if(family==1){const int m=s8SampleMode(cell/40,cell%40-16);if(m>=1&&m<=4)mode=m;}
-            else {const int machine=(cell-320)/42,m=s8MachineMode(machine,(cell-320)%42-18);
-                if(m>=1&&m<=4)mode=m;else if(machine<8&&activeAlternative(static_cast<unsigned>(machine/2))>=0)mode=-2;}
-        }
-        if(mode<1||mode>4)return;
-        muteLeds_.flash(static_cast<unsigned>(cc+12),mode==2?MuteLedColor::Green:mode==3?MuteLedColor::Yellow:MuteLedColor::Red,ms);
+        if(cc<4||cc>15||ms<0||mutePageVisible())return;
+        const int physical=16+cc; // CC4..15 -> physical SPOT20..31
+        // A pressed RESET/SPOT and a visible MUTE state have priority over
+        // a pot rotation: neither LED nor its momentary 100ms group cue
+        // may be stolen by the CC witness.
+        if(surfaceHeld(static_cast<unsigned>(physical)))return;
+        const auto route=core_.nativeRoute(physical);
+        if(route.address<0||route.position<0)return;
+        const int kind=route.address/1024,family=(route.address%1024)/32;
+        MuteLedColor color=MuteLedColor::Red;
+        if(kind==3){
+            int cell=-1,modeCell=-1;
+            if(!l01::LiveState::spotAddresses(route.address,route.position,cell,modeCell))return;
+            int mode=1;
+            if(family==1||family==2){
+                const auto v=core_.nativeLive().desired(modeCell);mode=v.known?v.value:-2;
+                if(family==1){const int m=s8SampleMode(cell/40,cell%40-16);if(m>=1&&m<=4)mode=m;}
+                else {const int machine=(cell-320)/42,m=s8MachineMode(machine,(cell-320)%42-18);
+                    if(m>=1&&m<=4)mode=m;
+                    else if(machine<8&&activeAlternative(static_cast<unsigned>(machine/2))>=0)mode=-2;}
+            }
+            if(mode<1||mode>4)return;
+            color=mode==2||family==5||family==14?MuteLedColor::Green:
+                  mode==3||family==4?MuteLedColor::Yellow:MuteLedColor::Red;
+            if(family>=9&&family<=12)color=static_cast<MuteLedColor>(1+(family-9)%3);
+        }else if(kind==1 && family>=3&&family<=6 && route.position<6){
+            color=family==4?MuteLedColor::Yellow:family==5?MuteLedColor::Green:MuteLedColor::Red;
+        }else if(kind==9 && (family==7||family==8) && route.position<6){
+            color=family==8?MuteLedColor::Yellow:MuteLedColor::Red;
+        }else return;
+        // The semantic LED retains authority. A light already shown in a
+        // different active color must blink OFF, not receive a second color.
+        const auto baseline=ledImage(ms)[static_cast<unsigned>(physical-4)];
+        if(baseline.known && baseline.color!=MuteLedColor::Off)
+            color=baseline.color;
+        muteLeds_.flash(static_cast<unsigned>(cc+12),color,ms);
     }
     void requestLedRefresh() noexcept {ledRefreshRequest_.store(true,std::memory_order_release);}
     void refreshLeds() noexcept {muteLeds_.invalidate();}
@@ -2093,8 +2117,9 @@ private:
         const int shIndex=sh01aIndexForCell(target.cell);
         const int observed=shIndex>=0?sh01a_.mirror().live(sh01a_.attachment().image.profile.cc[static_cast<unsigned>(shIndex)]):-2;
         const int reference=shIndex>=0?(observed>=0?observed:raw):(live.known?live.value:raw);
-        const int value=pickup_.consider(cc,target.api,reference,raw,ms);
-        pickupLedFeedback(cc,ms);
+        bool pickupWitness=false;
+        const int value=pickup_.consider(cc,target.api,reference,raw,ms,&pickupWitness);
+        if(pickupWitness)pickupLedFeedback(cc,ms);
         if(value<0){record(seq,sample,Stage::Decision,Reason::PickupWait,0,nullptr,0);return {};}
         const bool loop=(target.api>=569&&target.api<=571)||target.api==573;
         auto projection=core_.output();
