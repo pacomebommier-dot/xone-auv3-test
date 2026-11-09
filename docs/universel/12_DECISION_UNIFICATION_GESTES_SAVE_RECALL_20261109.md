@@ -1,7 +1,7 @@
 # XONE AUv3 — DÉCISION UTILISATEUR DU 09/11/2026
 ## SOC-06 — Unification des gestes SAVE / RECALL (complément à SOC-01..05)
 
-**Statut : décision de comportement NEW validée par l'utilisateur ; implémentation et tests de régression à réaliser avant recette IPA.**
+**Statut : décision NEW validée ; implémentation SOC-06 publiée dans la PR #24 ; CI complète, build iOS et recette physique AUM encore à confirmer avant IPA.**
 **Autorité :** présente décision, postérieure aux arbitrages des 02/10 et 05/11, prévaut **uniquement pour la gestuelle SAVE/RECALL des emplacements utilisateur**. Elle ne remplace ni le GOLDEN (provenance), ni les règles musicales de rappel, ni les exceptions SH-01A, ni les règles des gestes de navigation hors de ce conflit.
 
 ### Règle transversale, toujours décidée au VRAI NoteOff / relâchement
@@ -17,13 +17,13 @@ Pour tout slot de mémoire utilisateur SAVE/RECALL concerné :
 ### Matrice normative à appliquer à l'APP
 | Commande physique | Slot vide : COURT ou LONG | Slot rempli : COURT | Slot rempli : LONG | Remarques |
 |---|---|---|---|---|
-| MEMORY INST/YELLOW, slots locaux | SAVE initial | RECALL au NEXT_BEAT | SAVE / remplacer | **Écart actuel APP :** ancienne logique court capture/recall, pas de LONG save distinct ; à corriger. |
+| MEMORY INST/YELLOW, slots locaux | SAVE initial | RECALL au NEXT_BEAT | SAVE / remplacer | **Codé SOC-06 :** vrai UP court/long, protection de l'indexation des propriétaires INST/YELLOW ; tests natifs spécifiques PASS. |
 | MEMORY DRUMS/FILL, individuel ou groupé (1–3) | SAVE initial, y compris groupé | RECALL au NEXT_BEAT | SAVE / remplacer sur la portée son/groupe | Déjà spécifié 05/11 ; préserver le LIVE d'ouverture des membres vides pour rappel groupé et le statut vide. |
 | PATCH INST/YELLOW via CUE/LOAD1–3 | SAVE initial | RECALL au NEXT_BAR | SAVE / remplacer | Règle 05/11 conservée ; application au vrai relâchement. |
 | BASE local via CUE4 | N/A : référence BASE existante / initialisée | RECALL BASE | SAVE BASE complet | Ne crée pas PATCH4 ; destination et FX capturés, SH spécial. |
 | PATCH SAMPLE via TOP1–3 | SAVE initial | RECALL PATCH | SAVE / remplacer PATCH | **NOUVEAU :** TOP seul décide COURT/LONG. Supprime la nécessité BOT2 tenu + TOP pour SAVE. |
 | PATCH MACHINE via TOP1–3 | SAVE initial | RECALL PATCH | SAVE / remplacer PATCH | **NOUVEAU :** TOP seul décide COURT/LONG. Supprime la nécessité BOT3 tenu + TOP pour SAVE. |
-| PRESET global, slots1–4 | SAVE initial | RECALL au NEXT_BAR | SAVE / remplacer snapshot global | À implémenter/vérifier comme les autres slots ; ne pas confondre avec RED. |
+| PRESET global, slots1–4 | SAVE initial | RECALL au NEXT_BAR | SAVE / remplacer snapshot global | **Codé SOC-06 :** qualification au vrai UP, RED inchangé ; tests natifs spécifiques PASS. |
 
 ### Suppression de l'ancien conflit BOT / TOP
 - Les anciennes commandes **SAMPLE : BOT2 maintenu + TOP1–3 = SAVE** et **MACHINE : BOT3 maintenu + TOP1–3 = SAVE** sont **supplantées** dans NEW par **TOP1–3 LONG = SAVE**, **TOP1–3 COURT = RECALL** (ou SAVE initial si vide).
@@ -59,4 +59,6 @@ Pour tout slot de mémoire utilisateur SAVE/RECALL concerné :
 - [Moteur APP](../../Shared/XoneHostEngine.hpp)
 - [PR pré-IPA SOC-01..05, qui accueille ce SOC-06](https://github.com/pacomebommier-dot/xone-auv3-test/pull/24)
 
-**État d'implémentation à la rédaction :** le code actuel accepte encore les raccourcis historiques BOT2+TOP/BOT3+TOP. **MACHINE TOP LONG est déjà partiellement codé** dans `armMachinePatch(index,longPress)` ; il faut le tester sans BOT sur les différents profils et supprimer l'ancien chemin supplémentaire. **SAMPLE TOP LONG** n'a pas encore la branche SAVE autonome ; **MEMORY INST/YELLOW** et **PRESET** n'ont pas encore leur distinction LONG SAVE au vrai UP. Les tests de SAVE MACHINE par BOT3+TOP existent (`test_host_s8_machine_patch.cpp`) ; ne pas confondre un refus sous profil UNKNOWN avec une impossibilité générale. Ce document **enregistre la décision**, pas une correction logicielle exécutée.
+**Suivi de réalisation au 09/11/2026 :** les raccourcis SAVE BOT2+TOP/BOT3+TOP ont été supprimés du host ; SAMPLE/MACHINE TOP1–3 qualifient au vrai UP ; BOT2 LONG de SAMPLE ouvre MUTE momentanément puis revient à l'état d'origine ; BOT3 LONG de MACHINE ouvre GLOBAL momentanément puis revient à MACHINE. MEMORY INST/YELLOW et PRESET distinguent désormais SAVE long et RECALL court. Les programmes SH-01A restent exclusivement sous WRITE physique.
+
+La correction de sécurité `1e90683` empêche les propriétaires INST/YELLOW d'indexer les files rhythm hors plage. Les superpositions PRESET/RESET ne déclenchent pas un SAVE SAMPLE parasite (`dc6c15b`). Les tests SOC-06 SAMPLE, MACHINE, MEMORY, PRESET et le banc Apple ont passé dans les CI intermédiaires. **La CI complète du HEAD, les sanitizers, le build iOS et la recette physique AUM restent à clôturer.** Ce statut n'est pas une déclaration d'IPA signée/prête.
