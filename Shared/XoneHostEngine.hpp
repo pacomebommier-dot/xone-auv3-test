@@ -1160,6 +1160,10 @@ private:
                 // newly initialized individual SPOT from the same note.
                 if(groupHolds_[static_cast<unsigned>(physical-20)].active)return {};
                 auto& group=socleSpotGroups_[static_cast<unsigned>(physical-20)];
+                // A real UP exactly at 120 ms must qualify the group even
+                // without an intervening render-timer tick.
+                if(!down && wasHeld && group.physical==physical)
+                    fireSocleSpotGroup(group,gestureMs,true);
                 if(!down && wasHeld && group.physical==physical && group.fired){
                     group={};
                     spots_[static_cast<unsigned>(physical-20)]={};
@@ -1659,13 +1663,14 @@ private:
         std::array<int,3> cells{},apis{},previous{};int target{};bool fired{};
     };
     static constexpr std::int64_t SocleSpotLongMs=120;
-    void fireSocleSpotGroup(SocleSpotGroup& hold,std::int64_t now) noexcept {
+    void fireSocleSpotGroup(SocleSpotGroup& hold,std::int64_t now,
+                            bool acceptedPhysicalRelease=false) noexcept {
         if(hold.physical<20||hold.physical>=32||hold.fired||
            now<hold.down||now-hold.down<SocleSpotLongMs)return;
         const auto& nav=core_.nativeNav();
         if(!nav.stable()||nav.hasStage()||nav.revision()!=hold.navRevision||
            navMode()!=0||nav.active().contextMode!=0||mutePageVisible()||
-           !surfaceHeld(static_cast<unsigned>(hold.physical))||
+           (!acceptedPhysicalRelease && !surfaceHeld(static_cast<unsigned>(hold.physical)))||
            core_.longNavPending())return;
         std::array<int,97> cells{},values{};
         unsigned count=0;
