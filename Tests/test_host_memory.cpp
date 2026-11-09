@@ -1,6 +1,7 @@
 #include "../Shared/XoneHostEngine.hpp"
 #include <cassert>
 #include <iostream>
+#include <memory>
 using namespace xone::host;
 static xone::l01::NavImage page(int family=3,int selection=1){
  xone::l01::NavS3 nav;assert(nav.initializeDefault());auto n=nav.active();int root=family==4||family==6;
@@ -18,7 +19,7 @@ static auto session(){xone::l01::LiveState::SessionImage s{};s.schema=1;s.config
 }
 static auto beat(){GridBatch b{};b.valid=true;b.count=1;b.events[0]={GridKind::Beat,0,1};return b;}
 int main(){
- {HostEngine e;assert(e.restoreSessionBeforeRendering(session()));assert(e.captureMemory(0,0));assert(e.requestMemoryRecall(0,0));
+ {auto engine=std::make_unique<HostEngine>();HostEngine& e=*engine;assert(e.restoreSessionBeforeRendering(session()));assert(e.captureMemory(0,0));assert(e.requestMemoryRecall(0,0));
   auto replacement=session();replacement.desired[1552]=77;assert(e.requestSessionRestore(replacement));e.beginRenderBuffer();
   assert(e.pendingMemorySlot(0)==-1);e.onMusicalGrid(beat());assert(e.desiredLive(1552).value==77);}
 
@@ -28,12 +29,12 @@ int main(){
   auto n=page(family,selection);xone::l01::NavS3 nav;assert(nav.initializeDefault());assert(nav.stage(n)&&nav.commit());
   unsigned found=0;for(int p=4;p<20;++p){int owner=-1,slot=-1;if(!HostEngine::deriveMemory(nav,p,owner,slot))continue;
    int expected=family<5?6*(family-3)+selection-1-(selection>4):12+8*(family-5)+selection-1;
-   assert(owner==expected);++found;HostEngine e;assert(e.setNavForDiagnostic(n));assert(e.restoreSessionBeforeRendering(session()));
+   assert(owner==expected);++found;auto engine=std::make_unique<HostEngine>();HostEngine& e=*engine;assert(e.setNavForDiagnostic(n));assert(e.restoreSessionBeforeRendering(session()));
    physical(e,p,1);assert(e.memoryEngaged(owner,slot));xone::l01::BankS6::MemoryRecord stored{};assert(e.readMemory(owner,slot,stored)&&stored.valid&&stored.values[0]==50);
   }assert(found==unsigned(family<5?4:3));
  }
  for(int source=0;source<4;++source)for(int patch=0;patch<2;++patch){
-  HostEngine e;auto s=session();for(unsigned g=0;g<4;++g)for(unsigned f=0;f<60;++f)s.desired[SourcePatchBank::cell(g,f)]=f%30<18?71:0;
+  auto engine=std::make_unique<HostEngine>();HostEngine& e=*engine;auto s=session();for(unsigned g=0;g<4;++g)for(unsigned f=0;f<60;++f)s.desired[SourcePatchBank::cell(g,f)]=f%30<18?71:0;
   assert(e.restoreSessionBeforeRendering(s));assert(e.saveSourcePatch(source,0));
   for(int owner=0;owner<12;++owner){assert(e.captureMemory(owner,0));assert(e.requestMemoryRecall(owner,0));}
   assert(e.requestSourceRecall(source,patch?0:3));
@@ -43,19 +44,19 @@ int main(){
    assert(e.desiredLive(xone::l01::FxS6::addressFor(owner,0)).value==(owner/3==source&&!patch?0:50));}
   e.onMusicalGrid(beat());assert(e.desiredLive(1552+24*source).value==(patch?50:0));
  }
- {HostEngine e;assert(e.restoreSessionBeforeRendering(session()));assert(e.captureMemory(0,0));assert(e.captureMemory(3,0));
+ {auto engine=std::make_unique<HostEngine>();HostEngine& e=*engine;assert(e.restoreSessionBeforeRendering(session()));assert(e.captureMemory(0,0));assert(e.captureMemory(3,0));
   assert(e.requestSourceRecall(0,3));assert(e.requestMemoryRecall(0,0));assert(e.requestMemoryRecall(3,0));
   GridBatch b{};b.valid=true;b.count=1;b.events[0]={GridKind::Bar,0,4};e.onMusicalGrid(b);
   assert(!e.memoryEngaged(0,0)&&e.memoryEngaged(3,0));assert(e.desiredLive(1552).value==0&&e.desiredLive(1576).value==50);
  }
- {HostEngine e;assert(e.restoreSessionBeforeRendering(session()));assert(e.captureMemory(0,0));assert(e.captureMemory(0,1));assert(e.captureMemory(3,0));
+ {auto engine=std::make_unique<HostEngine>();HostEngine& e=*engine;assert(e.restoreSessionBeforeRendering(session()));assert(e.captureMemory(0,0));assert(e.captureMemory(0,1));assert(e.captureMemory(3,0));
   assert(e.requestMemoryRecall(0,0));assert(!e.requestMemoryRecall(0,3));assert(e.pendingMemorySlot(0)==0);
   assert(e.requestMemoryRecall(0,1));assert(e.pendingMemorySlot(0)==1);assert(e.requestMemoryRecall(3,0));
   e.stop(0);assert(e.pendingMemorySlot(0)==-1&&e.pendingMemorySlot(3)==-1);e.onMusicalGrid(beat());assert(!e.nextSourcePacket().valid);
   xone::l01::BankS6::MemoryRecord saved{};assert(e.readMemory(0,1,saved)&&saved.valid);
  }
 
- HostEngine h;auto n=page();assert(h.setNavForDiagnostic(n));assert(h.restoreSessionBeforeRendering(session()));
+ auto host=std::make_unique<HostEngine>();HostEngine& h=*host;auto n=page();assert(h.setNavForDiagnostic(n));assert(h.restoreSessionBeforeRendering(session()));
  int p=memoryButton(n,0);physical(h,p,1); // first inactive engagement captures, no recall
  int cc=-1;for(int j=36;j<56;++j)if(continuousTarget(n.route(j)).cell==1552)cc=j-36;assert(cc>=0);
  uint8_t raw[]={0xbe,uint8_t(cc),50};auto result=h.receive(0,raw,3,3,3);assert(result.emit);h.sent(result,0);
