@@ -18,15 +18,20 @@ int main(){
  auto yellow=e.nextTopPulse();assert(yellow.valid&&yellow.api==680);
  assert(top(e,3,32).route==global);
  edge(e,13,true,40);edge(e,14,true,50);edge(e,14,false,60);edge(e,13,false,70);assert(e.navMode()==3);
- auto sample=top(e,0,80);assert(sample.action==HostEngine::TopAction::PatchRecall&&sample.route.position==0);
+ const auto sampleRoute=e.routeForControl(32);
+ edge(e,52,true,80);edge(e,52,false,81);
+ HostEngine::TopIntent refused{};
+ assert(!e.lastTopIntent(0,refused)&&!e.samplePatchPending()&&e.sampleSavesRefused()==1); // EMPTY SHORT attempts SAVE; UNKNOWN rejects
  assert(top(e,3,90).route==global);
  // SOC-06: BOT2 short is the MUTE toggle even while SAMPLE is underneath.
  edge(e,13,true,100);edge(e,13,false,110);assert(e.navMode()==3&&e.mutePageVisible());
  edge(e,13,true,111);edge(e,13,false,112);assert(e.navMode()==3&&!e.mutePageVisible());
- auto sampleAgain=top(e,0,120);assert(sampleAgain.action==HostEngine::TopAction::PatchRecall&&sampleAgain.route==sample.route);
+ edge(e,52,true,120);edge(e,52,false,121);
+ assert(!e.lastTopIntent(0,refused)&&!e.samplePatchPending()&&e.sampleSavesRefused()==2); // no silent RECALL
  assert(top(e,3,130).route==global);
  edge(e,14,true,140);edge(e,15,true,150);edge(e,15,false,160);edge(e,14,false,170);assert(e.navMode()==5);
- auto reset=top(e,0,180);assert(reset.action==HostEngine::TopAction::PatchRecall&&reset.route==sample.route);
+ auto reset=top(e,0,180);assert(reset.action==HostEngine::TopAction::PatchRecall&&reset.route==sampleRoute);
+ assert(e.sampleSavesRefused()==2); // overlay never tries to SAVE
  assert(top(e,3,190).route==global);
  assert(!e.desiredLive(1476).known); // no invented FILTER GLOBAL reset/default
  e.stop(200*48);HostEngine::TopIntent out{};assert(!e.lastTopIntent(0,out));
