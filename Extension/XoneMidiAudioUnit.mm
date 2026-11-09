@@ -471,10 +471,14 @@ bool decodeSharedShBase(NSData *bytes,xone::host::ShSourceBaseImage& image) {
         // Rendering progresses while transport is stopped; seeking cannot rewind gestures.
         *elapsedMs += 1000.0 * frameCount / rate;
         engine->advance(static_cast<int64_t>(*elapsedMs), bufferStart+frameCount);
-        // The 120 ms GROUP/LONG threshold can become due on this render's
-        // timer advance. Emit at its final valid sample, not one full render
-        // buffer later. Never send an event at bufferStart+frameCount (outside).
-        if(frameCount)flushTop(bufferStart+frameCount-1);
+        // SOC-02: the 120 ms SPOT timer may queue the three local FX
+        // ON/OFF SourcePackets in advance(), after the MIDI-event flush.
+        // Drain them in THIS buffer together with the independently qualified
+        // S7 GROUP pulse. Never send at bufferStart+frameCount (out of range).
+        if(frameCount){
+            flushSource(bufferStart+frameCount-1);
+            flushTop(bufferStart+frameCount-1);
+        }
         flushMuteLeds(bufferStart+(frameCount?frameCount-1:0),static_cast<int64_t>(*elapsedMs));
         engine->endRenderBuffer();
         // Aucune production audio. Rendre un tampon silencieux si fourni.
