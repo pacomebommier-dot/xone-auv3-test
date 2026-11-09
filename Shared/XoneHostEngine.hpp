@@ -608,7 +608,14 @@ public:
                     const int machine=(cell-320)/42,m=s8MachineMode(machine,(cell-320)%42-18);
                     if(m>=1&&m<=4)mode={true,m};else if(machine<8&&activeAlternative(static_cast<unsigned>(machine/2))>=0)mode={};
                 }
-                const auto value=core_.nativeLive().desired(cell);
+                auto value=core_.nativeLive().desired(cell);
+                // SOC-02: absent persisted effect-switch state is the
+                // source's default OFF for genuine SOCLE 3-FX strips.
+                // Do not write synthetic OFF into the saved LIVE image:
+                // reopening must not emit 48 additional NoteOff packets.
+                if(!value.known && n.at(292)==0 && n.contextMode==0 &&
+                   kind==3 && family>=3 && family<=6 && slot<3)
+                    value={true,0};
                 if(value.known&&value.value<=1&&mode.known&&mode.value>=1&&mode.value<=4){
                     MuteLedColor color=MuteLedColor::Red;
                     if(family>=9&&family<=12)color=static_cast<MuteLedColor>(1+(family-9)%3);
@@ -1667,8 +1674,9 @@ private:
         std::array<int,97> cells{},values{};
         unsigned count=0;
         for(unsigned k=0;k<3;++k){
-            const auto live=core_.nativeLive().desired(hold.cells[k]);
-            if(!live.known||live.value>1)return;
+            auto live=core_.nativeLive().desired(hold.cells[k]);
+            if(!live.known)live={true,0}; // only qualified SOCLE group cells
+            if(live.value>1)return;
             if(live.value!=hold.target){
                 cells[count]=hold.cells[k];values[count]=hold.target;++count;
             }
@@ -1815,7 +1823,11 @@ private:
             // Source @w0 excludes d6=24; other owners are not guessed.
             if(route.address<0||route.address/1024!=3||
                !l01::LiveState::spotAddresses(route.address,route.position,cell,preset))return {};
-            const auto live=core_.nativeLive().desired(cell);
+            auto live=core_.nativeLive().desired(cell);
+            const int sourceFamily=(route.address%1024)/32;
+            if(!live.known && navMode()==0 && core_.nativeNav().active().contextMode==0 &&
+               sourceFamily>=3 && sourceFamily<=6 && route.position<3)
+                live={true,0};
             auto selected=preset>=0?core_.nativeLive().desired(preset):l01::LiveRead{true,1};
             if(cell>=0&&cell<320&&cell%40>=16&&cell%40<28){
                 const int m=s8Sample_.mode(static_cast<unsigned>(cell/40),static_cast<unsigned>(cell%40-16));
@@ -1844,9 +1856,10 @@ private:
                     if(!l01::LiveState::spotAddresses(route.address,k,c,p)){
                         candidate.physical=-1;break;
                     }
-                    const auto v=core_.nativeLive().desired(c);
+                    auto v=core_.nativeLive().desired(c);
+                    if(!v.known)v={true,0}; // SOCLE FX default OFF, no persisted write
                     const int a=spotApi(c);
-                    if(!v.known||v.value>1||a<0){candidate.physical=-1;break;}
+                    if(v.value>1||a<0){candidate.physical=-1;break;}
                     candidate.cells[static_cast<unsigned>(k)]=c;
                     candidate.apis[static_cast<unsigned>(k)]=a;
                     candidate.previous[static_cast<unsigned>(k)]=v.value;
@@ -2348,9 +2361,8 @@ private:
             const int value=defaults.get(globalApi(cell,type),image.config);
             image.desired[cell]=value>=0?value:universal;
         }
-        // SOC-02: all real FX owners must have a defined OFF state at
-        // session opening, including INST/YELLOW. Leave explicit values intact.
-        for(int owner=0;owner<static_cast<int>(l01::FxS6::OwnerCount);++owner)
+        // MEMORY for each real sound includes three FX switches.
+        for(int owner:{12,13,14,15,16,17,20,21,22,23,24,25})
             for(int field=6;field<9;++field){
                 const auto cell=static_cast<unsigned>(l01::FxS6::addressFor(owner,field));
                 if(image.desired[cell]==-2)image.desired[cell]=0;
