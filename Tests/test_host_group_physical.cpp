@@ -21,7 +21,13 @@ static void edge(HostEngine& h,unsigned physical,bool down,int ms) {
     const int n=note(physical);assert(n>=0);
     const std::uint8_t bytes[]{static_cast<std::uint8_t>(down?0x9E:0x8E),
         static_cast<std::uint8_t>(n),static_cast<std::uint8_t>(down?127:0)};
-    assert(!h.receive(0,bytes,3,48*ms,ms).emit);
+    const auto r=h.receive(0,bytes,3,48*ms,ms);
+    // SOC-02: kind3 SPOT acts individually at DOWN; its independently
+    // qualified S7 GROUP pulse remains scheduled for the 120ms long.
+    if(r.emit){
+        assert(down&&r.type==11&&r.value==1&&r.api>=384&&r.api<480);
+        h.sent(r,0);
+    }
 }
 static void expect(HostEngine& h,unsigned api) {
     const auto on=h.nextActionPulse();
