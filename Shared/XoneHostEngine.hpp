@@ -799,7 +799,7 @@ public:
         if(baseline.blinking)return;
         if(baseline.known && baseline.color!=MuteLedColor::Off)
             color=baseline.color;
-        muteLeds_.flash(static_cast<unsigned>(cc+12),color,ms);
+        muteLeds_.flash(static_cast<unsigned>(cc+12),color,ms,&baseline);
     }
     void requestLedRefresh() noexcept {ledRefreshRequest_.store(true,std::memory_order_release);}
     void refreshLeds() noexcept {muteLeds_.invalidate();}
