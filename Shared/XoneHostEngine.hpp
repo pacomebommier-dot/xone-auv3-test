@@ -124,6 +124,12 @@ public:
                 if(source>=0&&resetDefaults_.alternatives[static_cast<unsigned>(source)]!=activeAlternative(static_cast<unsigned>(source)))return false;
                 const int overrideValue=resetDefaults_.get(target.api,config);
                 value=overrideValue>=0?overrideValue:universalContinuousBase(target.cell);
+                // SOC-03: GOLDEN RESET of borrowed second FX parameters
+                // (INST/YELLOW only) is zero unless a destination BASE or
+                // explicit override above provides another value.
+                // Do not silently seed the saved LIVE image at opening.
+                if(value<0 && target.cell>=1552 && target.cell<1648 &&
+                   (target.cell-1552)%6>=3)value=0;
             }
             if(value<0)return false;
             for(unsigned j=0;j<i;++j)if(targets[j].cell==target.cell)return false;
@@ -732,6 +738,18 @@ public:
         set(32,redActive_?MuteLedColor::Red:MuteLedColor::Off);
         set(33,(n.at(292)==7?n.at(315):n.at(291))==1?MuteLedColor::Yellow:MuteLedColor::Off);
         if(mutePageVisible()){const auto mute=MuteLedView::compose(globalMute());for(unsigned i=0;i<16;++i)set(i,mute[i].color,mute[i].blinking);}
+        // SOC-03 feedback belongs to physical SPOT LEDs 16..27.
+        // Individual RESET lights only while physically held. A qualified
+        // 120ms group produces one simultaneous 100ms confirmation pulse;
+        // source CC pickup flashes (SOC-05) remain independently owned.
+        for(unsigned k=0;k<resetSpotHolds_.size();++k){
+            const int physical=20+static_cast<int>(k);
+            const auto& hold=resetSpotHolds_[k];
+            const bool held=hold.physical==physical && core_.surface().held(physical) &&
+                nav.revision()==hold.navRevision;
+            const bool pulse=ms>=0&&resetSpotPulseUntil_[k]>ms;
+            if(held||pulse)set(16+k,pulse?resetSpotPulseColor_[k]:hold.color);
+        }
         return image;
     }
     void pickupLedFeedback(int cc,int64_t ms) noexcept {
@@ -1148,11 +1166,46 @@ private:
                 scope[0]=mutePageVisible()?continuousTarget(core_.nativeRoute(physical+20)):
                     continuousTarget({inputRoute.address-1024,inputRoute.position});
                 const bool reset=resetContinuousTargets(scope,1);
+                // Capture only qualified RESET SPOT owners with three
+                // real borrowed controls on one vertical strip. The
+                // short individual RESET has already been committed.
+                auto& hold=resetSpotHolds_[static_cast<unsigned>(physical-20)];
+                hold={};
+                if(reset && inputRoute.address>=0 && inputRoute.address/1024==1 &&
+                   core_.nativeNav().stable()&&!core_.nativeNav().hasStage()){
+                    const auto underlying=continuousTarget({inputRoute.address-1024,inputRoute.position});
+                    if(underlying.valid()&&underlying.cell>=1552&&underlying.cell<1768){
+                        ResetSpotHold candidate{};
+                        candidate.physical=physical;candidate.down=gestureMs;
+                        candidate.navRevision=core_.nativeNav().revision();
+                        candidate.color=resetSpotColor(underlying.cell);
+                        const int column=(physical-20)%4;
+                        bool valid=true;
+                        for(int row=0;row<3;++row){
+                            const int other=20+4*row+column;
+                            const auto source=core_.nativeRoute(other);
+                            if(source.address!=inputRoute.address||source.address/1024!=1){
+                                valid=false;break;
+                            }
+                            candidate.physicalPeers[static_cast<unsigned>(row)]=other;
+                            candidate.targets[static_cast<unsigned>(row)]=
+                                continuousTarget({source.address-1024,source.position});
+                            if(!candidate.targets[static_cast<unsigned>(row)].valid())valid=false;
+                        }
+                        if(valid)hold=candidate;
+                    }
+                }
                 record(seq,sample,Stage::Decision,reset?Reason::Musical:Reason::UnknownLive,0,data,3);
                 return {};
             }
             if(accepted&&(cmd==0x90||cmd==0x80)&&physical>=20&&physical<32){
                 const bool down=cmd==0x90&&data[2]!=0;
+                auto& borrowed=resetSpotHolds_[static_cast<unsigned>(physical-20)];
+                if(!down&&wasHeld&&borrowed.physical==physical){
+                    fireResetSpotLong(borrowed,gestureMs,true);
+                    borrowed={};
+                    return {}; // true UP does not duplicate the short RESET
+                }
                 // S2 advances before input: a LONG in this packet must qualify NAV first.
                 const auto captured=core_.nativeRoute(physical);
                 // In YELLOW/FILL the qualified S7 GROUP pulse is a separate
@@ -1463,7 +1516,8 @@ public:
     // MIDI output must never consume a pending STOP NoteOff permanently.
     void beginStopRetryPass(int64_t sample) noexcept {stopRead_=0;stopSample_=sample;}
     unsigned pendingStopOffs() const noexcept {return stopPendingCount_;}
-    void stop(int64_t sample) noexcept { muteLeds_.cancelFlashes(); documentDirty_=true;
+    void stop(int64_t sample) noexcept { muteLeds_.cancelFlashes();
+        resetSpotHolds_.fill({});resetSpotPulseUntil_.fill(0); documentDirty_=true;
         sh01a_.stop();shBaseSentMs_=-1;
         traceShIncomplete(sample);
         resetBaseHolds_.fill(ResetBaseHold{});
@@ -1548,6 +1602,7 @@ public:
         // uses the exact same source proof.
         for(auto& hold:groupHolds_)fireGroupLong(hold,ms);
         for(auto& hold:socleSpotGroups_)fireSocleSpotGroup(hold,ms);
+        for(auto& hold:resetSpotHolds_)fireResetSpotLong(hold,ms);
         if(!core_.gesture().timerNeeded())return;
         const auto navBeforeTimer=core_.nativeNav().revision();
         const auto seq=++sequence_;
@@ -1656,6 +1711,43 @@ private:
         }
     }
     std::array<GroupHold,12> groupHolds_{};
+    // SOC-03: reset of a continuous parameter borrowed by a SPOT,
+    // never an effect's ON/OFF state or the S7 GROUP musical pulse.
+    struct ResetSpotHold {
+        int physical{-1};std::int64_t down{};std::uint64_t navRevision{};
+        std::array<int,3> physicalPeers{};
+        std::array<ContinuousTarget,3> targets{};
+        MuteLedColor color{MuteLedColor::Off};bool fired{};
+    };
+    std::array<ResetSpotHold,12> resetSpotHolds_{};
+    std::array<std::int64_t,12> resetSpotPulseUntil_{};
+    std::array<MuteLedColor,12> resetSpotPulseColor_{};
+    static MuteLedColor resetSpotColor(int cell) noexcept {
+        if((cell>=1600&&cell<1648)||(cell>=1756&&cell<1768))return MuteLedColor::Yellow;
+        if(cell>=1648&&cell<1696)return MuteLedColor::Green;
+        return MuteLedColor::Red;
+    }
+    void fireResetSpotLong(ResetSpotHold& hold,std::int64_t ms,
+                           bool acceptedPhysicalRelease=false) noexcept {
+        if(hold.physical<20||hold.physical>=32||hold.fired||
+           ms<hold.down||ms-hold.down<120)return;
+        const auto& nav=core_.nativeNav();
+        if(!nav.stable()||nav.hasStage()||nav.revision()!=hold.navRevision||
+           (!acceptedPhysicalRelease&&!core_.surface().held(hold.physical)))return;
+        std::array<ContinuousTarget,97> peers{};
+        unsigned count=0;
+        for(unsigned i=0;i<3;++i)
+            if(hold.physicalPeers[i]!=hold.physical)peers[count++]=hold.targets[i];
+        // Numeric reset is validated atomically for the two other FX/EQ
+        // controls. The touched parameter was already RESET at DOWN.
+        if(count!=2||!resetContinuousTargets(peers,count))return;
+        for(int peer:hold.physicalPeers){
+            const unsigned k=static_cast<unsigned>(peer-20);
+            resetSpotPulseUntil_[k]=ms<=INT64_MAX-100?ms+100:INT64_MAX;
+            resetSpotPulseColor_[k]=hold.color;
+        }
+        hold.fired=true;
+    }
     // SOC-02: source-qualified ON/OFF groups only (SOCLE), distinct from
     // S7 GROUP pulse and the borrowed RESET contexts.
     struct SocleSpotGroup {
