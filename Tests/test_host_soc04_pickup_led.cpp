@@ -74,6 +74,18 @@ int main(){
   out.flash(16,MuteLedColor::Yellow,400);out.cancelFlashes();
   out.observeFull(base,400);tx=ledDrain(out);
   for(const auto& packet:tx)assert(packet.target!=16); // other blinking LEDs remain independent
+  base[19]={MuteLedColor::Green,false,true};
+  out.observeFull(base,480);ledDrain(out);
+  out.flash(19,MuteLedColor::Green,500,&base[19]);out.observeFull(base,500);
+  assert(has(ledDrain(out),19,2,false));
+  out.flash(19,MuteLedColor::Green,520,&base[19]); // high-rate CC cannot extend first flash
+  out.observeFull(base,549);assert(!has(ledDrain(out),19,2,true));
+  out.observeFull(base,550);assert(has(ledDrain(out),19,2,true));
+  out.flash(19,MuteLedColor::Green,570,&base[19]); // still in 100ms lock
+  out.observeFull(base,570);assert(!has(ledDrain(out),19,2,false));
+  out.flash(19,MuteLedColor::Green,600,&base[19]); // new 50ms pulse
+  out.observeFull(base,600);assert(has(ledDrain(out),19,2,false));
+  out.observeFull(base,650);assert(has(ledDrain(out),19,2,true));
  }
  {
   HostEngine e;e.beginRenderBuffer();hostLeds(e,0);
