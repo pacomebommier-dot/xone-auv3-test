@@ -65,5 +65,32 @@ int main(){
     e.advance(919,919);assert(!e.nextSourcePacket().valid);
     r=key(e,48,false,919);assert(r.emit&&r.api==384);e.sent(r,0);
     check(e,0,1,1);
+    // Exact threshold on physical UP: no timer tick is required.
+    HostEngine boundary;selectInst1(boundary);
+    r=key(boundary,48,true,20);assert(r.emit);boundary.sent(r,0);
+    assert(!key(boundary,48,false,140).emit);
+    assert(tx(boundary,1)==2);check(boundary,1,1,1);
+    // Physical LED projection: three red SPOT LEDs turn ON, no blinking.
+    boundary.beginRenderBuffer();boundary.prepareMuteLeds(140);
+    unsigned cursor=0,lit=0;
+    for(unsigned k=0;k<136;++k){
+        auto p=boundary.nextMuteLedPacket(cursor);if(!p.valid)break;
+        if(p.on&&(p.target==16||p.target==20||p.target==24)){
+            assert(p.color==0);++lit;
+        }
+        boundary.ackMuteLedPacket(p,true);
+    }
+    assert(lit==3);
+    r=key(boundary,48,true,200);assert(!r.emit);
+    r=key(boundary,48,false,319);assert(r.emit);boundary.sent(r,0);
+    assert(tx(boundary,0)==0);check(boundary,0,1,1);
+    boundary.beginRenderBuffer();boundary.prepareMuteLeds(319);
+    cursor=0;unsigned dark=0;
+    for(unsigned k=0;k<136;++k){
+        auto p=boundary.nextMuteLedPacket(cursor);if(!p.valid)break;
+        if(!p.on&&p.target==16&&p.color==0)++dark;
+        boundary.ackMuteLedPacket(p,true);
+    }
+    assert(dark==1);
     std::cout<<"PASS SOC-02 INST1 SPOT short, 120ms group from ON/OFF/mixed, release and LED state\n";
 }
