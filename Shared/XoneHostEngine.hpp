@@ -1712,7 +1712,6 @@ private:
            (!acceptedRelease&&!surfaceHeld(static_cast<unsigned>(hold.physical)))||
            core_.longNavPending())return false;
         const int column=(hold.physical-20)%4;
-        const int group=(hold.physical-20)/4;
         std::array<ContinuousTarget,97> targets{};
         std::array<int,3> physical{{-1,-1,-1}};unsigned count=0;
         for(int row=0;row<3;++row){
