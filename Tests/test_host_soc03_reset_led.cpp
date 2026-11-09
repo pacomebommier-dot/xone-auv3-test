@@ -92,6 +92,33 @@ int main(){
   edge(boundary,physical[0],false,420);flush(boundary,apis,value,2);
   for(int c:cells)assert(boundary.desiredLive(c).value==value);
   inspect(boundary,physical,color,420,true);
+  // Physical K2 MIDI packets: short has one temporary ON/OFF; long
+  // flashes three simultaneously and really clears them at 100ms.
+  if(family==3){
+   HostEngine k2;assert(k2.setNavForDiagnostic(nav)&&k2.restoreSessionBeforeRendering(image));
+   auto render=[&](int ms,bool on,const std::array<int,3>& expected,unsigned expectedCount){
+    k2.beginRenderBuffer();k2.prepareMuteLeds(ms);
+    unsigned cursor=0,count=0;
+    for(unsigned i=0;i<136;++i){
+     auto p=k2.nextMuteLedPacket(cursor);if(!p.valid)break;
+     for(int physicalTarget:expected)if(physicalTarget>=20&&
+        p.target==unsigned(physicalTarget-4)&&p.color==0&&p.on==on)++count;
+     k2.ackMuteLedPacket(p,true);
+    }
+    assert(count==expectedCount);
+   };
+   render(0,false,physical,3); // first snapshot purges all three colors
+   edge(k2,physical[0],true,10);flush(k2,apis,0,1);
+   render(10,true,{{physical[0],-1,-1}},1);
+   edge(k2,physical[0],false,60);
+   render(60,false,{{physical[0],-1,-1}},1);
+   edge(k2,physical[0],true,100);flush(k2,apis,0,1);
+   render(100,true,{{physical[0],-1,-1}},1);
+   k2.advance(220,220*48);flush(k2,apis,0,2);
+   render(220,true,{{physical[1],physical[2],-1}},2);
+   render(321,false,physical,3);
+   edge(k2,physical[0],false,330);
+  }
   // STOP cancels the pending hold and its temporary light, not a fake UP.
   HostEngine stopped;assert(stopped.setNavForDiagnostic(nav)&&stopped.restoreSessionBeforeRendering(image));
   edge(stopped,physical[0],true,500);flush(stopped,apis,value,1);
