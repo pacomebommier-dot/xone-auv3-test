@@ -10,7 +10,17 @@ int main(){
  r=edge(e,48,false,199);assert(!r.emit); // SMART short latches
  r=edge(e,48,true,300);assert(!r.emit);r=edge(e,48,false,310);assert(r.emit&&r.api==a&&(r.bytes[0]&0xF0)==0x80);e.sent(r,-1);
  e.stop(320);r=e.nextStopPacket();assert(r.emit&&r.api==a&&(r.bytes[0]&0xF0)==0x80);e.sent(r,0);assert(!e.nextStopPacket().emit);
- r=edge(e,48,true,400);assert(r.emit);e.sent(r,0);r=edge(e,48,false,600);assert(r.emit&&(r.bytes[0]&0xF0)==0x80);e.sent(r,0);
+ // SOC-02: a >=120ms SPOT hold in SOCLE operates the three effect switches
+ // rather than turning the touched note OFF at 200ms. Isolate its debts.
+ {
+  HostEngine group;assert(group.restoreSessionBeforeRendering(image()));
+  edge(group,36,true,0);edge(group,36,false,1);
+  auto on=edge(group,48,true,400);assert(on.emit);group.sent(on,0);
+  auto up=edge(group,48,false,600);assert(!up.emit);
+  for(int api:{385,386}){auto p=group.nextSourcePacket();assert(p.valid&&p.api==api&&p.value==1);group.ackSourcePacket(p,true,600);}
+  assert(!group.nextSourcePacket().valid);
+  for(int cell:{1768,1769,1770})assert(group.desiredLive(cell).value==1);
+ }
  r=edge(e,48,true,700);assert(r.emit);e.sent(r,0);e.stop(710);r=e.nextStopPacket();assert(r.emit);e.sent(r,0);assert(e.surfaceHeld(20));assert(!edge(e,48,false,720).emit);
  // Destination stays captured across another physical FX selection.
  r=edge(e,48,true,800);assert(r.emit);e.sent(r,0);

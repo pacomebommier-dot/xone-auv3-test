@@ -621,6 +621,48 @@ int main() {
     mpPump(48,0xFC);mpPump(48,0x8E,48,0);assert(mpCount==6&&mpLog[5][0]==0x89&&mpLog[5][1]==0);
     [mpUnit deallocateRenderResources];
 
+    // SOC-02: a 120 ms SPOT GROUP is qualified by advance() at the render
+    // boundary, not by a MIDI event. All FX peer ONs must be emitted in
+    // THAT buffer, at its last valid sample (no one-buffer extra latency).
+    XoneMidiAudioUnit *socUnit=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
+    assert(socUnit&&!error);assert([socUnit.inputBusses[0] setFormat:format error:&error]);
+    assert([socUnit.outputBusses[0] setFormat:format error:&error]);
+    socUnit.maximumFramesToRender=8192;
+    auto socLive=image;socLive.desired.fill(-2);
+    for(int cell=1768;cell<1771;++cell)socLive.desired[cell]=0;
+    assert(xone::host::encodeSession(socLive,bytes));
+    socUnit.fullState=@{@"XONE_LAST_LIVE_V1":[NSData dataWithBytes:bytes.data() length:bytes.size()]};
+    __block unsigned socCount=0;uint8_t socBytes[12][3]{};auto *socLog=socBytes;
+    AUEventSampleTime socTimes[12]{};auto *socWhen=socTimes;
+    socUnit.MIDIOutputEventBlock=^OSStatus(AUEventSampleTime t,uint8_t cable,NSInteger length,const uint8_t *data){
+        assert(cable==0&&length==3);
+        if((data[0]&15)==14)return noErr; // independent K2 LED projection
+        assert(socCount<12);
+        for(unsigned i=0;i<3;++i)socLog[socCount][i]=data[i];
+        socWhen[socCount]=t;++socCount;
+        return noErr;
+    };
+    assert([socUnit allocateRenderResourcesAndReturnError:&error]);
+    auto socRender=socUnit.internalRenderBlock;AUEventSampleTime socCursor=0;
+    const auto socPump=[&](AVAudioFrameCount frames,int cmd=-1,int number=0,int value=0){
+        AudioTimeStamp t{};t.mFlags=kAudioTimeStampSampleTimeValid;t.mSampleTime=static_cast<Float64>(socCursor);
+        AURenderEvent e{};e.MIDI.eventType=AURenderEventMIDI;e.MIDI.eventSampleTime=socCursor;
+        e.MIDI.cable=0;e.MIDI.length=3;e.MIDI.data[0]=uint8_t(cmd);
+        e.MIDI.data[1]=uint8_t(number);e.MIDI.data[2]=uint8_t(value);
+        AudioUnitRenderActionFlags flags=0;audio.frameLength=frames;
+        assert(socRender(&flags,&t,frames,0,audio.mutableAudioBufferList,cmd<0?nullptr:&e,nil)==noErr);
+        socCursor+=frames;
+    };
+    socPump(48,0x9E,36,127);socPump(48,0x8E,36,0); // SOCLE INST1
+    socPump(48,0x9E,48,127);assert(socCount==1&&socLog[0][0]==0x99&&socLog[0][1]==0);
+    const auto timerBufferStart=socCursor;
+    socPump(6000); // 125 ms, must qualify the 120 ms group in this buffer
+    assert(socCount==3&&socLog[1][0]==0x99&&socLog[1][1]==1&&
+           socLog[2][0]==0x99&&socLog[2][1]==2);
+    assert(socWhen[1]==timerBufferStart+5999&&socWhen[2]==timerBufferStart+5999);
+    socPump(48,0x8E,48,0);assert(socCount==3); // no redundant release
+    [socUnit deallocateRenderResources];
+
     std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)\n";
  }
 }

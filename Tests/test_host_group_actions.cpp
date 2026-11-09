@@ -35,7 +35,13 @@ static void physicalDown(HostEngine& host,unsigned physical,int ms=0) {
         if(xone::l01::SurfaceInput::physicalControl(n)==static_cast<int>(physical))note=n;
     assert(note>=0);
     const std::uint8_t midi[]{0x9E,static_cast<std::uint8_t>(note),127};
-    assert(!host.receive(0,midi,3,48*ms,ms).emit);
+    // A qualified YELLOW/FILL SPOT performs its real individual FX ON
+    // at DOWN, while the independent S7 GROUP pulse remains eligible.
+    const auto result=host.receive(0,midi,3,48*ms,ms);
+    if(result.emit){
+        assert(result.type==11&&result.value==1&&result.api>=384&&result.api<480);
+        host.sent(result,0);
+    }
     assert(host.surfaceHeld(physical));
 }
 int main(){
