@@ -32,6 +32,28 @@ int main(){
   click(e,36+int(slot),1);assert(e.presetEngaged(slot)&&!e.presetMusicallyValid(slot));
   cc(e,64,3);cc(e,100,4);click(e,36+int(slot),5);assert(e.pendingPreset()==int(slot));e.onMusicalGrid(edge(GridKind::Bar,4));
   assert(e.desiredLive(1328).value==64&&e.presetMusicallyValid(slot));}
+ // SOC-06: PRESET1..4 EMPTY SHORT/LONG = capture, filled LONG = replace,
+ // filled SHORT = BAR recall. An UP at exactly 200ms is LONG.
+ for(bool emptyLong:{false,true}){
+  HostEngine e;assert(e.restoreSessionBeforeRendering(session(64)));assert(e.showPresetPage());
+  button(e,36,true,1);button(e,36,false,emptyLong?201:2);
+  assert(e.presetEngaged(0)&&e.pendingPreset()==-1);
+  cc(e,64,210);cc(e,100,211);
+  button(e,36,true,220);button(e,36,false,420);
+  assert(e.pendingPreset()==-1);
+  GlobalSnapshot p{};assert(e.readPreset(0,p)&&p.live.desired[1328]==100);
+  cc(e,77,430);
+  button(e,36,true,440);button(e,36,false,441);
+  assert(e.pendingPreset()==0);
+  e.onMusicalGrid(edge(GridKind::Bar,4));
+  assert(e.desiredLive(1328).value==100);
+ }
+ // A STOP between PRESET DOWN/UP cannot overwrite an existing slot.
+ {HostEngine e;assert(e.restoreSessionBeforeRendering(session(64)));assert(e.showPresetPage());
+  click(e,36,1);GlobalSnapshot before{};assert(e.readPreset(0,before));
+  cc(e,100,10);button(e,36,true,20);e.stop(21);button(e,36,false,240);
+  GlobalSnapshot after{};assert(e.readPreset(0,after));
+  assert(after.live.desired[1328]==before.live.desired[1328]);}
  {HostEngine e;assert(e.restoreSessionBeforeRendering(session(64)));click(e,12,1);assert(e.redActive());cc(e,64,3);cc(e,100,4);
   click(e,12,5);assert(!e.redActive()&&e.desiredLive(1328).value==64);
   button(e,12,true,10);cc(e,64,11);cc(e,100,12);button(e,12,false,210);assert(!e.redActive()&&e.desiredLive(1328).value==64);
