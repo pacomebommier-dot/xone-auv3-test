@@ -1,0 +1,92 @@
+// K2_SIM V3: one Mozaic input instance; no musical decisions or MIDI Thru.
+// MIDI15/index14, GOLDEN S1 mapping. Physical controls 0..35.
+@OnLoad
+  SetShortName {K2 SIM V3}
+  ShowLayout 1
+  Notes = [12,13,14,15,36,37,38,39,32,33,34,35,28,29,30,31,24,25,26,27,48,49,50,51,44,45,46,47,40,41,42,43,52,53,54,55]
+  if Unassigned HeldNote
+    FillArray HeldNote, -1, 16
+  endif
+  ButtonPage = 0
+  CCBank = 0
+  Pad = 0
+  Control = 0
+  CCNo = 0
+  Value = 0
+  LabelKnob 6, {unused}
+  LabelKnob 7, {BUTTON PAGE 0..2}
+  LabelKnobs {SHIFT = next CC bank}
+  SetKnobValue 7, 0
+  Call @Labels
+@End
+
+@Labels
+  for Pad = 0 to 15
+    Control = Pad
+    if Pad > 3
+      Control = 4 + ButtonPage * 12 + Pad - 4
+    endif
+    if Control < 36
+      LabelPad Pad, {K2 }, Control, { N}, Notes[Control]
+    else
+      LabelPad Pad, {unused}
+    endif
+  endfor
+  for Pad = 0 to 5
+    CCNo = CCBank * 6 + Pad
+    if CCNo < 22
+      LabelKnob Pad, {K2 CC}, CCNo
+    else
+      LabelKnob Pad, {unused}
+    endif
+  endfor
+@End
+
+@OnPadDown
+  Pad = LastPad
+  if HeldNote[Pad] > -1
+    Exit
+  endif
+  Control = Pad
+  if Pad > 3
+    Control = 4 + ButtonPage * 12 + Pad - 4
+  endif
+  if Control < 36
+    HeldNote[Pad] = Notes[Control]
+    SendMIDINoteOn 14, HeldNote[Pad], 127
+  endif
+@End
+
+@OnPadUp
+  Pad = LastPad
+  if HeldNote[Pad] > -1
+    SendMIDINoteOff 14, HeldNote[Pad], 0
+    HeldNote[Pad] = -1
+  endif
+@End
+
+@OnKnobChange
+  if LastKnob = 7
+    ButtonPage = Round ((GetKnobValue 7) * 2 / 127)
+    Call @Labels
+  elseif LastKnob < 6
+    CCNo = CCBank * 6 + LastKnob
+    Value = Round GetKnobValue LastKnob
+    if CCNo < 22
+      SendMIDICC 14, CCNo, Value
+    endif
+  endif
+@End
+
+@OnShiftDown
+  CCBank = (CCBank + 1) % 4
+  Call @Labels
+@End
+
+@OnHostStop
+  // STOP is not a physical UP. HeldNote retains the captured note until real UP.
+@End
+
+@OnMidiInput
+  // No Thru, no echo of engine output, no feedback inference.
+@End

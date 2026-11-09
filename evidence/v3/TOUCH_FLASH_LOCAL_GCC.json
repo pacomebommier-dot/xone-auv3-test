@@ -1,0 +1,161 @@
+{
+  "date": "2026-10-27",
+  "base_commit": "2c69d355a542a6597b3066fbdfb771604fe9dd22",
+  "compiler": "GCC 16.2.0 Windows w64devkit",
+  "flags": "-pthread -std=c++17 -O2 -UNDEBUG -Wall -Wextra -Wpedantic -Werror",
+  "cpp_suites": 22,
+  "results": [
+    {
+      "suite": "test_bank_s6",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_engine_existing",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_fx_s6",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_host_continuous",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_host_engine",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_host_integration",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_host_musical_routes",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_host_session",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_host_spots",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_host_surface",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_host_touch_flash",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_live_state",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_memory_recall",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_native_slices",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_nav_oracle",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_nav_pipeline",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_nav_s3",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_pipeline",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_s3_boundary",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_s3_long_browser",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_s3_s4_bridge",
+      "compile": 0,
+      "run": 0
+    },
+    {
+      "suite": "test_s3_touch_nav",
+      "compile": 0,
+      "run": 0
+    }
+  ],
+  "c_v01_cases": 10,
+  "c_exit": 0,
+  "manifest": "PASS 12 Core headers,14 suites,81 REQ,382 handlers",
+  "K2_SIM": "SOURCE PASS, not native compilation",
+  "SH01A_profile": "SOURCE PASS, not hardware",
+  "red": [
+    "TOUCH first DOWN produced no MIDI at previous code2c69d35 (assert line14)",
+    "STOP did not yet invalidate a prepared FLASH ON (assert line56)"
+  ],
+  "green": "All22 C++ suites PASS after implementation and STOP ON gate",
+  "sha256": {
+    "Shared/XoneHostEngine.hpp": "1f43d3e0eb6f10181d1095071964fd3387746c3f2b898167a3cb91c5098c991a",
+    "Extension/XoneMidiAudioUnit.mm": "6d2e6dbe689c650d8a869a3eca7bed670cee400f72ab0666094259eabc66125b",
+    "Tests/test_host_touch_flash.cpp": "9caca6870df27f042ac1f6a2eb0c1223c5e17fd11bd2faddb3711bf2d8791f5e",
+    "Tests/test_host_spots.cpp": "2546d930ad74c8f6d5c42bcfb3ea33c9bf9fa04d5e1039e460b64fcf0795ab44",
+    "Tests/test_auv3_document.mm": "762b28abd83e97d011e590d0b4274b74b647631e90e87819dc99125654c5fafa"
+  },
+  "summaries": {
+    "test_engine_existing.run": "PASS structural acceptance: origin, observation, BAR, STOP, bounds, replay",
+    "test_live_state.run": "PASS 40 L01/09 authenticated LIVE / BROWSER SPOT assertions",
+    "test_bank_s6.run": "PASS 45 L01/11 native BANKS scenarios",
+    "test_fx_s6.run": "PASS 71 L01/10 FX S6 / LIVE provenance and status scenarios",
+    "test_native_slices.run": "PASS 27 native C++ scenario assertions (partial functional slices + Engine structure)",
+    "test_nav_oracle.run": "PASS 52/52 literal @zd default-page route fixtures (independent formula)",
+    "test_nav_pipeline.run": "PASS 19 NAV integrated S3 pipeline scenarios",
+    "test_memory_recall.run": "PASS 12 L01/11 MEMORY recall scenarios",
+    "test_nav_s3.run": "PASS 34 NAV S3 stage/validate/commit scenarios",
+    "test_s3_long_browser.run": "PASS 28 L01/07 long-gesture/BROWSER/DJ2 guard scenarios",
+    "test_s3_boundary.run": "PASS 38 S3 boundary / integrated pipeline scenarios",
+    "test_pipeline.run": "PASS 35 new S2/S4/pipeline scenarios",
+    "test_host_engine.run": "PASS L02 CC values, trace order, origin gate, loop rejection, UNKNOWN, STOP/real UP, overflow",
+    "test_s3_s4_bridge.run": "PASS 12 L01/11 staged S3/S4 bridge diagnostic scenarios",
+    "test_s3_touch_nav.run": "PASS 31 L01/08 source-constrained @zk/@zl TOUCH NAV assertions",
+    "test_host_continuous.run": "PASS host physical CC->source target->pickup->LIVE->S4 MIDI7..14, UNKNOWN, no observed inference",
+    "test_host_integration.run": "PASS host K2->S1->S2->S3 NAV SHORT/LONG/STOP, independent clock, bounded trace",
+    "test_host_spots.run": "PASS SMART/MIX musical output, captured destination, 199/200ms, failed ON/OFF debts, multi-note STOP, UNKNOWN",
+    "test_host_musical_routes.run": "PASS physical source selection and LOOP same-revision derived gains, batch send failure, UNKNOWN",
+    "test_host_session.run": "PASS session codec CRC/bounds, coherent SPSC snapshots, host LIVE round-trip, held restore, UNKNOWN",
+    "test_host_surface.run": "PASS host GOLDEN 36 buttons, duplicates, CC domain, unmapped notes, no physical Thru",
+    "test_host_touch_flash.run": "PASS TOUCH/FLASH source sequences, ownership, conditional pulse, failed ON/OFF, STOP, revision bound, deferred restore, UNKNOWN"
+  },
+  "manual_tests": "NOT_RUN_DEFERRED_L15_L16"
+}

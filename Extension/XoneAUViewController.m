@@ -4,44 +4,139 @@
 #import "XoneMidiAudioUnit.h"
 
 @interface XoneAUViewController : AUViewController <AUAudioUnitFactory>
-@property (nonatomic, strong) XoneMidiAudioUnit *xoneUnit;
+@property (atomic, strong) XoneMidiAudioUnit *xoneUnit;
+@property (nonatomic, strong) UISwitch *presetSwitch;
+@property (nonatomic, strong) UIButton *refreshButton;
+@property (nonatomic, strong) UIButton *fixtureButton;
+@property (nonatomic, strong) UIButton *shButton;
+@property (nonatomic, strong) UIStackView *diagnostics;
+@property (nonatomic, strong) UIStackView *contentStack;
+@property (nonatomic, strong) UILabel *traceLabel;
+@property (nonatomic, strong) NSTimer *traceTimer;
+@property (nonatomic, strong) NSMutableString *traceHistory;
 @end
 
 @implementation XoneAUViewController
-
 - (AUAudioUnit *)createAudioUnitWithComponentDescription:(AudioComponentDescription)desc
                                                    error:(NSError * _Nullable __autoreleasing *)error {
-    self.xoneUnit = [[XoneMidiAudioUnit alloc] initWithComponentDescription:desc options:0 error:error];
-    return self.xoneUnit;
+    XoneMidiAudioUnit *unit=[[XoneMidiAudioUnit alloc] initWithComponentDescription:desc options:0 error:error];
+    self.xoneUnit=unit;
+    return unit;
 }
-
+- (UILabel *)label:(NSString *)text {
+    UILabel *label=[UILabel new];label.text=text;label.numberOfLines=0;label.textColor=UIColor.whiteColor;
+    label.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];label.adjustsFontForContentSizeCategory=YES;
+    return label;
+}
+- (UIStackView *)row:(NSString *)title control:(UIView *)control {
+    UIStackView *row=[[UIStackView alloc] initWithArrangedSubviews:@[[self label:title],control]];
+    row.axis=UILayoutConstraintAxisHorizontal;row.spacing=12;row.alignment=UIStackViewAlignmentCenter;
+    return row;
+}
 - (void)loadView {
-    UIView *root = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 360, 340)];
-    root.backgroundColor = [UIColor colorWithRed:0.055 green:0.075 blue:0.105 alpha:1];
-
-    UIScrollView *scroll = [UIScrollView new];
-    scroll.translatesAutoresizingMaskIntoConstraints = NO;
-    [root addSubview:scroll];
-
-    UILabel *info = [UILabel new];
-    info.translatesAutoresizingMaskIntoConstraints = NO;
-    info.numberOfLines = 0;
-    info.textColor = UIColor.whiteColor;
-    info.font = [UIFont monospacedSystemFontOfSize:14 weight:UIFontWeightRegular];
-    info.text = @"XONE ENGINE · TEST 0.1\n\nAUv3 MIDI Processor (aumi)\n\nCC 4 → CC 74 · canal 1\nCC 8 → CC 71 · canal 1\n\nRoutez uniquement le XONE:K2 en entrée.\nConnectez XONE TEST OUT à un moniteur MIDI.\nPas de commande LED dans cette version.";
-    [scroll addSubview:info];
-
+    UIView *root=[[UIView alloc] initWithFrame:CGRectMake(0,0,360,360)];
+    root.backgroundColor=[UIColor colorWithRed:0.055 green:0.075 blue:0.105 alpha:1];
+    UIScrollView *scroll=[UIScrollView new];scroll.translatesAutoresizingMaskIntoConstraints=NO;[root addSubview:scroll];
+    UIStackView *stack=[UIStackView new];stack.axis=UILayoutConstraintAxisVertical;stack.spacing=14;stack.translatesAutoresizingMaskIntoConstraints=NO;
+    [scroll addSubview:stack];self.contentStack=stack;
+    UILabel *title=[self label:@"XONE · MIDI universel"];title.font=[UIFont preferredFontForTextStyle:UIFontTextStyleTitle2];[stack addArrangedSubview:title];
+    [stack addArrangedSubview:[self label:@"Une entrée K2 ou K2_SIM. Le routage et les instruments se règlent dans l’hôte."]];
+    self.presetSwitch=[UISwitch new];self.presetSwitch.accessibilityLabel=@"Éditeur PRESET";
+    [self.presetSwitch addTarget:self action:@selector(changePresetPage:) forControlEvents:UIControlEventValueChanged];
+    [stack addArrangedSubview:[self row:@"Éditeur PRESET" control:self.presetSwitch]];
+    self.refreshButton=[UIButton buttonWithType:UIButtonTypeSystem];
+    [self.refreshButton setTitle:@"Rafraîchir les LED" forState:UIControlStateNormal];
+    [self.refreshButton addTarget:self action:@selector(refreshControllerLEDs) forControlEvents:UIControlEventTouchUpInside];
+    [stack addArrangedSubview:self.refreshButton];
+    self.shButton=[UIButton buttonWithType:UIButtonTypeSystem];
+    [self.shButton setTitle:@"Configurer SH-01A · essais" forState:UIControlStateNormal];
+    [self.shButton addTarget:self action:@selector(configureSh01a) forControlEvents:UIControlEventTouchUpInside];
+    [stack addArrangedSubview:self.shButton];
+    UISwitch *diagnostic=[UISwitch new];diagnostic.accessibilityLabel=@"Afficher le diagnostic";
+    [diagnostic addTarget:self action:@selector(showDiagnostics:) forControlEvents:UIControlEventValueChanged];
+    [stack addArrangedSubview:[self row:@"Diagnostic" control:diagnostic]];
+    self.diagnostics=[UIStackView new];self.diagnostics.axis=UILayoutConstraintAxisVertical;self.diagnostics.spacing=10;
+    [self.diagnostics addArrangedSubview:[self label:@"Simulation : session isolée, moniteur seul. Le bouton remplace le LIVE par l’état de test ; aucun instrument n’est configuré."]];
+    self.fixtureButton=[UIButton buttonWithType:UIButtonTypeSystem];
+    [self.fixtureButton setTitle:@"Charger la simulation de test" forState:UIControlStateNormal];
+    [self.fixtureButton addTarget:self action:@selector(loadValidationFixture) forControlEvents:UIControlEventTouchUpInside];
+    [self.diagnostics addArrangedSubview:self.fixtureButton];
+    self.traceHistory=[NSMutableString stringWithString:@"Trace logicielle. SENT confirme le callback MIDI, pas la réception instrumentale. STOP et vrais UP avant retrait.\n\n"];
+    self.traceLabel=[self label:self.traceHistory];self.traceLabel.font=[UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightRegular];
+    [self.diagnostics addArrangedSubview:self.traceLabel];
     [NSLayoutConstraint activateConstraints:@[
         [scroll.topAnchor constraintEqualToAnchor:root.safeAreaLayoutGuide.topAnchor],
         [scroll.bottomAnchor constraintEqualToAnchor:root.safeAreaLayoutGuide.bottomAnchor],
-        [scroll.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
-        [scroll.trailingAnchor constraintEqualToAnchor:root.trailingAnchor],
-        [info.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:20],
-        [info.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-20],
-        [info.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor constant:16],
-        [info.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor constant:-16],
-        [info.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor constant:-32]
+        [scroll.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],[scroll.trailingAnchor constraintEqualToAnchor:root.trailingAnchor],
+        [stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:16],
+        [stack.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-16],
+        [stack.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor constant:16],
+        [stack.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor constant:-16],
+        [stack.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor constant:-32],
+        [self.refreshButton.heightAnchor constraintGreaterThanOrEqualToConstant:44],
+        [self.fixtureButton.heightAnchor constraintGreaterThanOrEqualToConstant:44]
     ]];
-    self.view = root;
+    self.view=root;[self refreshControls];
 }
+- (void)refreshControls {
+    XoneMidiAudioUnit *unit=self.xoneUnit;AUParameter *preset=[unit.parameterTree parameterWithAddress:0];
+    self.presetSwitch.enabled=preset!=nil;self.refreshButton.enabled=[unit.parameterTree parameterWithAddress:1]!=nil;self.fixtureButton.enabled=unit!=nil;self.shButton.enabled=unit!=nil;
+    [self.presetSwitch setOn:preset.value>=0.5f animated:NO];
+}
+- (void)changePresetPage:(UISwitch *)sender {
+    AUParameter *preset=[self.xoneUnit.parameterTree parameterWithAddress:0];
+    if(preset)preset.value=sender.isOn?1:0;else [sender setOn:NO animated:NO];
+}
+- (void)refreshControllerLEDs {
+    AUParameter *refresh=[self.xoneUnit.parameterTree parameterWithAddress:1];if(refresh)refresh.value=1;
+}
+- (void)configureSh01a {
+    UIAlertController *dialog=[UIAlertController alertControllerWithTitle:@"SH-01A · profil provisoire"
+        message:@"Source : 1 INST1, 2 INST2, 3 YELLOW1, 4 YELLOW2. Canal du Roland : 1–6 ou 16 ; 7–14 réservés à S7, 15 au K2. 36 CC à vérifier dans AUM ; FILTER1/2/3 pilotent VCF FREQ/RES/MOD. Sauvegarde sur le Roland uniquement."
+        preferredStyle:UIAlertControllerStyleAlert];
+    [dialog addTextFieldWithConfigurationHandler:^(UITextField *field){field.placeholder=@"Source 1–4";field.text=@"1";field.keyboardType=UIKeyboardTypeNumberPad;}];
+    [dialog addTextFieldWithConfigurationHandler:^(UITextField *field){field.placeholder=@"Canal MIDI 1–6 ou 16";field.text=@"1";field.keyboardType=UIKeyboardTypeNumberPad;}];
+    [dialog addAction:[UIAlertAction actionWithTitle:@"Annuler" style:UIAlertActionStyleCancel handler:nil]];
+    __weak XoneAUViewController *weakSelf=self;
+    __weak UIAlertController *weakDialog=dialog;
+    [dialog addAction:[UIAlertAction actionWithTitle:@"Configurer" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){
+        (void)action;XoneAUViewController *owner=weakSelf;if(!owner)return;
+        NSInteger source=0,channel=0;NSScanner *a=[NSScanner scannerWithString:weakDialog.textFields[0].text?:@""];
+        NSScanner *b=[NSScanner scannerWithString:weakDialog.textFields[1].text?:@""];
+        const BOOL valid=[a scanInteger:&source]&&a.isAtEnd&&[b scanInteger:&channel]&&b.isAtEnd;
+        const BOOL accepted=valid&&[owner.xoneUnit configureSh01aSource:source-1 channel:channel];
+        UIAlertController *result=[UIAlertController alertControllerWithTitle:accepted?@"Profil SH demandé":@"Configuration refusée"
+            message:accepted?@"Relâchez les touches avant les essais. Activez CC OUTPUT sur le SH et routez son retour MIDI vers XONE sans boucle. La table 36 CC reste à vérifier.":@"Vérifiez source et canal. Une route SH déjà configurée ne peut pas être réaffectée par ce bouton ; ses miroirs sont conservés."
+            preferredStyle:UIAlertControllerStyleAlert];
+        [result addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        [owner dismissViewControllerAnimated:YES completion:^{
+            [owner presentViewController:result animated:YES completion:nil];
+        }];
+    }]];
+    [self presentViewController:dialog animated:YES completion:nil];
+}
+- (void)showDiagnostics:(UISwitch *)sender {
+    if(sender.isOn){if(!self.diagnostics.superview)[self.contentStack addArrangedSubview:self.diagnostics];}
+    else {[self.contentStack removeArrangedSubview:self.diagnostics];[self.diagnostics removeFromSuperview];}
+}
+- (void)loadValidationFixture {
+    const BOOL accepted=[self.xoneUnit loadAumValidationFixture];
+    [self.traceHistory appendString:accepted?@"Simulation demandée ; application au rendu après vrais UP et OFF dus.\n":@"Simulation refusée ; aucun état remplacé.\n"];
+    self.traceLabel.text=self.traceHistory;
+}
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];[self.traceTimer invalidate];[self refreshControls];
+    __weak XoneAUViewController *weakSelf=self;
+    self.traceTimer=[NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *timer){
+        (void)timer;XoneAUViewController *owner=weakSelf;if(!owner)return;
+        XoneMidiAudioUnit *unit=owner.xoneUnit;if(!unit)return;
+        [owner refreshControls];[owner.traceHistory appendString:[unit drainDiagnosticText]];
+        if(owner.traceHistory.length>24000)[owner.traceHistory deleteCharactersInRange:NSMakeRange(0,owner.traceHistory.length-16000)];
+        owner.traceLabel.text=owner.traceHistory;
+    }];
+}
+- (void)viewDidDisappear:(BOOL)animated {
+    [self.traceTimer invalidate];self.traceTimer=nil;[super viewDidDisappear:animated];
+}
+- (void)dealloc {[_traceTimer invalidate];}
 @end

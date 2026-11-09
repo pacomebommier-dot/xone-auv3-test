@@ -1,0 +1,46 @@
+PASS bank starts uninitialized
+PASS explicit initialization once
+PASS all-new memory empty invalid
+PASS all-new patch empty invalid
+PASS patch 84 indices unique
+PASS memory 96 indices unique
+PASS patch widths source
+PASS slot bounds
+PASS valid patch each class
+PASS valid memory each class
+PASS write rejects before initialization
+PASS patch revision increments
+PASS memory revision increments
+PASS memory stale revision rejected
+PASS patch stale revision rejected
+PASS config mismatch patch rejected
+PASS config mismatch memory rejected
+PASS patch bad binary rejected
+PASS patch bad mode low rejected
+PASS patch bad mode high rejected
+PASS patch upper second block binary
+PASS patch extra tail rejected
+PASS patch no unknown in active cells
+PASS patch config zero forbidden
+PASS patch config 128 forbidden
+PASS memory binary 6 rejected
+PASS memory binary 8 rejected
+PASS memory negative rejected
+PASS memory >127 rejected
+PASS memory invalid slot rejected
+PASS memory config zero forbidden
+PASS memory no MIDI on write
+PASS patch no MIDI on write
+PASS bank changes never change desired LIVE
+PASS bank survives STOP in volatile engine
+PASS bank memory snapshot reaches FX
+PASS bank mismatch compared only after 9 observations
+PASS memory write after observation updates status
+PASS memory save atomic when FX queue full
+PASS invalid input never changes FX queue
+PASS PATCH not confused with MEMORY
+PASS MEMORY not confused with PATCH
+PASS different slots separated
+PASS SAVE with no diagnostic guard blocked
+PASS no fabricated session persistence
+PASS 45 L01/11 native BANKS scenarios

@@ -1,0 +1,45 @@
+# Plan de patch AUv3 — BASE et DRUMS/FILL 7–8
+
+Contrat de référence : [addendum du 5 novembre](../universel/11_ADDENDUM_BASE_CUE4_DRUMS_FILL_20261105.md). Point de départ logiciel : branche reprise/global-20261104, code validé à 1ba64e8 et paquet documentaire ecdd70b. Statut de ce plan : à exécuter.
+
+## Patch 1 — Références locales et réouverture
+
+- [ ] Relever les références par cellule et adresse S7 dans GOLDEN, Core/NavS3.hpp et Shared/XoneContinuousInput.hpp. Distinguer paramètres continus, états locaux et modes. Établir le socle 0 des rotatifs DRUMS/FILL, les EQ INST/YELLOW à 63 et les EQ BUS3/TOTAL à 63.
+- [ ] Dans Shared/XoneHostEngine.hpp et Shared/XoneResetDefaults.hpp, faire résoudre par le chemin de RESET existant la référence personnalisée du propriétaire puis l’universelle. Utiliser la même résolution pour compléter les cellules locales manquantes à la création et après le restore accepté. Garder les overlays d’observation et l’API inchangés. Capturer le LIVE d’ouverture après résolution, une fois par ouverture effective de session, et distinguer la réallocation AU.
+- [ ] Prouver le cas BASE 0 / ouverture 42 / LIVE 70, les valeurs 63, le zéro explicite sauvegardé, l’ancien document avec champ manquant, l’absence de rafale au démarrage et la reprise de LIVE différent du BASE. Adapter les assertions UNKNOWN uniquement sur les champs couverts.
+
+## Patch 2 — BASE complet de tranche et CUE4
+
+- [ ] Réutiliser les propriétaires et chemins de rappel dans Shared/XoneHostEngine.hpp, Shared/XoneAlternativeBank.hpp et Shared/XoneCueLoadBar.hpp. Ajouter le périmètre FX canonique à la référence BASE, y compris pour une tranche sans alternative, sans élargir les PATCH. Conserver les anciennes BASE MACHINE comme données compatibles et résoudre les FX manquants depuis la référence universelle. Comparer une extension versionnée du document à un champ AU dédié avant choix. Dans les deux cas, restaurer à la même frontière que LIVE et les attributions.
+- [ ] Qualifier CUE4 au DOWN et décider au vrai UP. Utiliser le seuil LONG existant après contrôle. Capturer tranche et destination, gérer annulation STOP, restore et changement de propriétaire. Court arme le rappel existant. Long capture une image complète et publie le clignotement uniquement après réussite. Calculer actif/ALT sur les valeurs canoniques, avec la palette GOLDEN. Vérifier CUE1–3, TOP4 et PRESET1–4.
+- [ ] Réutiliser le rappel BASE pour la nouvelle attribution avec la fermeture des OFF dus. Vérifier aucun rappel au reopen, roundtrip V2, refus des données incohérentes, clignotement et comparaison après édition FX. Pour SH, réserver PC0 au BASE et décaler les trois miroirs sur PC1–3. Mettre à jour le dispatch, la réception et les LED avec la même correspondance. Versionner la persistance pour distinguer les miroirs des anciens builds PC0–2. Réindexer uniquement les valeurs dont le programme et la destination sont identifiables. Le PC0 historique sort des slots PATCH et le PC3 commence vide en l’absence de capture. Tester CUE4 PC0 avec reprise FX locale, CUE1–3 PC1–3, PC0 physique avec rappel FX local et observation du BASE sans écriture de miroir, retour PC0 après CUE4 sans double application ni réémission, et réouverture sans PC automatique.
+
+## Patch 3 — Surface DRUMS/FILL et rappels groupés
+
+- [ ] Réutiliser le point de résolution contextuel de CoreV3. Garder les routes 1–6. Sur page 7, résoudre six cibles par rotatif et engager le mouvement depuis leurs valeurs actuelles. Prototyper une interpolation ancrée à la première position physique et aux deux butées. Vérifier le changement de sens, l’arrondi, le désancrage après RESET/MEMORY et la convergence avant de retenir la formule. Sur page 8, réutiliser les six cibles GLOBAL et leur pickup. Acheminer les SPOT dans le RESET existant avec le périmètre approprié.
+- [ ] Dans Shared/XoneSoftMidiBridge.hpp, étendre le dispatch du geste existant aux propriétaires 1–6 ou aux douze via requestVerified. Conserver le BAR, les dettes OFF et la reprise callback. L’API SOFT existante offre déjà quatre choix pour chaque propriétaire. Vérifier 6/12 rappels, y compris répétition de la sélection et STOP, sans écriture de LIVE ni commande PATCH.
+- [ ] Dans Shared/XoneHostEngine.hpp, définir les commandes groupées SAVE/RECALL sur les trois slots existants de Core/BankS6.hpp. Le geste actuel choisit capture ou rappel à partir de l’engagement d’un propriétaire. Relever le geste GOLDEN et fixer l’arbitrage groupé avant de modifier les entrées K2. Préparer la capture de tous les membres avant publication. Pour le rappel, distinguer slot vide d’un slot invalide et composer les cibles à partir de la MEMORY ou du LIVE d’ouverture. Privilégier une action groupée au BEAT dans Shared/XoneHostScheduler.hpp plutôt que douze admissions indépendantes. Le scheduler a 35 entrées. Vérifier capacité des paquets et cohérence lors d’un callback partiellement réussi. Les banques historiques des pages 7/8 restent lisibles et ne deviennent pas des banques de groupe.
+- [ ] Tester six valeurs distinctes, les deux butées, les RESET par son, l’identité des accès DRUM8/FILL8, le mélange MEMORY présente/vide, SAVE vers les slots individuels, compétition avec un rappel unitaire, STOP et échec de livraison. Décider le feedback LED d’un état mixte en s’appuyant sur le GOLDEN. La mécanique groupée peut avancer indépendamment de cette couleur.
+
+## Patch 4 — Intégration
+
+- [ ] Exécuter contrôles des sources protégées, suites natives, harness AU macOS, ASan/UBSan et build iOS. Inclure un parcours session neuve sans plugins, réouverture d’un document V2, tests CUE4/LED, rappel MEMORY mixte à douze et SOFT à douze avec OFF en attente.
+- [ ] Actualiser la recette K2/AUM et tester l’appareil sur le SHA livré. Séparer les résultats MIDI neutres, la réponse des plugins et le retour physique SH. Les choix DJ/LOOP et les destinations externes restent des raccordements ultérieurs. Publier sur la branche de travail, avec fusion dans main soumise à accord.
+
+
+## État du raccordement CUE4
+
+Le BASE local complet utilise le document V3 dès qu’une référence personnalisée existe. La présence d’une référence FX SH utilise V4 et conserve une identité de destination, de source et d’alternative distincte de la banque locale. Le décodeur garde la lecture V2 et V3. Les anciens builds ne lisent pas les extensions nouvelles.
+
+La métadonnée SHAU V2 indexe les miroirs par PC1–3. À la lecture de SHAU V1, les données des anciens PC1 et PC2 suivent leur programme, PC3 démarre vide, et l’ancien PC0 ne devient pas un PATCH. Aucun rappel n’est envoyé lors de la migration.
+
+L’antidoublon du rappel BASE considère le premier PC0 correspondant dans les 100 ms suivant un PC0 sortant réussi comme un retour du même rappel. Un appui physique du même PC dans cette fenêtre est indiscernable avec le MIDI disponible. Vérifier la fenêtre sur le Roland réel.
+
+Reste à couvrir le rappel du BASE SH à la nouvelle attribution, les couleurs K2 exactes et la qualification DRUMS/FILL dans AUM. Les couleurs provisoires du BASE CUE4 sont vert pour courant et jaune pour altéré.
+
+
+## État du raccordement DRUMS/FILL
+
+Les pages 7 utilisent un ancrage sur la première position physique reçue. Les sorties interpolent depuis les valeurs courantes vers la butée, puis repartent ensemble. RESET et MEMORY réarment les cibles. DRUM8/FILL8 utilisent les routes GLOBAL existantes. Les six ou douze SOFT passent par la sortie SOFT existante au BAR. MEMORY groupée réutilise les slots des sons avec écriture préparée sur une copie de banque et un seul rappel au BEAT. Les anciens slots des pages 7 et 8 restent lisibles.
+
+Le court garde l’activation puis le rappel du GOLDEN. Sur un slot engagé, le long remplace la MEMORY. Sur un slot inactif, il fait la même capture que le court. Les deux se décident au relâchement et un seul slot membre engagé suffit à sélectionner le rappel du groupe. Le feedback LED groupé est consigné dans le contrat. Le chemin MIDI neutre peut être testé avec un moniteur AUM. La réponse d’un plugin dépend de sa liaison ultérieure.

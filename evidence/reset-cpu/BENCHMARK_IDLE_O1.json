@@ -1,0 +1,93 @@
+{
+  "reference_sha": "aa6195c3b6c91021f0e5fba332a9268ccbd983bb",
+  "working_head": "aa6195c3b6c91021f0e5fba332a9268ccbd983bb",
+  "working_changes_included": true,
+  "working_headers_sha256": "58b1a2a955f51332bc6742c11b825aa9934ca97b83c5d6b4016f2b0fcb92f81c",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "compiler": "g++.exe (GCC) 16.2.0",
+  "flags": "C++17 O1 assertions and warnings fatal",
+  "warmup": 256,
+  "buffers_per_run": 4096,
+  "frames": 128,
+  "sample_rate": 48000,
+  "samples": {
+    "reference": [
+      {
+        "mean_us": 10.6233,
+        "p99_us": 12,
+        "max_us": 322,
+        "document_bytes": 95276,
+        "engine_bytes": 340760
+      },
+      {
+        "mean_us": 10.7637,
+        "p99_us": 12,
+        "max_us": 565,
+        "document_bytes": 95276,
+        "engine_bytes": 340760
+      },
+      {
+        "mean_us": 11.3384,
+        "p99_us": 13,
+        "max_us": 1448,
+        "document_bytes": 95276,
+        "engine_bytes": 340760
+      },
+      {
+        "mean_us": 10.7112,
+        "p99_us": 12,
+        "max_us": 1012,
+        "document_bytes": 95276,
+        "engine_bytes": 340760
+      },
+      {
+        "mean_us": 10.8831,
+        "p99_us": 12,
+        "max_us": 1141,
+        "document_bytes": 95276,
+        "engine_bytes": 340760
+      }
+    ],
+    "working": [
+      {
+        "mean_us": 0.370361,
+        "p99_us": 1,
+        "max_us": 8,
+        "document_bytes": 95276,
+        "engine_bytes": 350744
+      },
+      {
+        "mean_us": 0.381348,
+        "p99_us": 1,
+        "max_us": 6,
+        "document_bytes": 95276,
+        "engine_bytes": 350744
+      },
+      {
+        "mean_us": 0.351318,
+        "p99_us": 1,
+        "max_us": 8,
+        "document_bytes": 95276,
+        "engine_bytes": 350744
+      },
+      {
+        "mean_us": 0.378906,
+        "p99_us": 1,
+        "max_us": 11,
+        "document_bytes": 95276,
+        "engine_bytes": 350744
+      },
+      {
+        "mean_us": 0.365234,
+        "p99_us": 1,
+        "max_us": 6,
+        "document_bytes": 95276,
+        "engine_bytes": 350744
+      }
+    ]
+  },
+  "scope": "isolated native idle workload; not iOS/AUM CPU or real-time guarantee",
+  "reference_median_mean_us": 10.7637,
+  "working_median_mean_us": 0.370361,
+  "idle_time_ratio_reference_over_working": 29.06272528694976
+}

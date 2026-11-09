@@ -1,0 +1,116 @@
+{
+  "archive": {
+    "drive_id": "133HHtTSlg1GOdrUYs4yotetk6KRxAObf",
+    "sha256": "cdccabcc831ce511c0a1faa839fe712308b8ba1c5caa6f87d0f9c41a7880c11f"
+  },
+  "files": [
+    {
+      "path": "Core/BankS6.hpp",
+      "sha256": "152bdb1781d2155411e65f3086f1179c4664aa17a39b97f3ff5cd72b4d7c8f37"
+    },
+    {
+      "path": "Core/CoreCoordinator.hpp",
+      "sha256": "32a727b6d980c970927891c5f96e9f622a7e498697119b8558c6caaedb561ece"
+    },
+    {
+      "path": "Core/Engine.hpp",
+      "sha256": "a0ea566b80dcdccc32410bdf14da5172425144fa4002cd3c95ab377bd0dd7367"
+    },
+    {
+      "path": "Core/FxS6.hpp",
+      "sha256": "1982420d0d080c55f5cba43752bf08143f93303deb726e92d03f2994ca2d5c30"
+    },
+    {
+      "path": "Core/GestureS2.hpp",
+      "sha256": "4668dfd7de25af4af00349f1a3fbfed00331fe978e0d0a7fb3c53057121b6797"
+    },
+    {
+      "path": "Core/LiveState.hpp",
+      "sha256": "0b956d8103554eed38e4654d80b282750286489c5d406ddf5103df8180d3476e"
+    },
+    {
+      "path": "Core/NativeSlices.hpp",
+      "sha256": "c645d5b6e2024771cf370971030533b3f504ed6fab2c8c82c6625d1793e26c6e"
+    },
+    {
+      "path": "Core/NavS3.hpp",
+      "sha256": "6df4a8f2e8e203844405455c15ddf7ff292fa97479b5f2b53962a7a43fd8febe"
+    },
+    {
+      "path": "Core/OutputS4.hpp",
+      "sha256": "0d9cba75a0c8b49d8f30ac718b1e3ec941d4be367a5979cbaafa426364297495"
+    },
+    {
+      "path": "Core/S3DecisionBoundary.hpp",
+      "sha256": "2ee0e741425a468ae1fe6384cb4893010a8ea348029eb3701b1c1958327cd435"
+    },
+    {
+      "path": "Core/S3LongTransaction.hpp",
+      "sha256": "f369995c1d68dadfd3c20f0b4f1ef2eb0f2fa3a48ed3a77a1feb63ad93eb017a"
+    },
+    {
+      "path": "Core/S3TouchNav.hpp",
+      "sha256": "86f254baf84d3ec7873cde32ad58c7eb7f81991ffe30de06c3457cd199ede4bf"
+    },
+    {
+      "path": "NativeTests/test_bank_s6.cpp",
+      "sha256": "5cd0dfd377ed2c8ac38d40071a07146ba33f5cb42bc68d9f80d59ef9d9bfd1ff"
+    },
+    {
+      "path": "NativeTests/test_engine_existing.cpp",
+      "sha256": "5dbdf713edbcd3ffb7e584e5d429d24dc4fd49c547ebc381a68c66827b17052c"
+    },
+    {
+      "path": "NativeTests/test_fx_s6.cpp",
+      "sha256": "71fcb0f02251fd99573d8f02c555f5562ee561af8d93e0b03c67c574a399836a"
+    },
+    {
+      "path": "NativeTests/test_live_state.cpp",
+      "sha256": "b054f9a3c72405e8e3b2739a39e4cc6b3685a3b948fbff1c42fdb61075c563e8"
+    },
+    {
+      "path": "NativeTests/test_memory_recall.cpp",
+      "sha256": "cd1f58020b072e17ead0b228913d16c8fe96543c2c9f2415667f77f08e12af5f"
+    },
+    {
+      "path": "NativeTests/test_native_slices.cpp",
+      "sha256": "995b0b37619c3cbcacefbc8c11c6ecda209ad348da5130deb7b3bc6567ea718f"
+    },
+    {
+      "path": "NativeTests/test_nav_oracle.cpp",
+      "sha256": "8694ba25acfa8c23496c5b0b21bfb8744612b1d04105e7315dbf3a417d511a45"
+    },
+    {
+      "path": "NativeTests/test_nav_pipeline.cpp",
+      "sha256": "1ce6bbfa4d0ebbe5f3ee629d898115e60b8480d56bf69525067e052beaa62ac2"
+    },
+    {
+      "path": "NativeTests/test_nav_s3.cpp",
+      "sha256": "ba8770a23d00b44c514145db3ec1b9ae623e3373c29ea3da2ee09e519af961cc"
+    },
+    {
+      "path": "NativeTests/test_pipeline.cpp",
+      "sha256": "d471a45e44c0e3e6b54f4f6d33b9c9b515e8434e2b825035551b7318cfdf053c"
+    },
+    {
+      "path": "NativeTests/test_s3_boundary.cpp",
+      "sha256": "8d7b3026312050b12db58f6584103507ece1cd5a7151912384728506a483cf74"
+    },
+    {
+      "path": "NativeTests/test_s3_long_browser.cpp",
+      "sha256": "81f02952a7dd0fd112cfb7db9bfc76d4a8ccc2493e9c0836e37d2bd93359542e"
+    },
+    {
+      "path": "NativeTests/test_s3_s4_bridge.cpp",
+      "sha256": "2d6ae419cf52c13fd45af6fc08b5b623da0e928c9562fd494998ee777df7420b"
+    },
+    {
+      "path": "NativeTests/test_s3_touch_nav.cpp",
+      "sha256": "e55342a8154c91b23c8e152264acc276406bc62fcded2b9ccf06dd9ff3a1e463"
+    },
+    {
+      "path": "Fixtures/SOURCE_NAV_DEFAULT_52.csv",
+      "sha256": "682cdf8aaabc67031e75aee43d3857944aace152278d43632e4ade20a34d178d"
+    }
+  ]
+}

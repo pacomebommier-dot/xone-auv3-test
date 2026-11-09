@@ -1,0 +1,13 @@
+PASS recall valid MEMORY 9 fields one LIVE revision
+PASS recall no MIDI notes or CC
+PASS recall never manufactures observed
+PASS recall rejects invalid empty slot
+PASS recall rejects wrong profile
+PASS recall rejects stale LIVE revision
+PASS recall destination preserves unrelated cells
+PASS recall page upper owner 27
+PASS recall preserves PATCH independence
+PASS recall disabled outside diagnostic
+PASS recall refuses while LONG pending
+PASS recall is not saved in a session automatically
+PASS 12 L01/11 MEMORY recall scenarios
