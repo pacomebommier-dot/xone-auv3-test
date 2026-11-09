@@ -1807,7 +1807,7 @@ private:
     }
     struct SamplePatchRequest {int owner{-1},slot{-1};uint32_t revision{};bool s8{},machine{};};
     SamplePatchRequest samplePatch_{};int pairedTopSource_{-1};int64_t lastSamplePatchBar_{-1};
-    void armSamplePatch(unsigned index) noexcept {
+    void armSamplePatch(unsigned index,bool longPress) noexcept {
         if(samplePatchPending() || index>=3 || !topIntentValid_[index])return;
         const auto& intent=topIntents_[index];
         const int packed=intent.route.address;
@@ -1815,18 +1815,26 @@ private:
         const int owner=packed%32-1,slot=intent.route.position;
         if(owner<0||owner>=8||slot<0||slot>=3)return;
         S8SamplePatchBank::Patch native{};
-        if(s8Sample_.read(static_cast<unsigned>(owner),static_cast<unsigned>(slot),native) &&
-           native.valid && native.config==core_.nativeLive().sessionConfig()) {
+        if(!s8Sample_.read(static_cast<unsigned>(owner),static_cast<unsigned>(slot),native))return;
+        l01::BankS6::PatchRecord historical{};
+        const bool historicalValid=core_.readNativePatch(owner,slot,historical)&&historical.valid;
+        if(longPress||(!native.valid&&!historicalValid)){
+            // Short on EMPTY and LONG on any slot capture exactly once.
+            // Failed capture must never fall back to a BAR RECALL.
+            topIntentValid_[index]=false;
+            const bool saved=saveSamplePatchFromLive(slot);
+            if(saved)++sampleSavesAccepted_;else ++sampleSavesRefused_;
+            return;
+        }
+        if(native.valid){
+            if(native.config!=core_.nativeLive().sessionConfig())return;
             samplePatch_={owner,slot,native.revision,true};
         }else{
-            // Explicit pre-render S6 fixtures remain available for historical
-            // compatibility tests; normal physical SAVE never writes S6.
-            l01::BankS6::PatchRecord historical{};
-            if(!core_.readNativePatch(owner,slot,historical)||!historical.valid||
-               historical.config!=core_.nativeLive().sessionConfig())return;
+            // Historical S6 fixtures may be recalled, never written.
+            if(historical.config!=core_.nativeLive().sessionConfig())return;
             samplePatch_={owner,slot,historical.revision,false};
         }
-        topIntentValid_[index]=false; // command accepted once; BAR still has not applied it
+        topIntentValid_[index]=false; // One BAR recall only.
     }
     bool hasSourcePatch(unsigned source,unsigned slot) const noexcept {
         SourcePatchBank::Patch patch{};
@@ -1850,7 +1858,8 @@ private:
             if(!sh01aSource(source)){
                 if(longPress||!readSourcePatch(source,static_cast<unsigned>(slot),patch)){
                     topIntentValid_[index]=false;
-                    saveMachinePatchFromLive(slot);
+                    const bool saved=saveMachinePatchFromLive(slot);
+                    if(saved)++sampleSavesAccepted_;else ++sampleSavesRefused_;
                     return;
                 }
                 if(patch.config!=core_.nativeLive().sessionConfig())return;
@@ -1863,7 +1872,8 @@ private:
         if(!s8Machine_.read(static_cast<unsigned>(selected-1),static_cast<unsigned>(slot),patch))return;
         if(longPress||!patch.valid){
             topIntentValid_[index]=false;
-            saveMachinePatchFromLive(slot);
+            const bool saved=saveMachinePatchFromLive(slot);
+            if(saved)++sampleSavesAccepted_;else ++sampleSavesRefused_;
             return;
         }
         if(patch.config!=core_.nativeLive().sessionConfig())return;
