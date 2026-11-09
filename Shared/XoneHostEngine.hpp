@@ -1155,10 +1155,10 @@ private:
                 const bool down=cmd==0x90&&data[2]!=0;
                 // S2 advances before input: a LONG in this packet must qualify NAV first.
                 const auto captured=core_.nativeRoute(physical);
-                // S7 GROUP/LONG (YELLOW/FILL) owns these notes while its
-                // qualified physical DOWN is pending; never also fire a
-                // newly initialized individual SPOT from the same note.
-                if(groupHolds_[static_cast<unsigned>(physical-20)].active)return {};
+                // In YELLOW/FILL the qualified S7 GROUP pulse is a separate
+                // musical intent, not an alternative owner of the FX switch.
+                // The same physical SPOT still toggles its local effect,
+                // and its long press must also set all three FX states.
                 auto& group=socleSpotGroups_[static_cast<unsigned>(physical-20)];
                 // A real UP exactly at 120 ms must qualify the group even
                 // without an intervening render-timer tick.
@@ -1847,8 +1847,7 @@ private:
             const int family=(route.address%1024)/32;
             if(navMode()==0 && core_.nativeNav().active().contextMode==0 &&
                mode==1 && route.position>=0 && route.position<3 &&
-               family>=3 && family<=6 &&
-               !groupHolds_[static_cast<unsigned>(physical-20)].active){
+               family>=3 && family<=6){
                 candidate.physical=physical;candidate.down=ms;
                 candidate.navRevision=core_.nativeNav().revision();
                 candidate.target=previous==0?1:0;
