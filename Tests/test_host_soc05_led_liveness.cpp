@@ -103,7 +103,7 @@ int main(){
         hostRender(host,k2,0);
         // EQ CC4 is a real physical K2 control; the first message
         // produces a RED witness with no session fixture.
-        auto r=cc(host,4,64,10);assert(r.emit&&r.api==907);host.sent(r,0);
+        auto r=cc(host,4,63,10);assert(r.emit&&r.api==907);host.sent(r,0); // EQ stays at its 63 neutral
         hostRender(host,k2,10);
         k2.only(16,0);
         hostRender(host,k2,59);k2.only(16,0);
