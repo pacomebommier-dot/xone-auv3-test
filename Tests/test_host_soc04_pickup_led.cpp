@@ -88,6 +88,14 @@ int main(){
   out.observeFull(base,650);assert(has(ledDrain(out),19,2,true));
  }
  {
+  // A CC can precede the first LED render on a just-selected NAV route.
+  // The renderer must not cancel the fresh 50ms pulse as a "stale" flash.
+  HostEngine first;
+  const auto accepted=cc(first,4,64,10);assert(accepted.emit&&accepted.api==907);
+  first.sent(accepted,0);
+  const auto led=hostLeds(first,10);assert(has(led,16,0,true));
+ }
+ {
   HostEngine e;e.beginRenderBuffer();hostLeds(e,0);
   auto r=cc(e,4,0,10);assert(!r.emit);
   assert(hostLeds(e,10).empty()); // far pickup must not flicker
