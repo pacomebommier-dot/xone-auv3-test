@@ -663,6 +663,49 @@ int main() {
     socPump(48,0x8E,48,0);assert(socCount==3); // no redundant release
     [socUnit deallocateRenderResources];
 
+    // SOC-05: real AU MIDIOutputEventBlock, not only the native LED
+    // composer. The first CC witness turns the physical K2 lamp ON.
+    // Fail its 50ms OFF callback once; the NEXT eventless render must
+    // repair it without any new CC (no permanent physical LED freeze).
+    XoneMidiAudioUnit *ledUnit=[[XoneMidiAudioUnit alloc] initWithComponentDescription:description options:0 error:&error];
+    assert(ledUnit&&!error);assert([ledUnit.inputBusses[0] setFormat:format error:&error]);
+    assert([ledUnit.outputBusses[0] setFormat:format error:&error]);
+    ledUnit.maximumFramesToRender=8192;
+    const int k2RedNote=xone::l01::ledBinding(16,1).note;
+    __block bool k2RedLit=false,failLedOffOnce=false;
+    __block unsigned k2RedOn=0,k2RedOffFailed=0,k2RedOffRecovered=0;
+    ledUnit.MIDIOutputEventBlock=^OSStatus(AUEventSampleTime t,uint8_t cable,NSInteger length,const uint8_t *data){
+        (void)t;assert(cable==0&&length==3);
+        if(data[1]==k2RedNote&&(data[0]==0x9E||data[0]==0x8E)){
+            if(data[0]==0x9E){k2RedLit=true;++k2RedOn;}
+            else if(failLedOffOnce){failLedOffOnce=false;++k2RedOffFailed;return static_cast<OSStatus>(-1);}
+            else{k2RedLit=false;++k2RedOffRecovered;}
+        }
+        return noErr;
+    };
+    assert([ledUnit allocateRenderResourcesAndReturnError:&error]);
+    auto ledRender=ledUnit.internalRenderBlock;AUEventSampleTime ledCursor=0;
+    const auto ledPump=[&](AVAudioFrameCount frames,int cmd=-1,int number=0,int value=0){
+        AudioTimeStamp t{};t.mFlags=kAudioTimeStampSampleTimeValid;t.mSampleTime=static_cast<Float64>(ledCursor);
+        AURenderEvent e{};e.MIDI.eventType=AURenderEventMIDI;e.MIDI.eventSampleTime=ledCursor;
+        e.MIDI.cable=0;e.MIDI.length=3;e.MIDI.data[0]=static_cast<uint8_t>(cmd);
+        e.MIDI.data[1]=static_cast<uint8_t>(number);e.MIDI.data[2]=static_cast<uint8_t>(value);
+        AudioUnitRenderActionFlags flags=0;audio.frameLength=frames;
+        assert(ledRender(&flags,&t,frames,0,audio.mutableAudioBufferList,cmd<0?nullptr:&e,nil)==noErr);
+        ledCursor+=frames;
+    };
+    // EQ INST neutral=63. Its semantic LED stays OFF; only the pickup
+    // inversion is transient. No user-facing K2 hardware is inferred.
+    ledPump(48,0xBE,4,63);assert(k2RedOn>=1&&k2RedLit);
+    failLedOffOnce=true;
+    ledPump(2400); // +50ms no MIDI input, reaches witness deadline
+    assert(k2RedOffFailed==1&&k2RedLit);
+    ledPump(48); // failed target gets the three-color OFF purge
+    assert(k2RedOffRecovered>=1&&!k2RedLit);
+    ledPump(4800); // 100ms more eventless rendering: no re-freeze
+    assert(!k2RedLit);
+    [ledUnit deallocateRenderResources];
+
     std::cout<<"PASS real AU wrapper document/recreate round-trip, callback MIDI, 48kHz clock, STOP, TOUCH/FLASH callback failures, same-event LONG route, corruption, no load TX (macOS harness)\n";
  }
 }
