@@ -102,10 +102,11 @@ int main(){
   r=cc(e,4,0,20);assert(r.emit&&r.api==907&&r.value==0);e.sent(r,0);
   auto packets=hostLeds(e,20);
   assert(has(packets,16,0,true)); // default EQ red witness
-  r=cc(e,4,5,100);assert(r.emit&&r.api==907&&r.value==5);e.sent(r,0);
-  packets=hostLeds(e,100);assert(has(packets,16,0,false));
-  packets=hostLeds(e,149);assert(!has(packets,16,0,true));
-  packets=hostLeds(e,150);assert(has(packets,16,0,true)); // restore actual EQ LED
+  // 50ms witness / 100ms lock after the pulse at t=20.
+  r=cc(e,4,5,130);assert(r.emit&&r.api==907&&r.value==5);e.sent(r,0);
+  packets=hostLeds(e,130);assert(has(packets,16,0,false));
+  packets=hostLeds(e,179);assert(!has(packets,16,0,true));
+  packets=hostLeds(e,180);assert(has(packets,16,0,true)); // restore actual EQ LED
  }
  {
   HostEngine borrowed;const std::uint8_t down[]{0x9E,36,127},up[]{0x8E,36,0};
