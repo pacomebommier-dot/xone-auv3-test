@@ -1071,7 +1071,8 @@ private:
                 muteGate_=muteNext; // commit time qualification only after accepted input
                 const bool down=cmd==0x90&&data[2]!=0;
                 if(physical==1){
-                    if(down)muteGate_.beginBot2(gestureMs,core_.s3().physicalOwner(1)==1);
+                    if(down)muteGate_.beginBot2(gestureMs,core_.s3().physicalOwner(1)==1 ||
+                        (navMode()==3&&core_.s3().physicalOwner(1)==20));
                     else muteGate_.releaseBot2(gestureMs);
                 }else if(physical>=4&&physical<20){
                     const unsigned base=static_cast<unsigned>(physical-4);
