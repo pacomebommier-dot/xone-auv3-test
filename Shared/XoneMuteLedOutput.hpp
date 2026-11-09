@@ -9,22 +9,27 @@ class MuteLedOutput {
 public:
  using Image=std::array<BaseLed,34>;
  struct Packet {bool valid{};unsigned target{},color{};bool on{};std::uint8_t bytes[3]{};};
- void invalidate() noexcept {known_.fill(0);until_.fill(0);owned_=true;}
- void cancelFlashes() noexcept {until_.fill(0);}
+ void invalidate() noexcept {known_.fill(0);cancelFlashes();owned_=true;}
+ void cancelFlashes() noexcept {until_.fill(0);cooldown_.fill(0);}
  // CC witness is a temporary visual overlay, NEVER an alteration
  // of the semantic LED image. GOLDEN CLInterval=50ms; the separate
  // lock/timer arbitration window is 2*CLInterval=100ms.
- void flash(unsigned position,MuteLedColor color,std::int64_t now) noexcept {
+ void flash(unsigned position,MuteLedColor color,std::int64_t now,
+            const BaseLed* currentContext=nullptr) noexcept {
   const auto c=static_cast<unsigned>(color);
-  if(position>=32||c<1||c>3||now<0||now>INT64_MAX-50)return;
-  const auto& base=previous_[position];
+  if(position>=32||c<1||c>3||now<0||now>INT64_MAX-100)return;
+  // GOLDEN lockCC: one 50ms inversion, next eligible pulse at +100ms.
+  // Repeated rapid CC messages must not hold a lamp indefinitely inverted.
+  if(cooldown_[position]>now)return;
+  // Receive() can see a new NAV/LIVE image before its first LED render;
+  // explicitly provided current context is authoritative over the old cache.
+  const auto& base=currentContext?*currentContext:previous_[position];
   const auto baseColor=static_cast<unsigned>(base.color);
   const bool lit=base.known&&baseColor>=1&&baseColor<=3&&
                  (!base.blinking||(now/100)%2==0);
-  // If any real color is lit, briefly extinguish it. Otherwise blink
-  // the context color. Do not infer status from asynchronous LED ACKs.
   flash_[position]=lit?0:static_cast<std::uint8_t>(1u<<(c-1));
   until_[position]=now+50;
+  cooldown_[position]=now+100;
  }
  void observeFull(const Image& context,std::int64_t ms) noexcept {
   owned_=true;count_=34;
@@ -85,7 +90,7 @@ private:
  }
  std::array<std::uint8_t,34> desired_{},sent_{},known_{};
  std::array<bool,34> failed_{};
- Image previous_{};std::array<std::int64_t,34> until_{};std::array<std::uint8_t,34> flash_{};unsigned count_{16};
+ Image previous_{};std::array<std::int64_t,34> until_{},cooldown_{};std::array<std::uint8_t,34> flash_{};unsigned count_{16};
  bool visible_{},owned_{};
 };
 }
