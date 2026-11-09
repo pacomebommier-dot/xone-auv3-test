@@ -1156,6 +1156,12 @@ private:
                 // qualified physical DOWN is pending; never also fire a
                 // newly initialized individual SPOT from the same note.
                 if(groupHolds_[static_cast<unsigned>(physical-20)].active)return {};
+                auto& group=socleSpotGroups_[static_cast<unsigned>(physical-20)];
+                if(!down && wasHeld && group.physical==physical && group.fired){
+                    group={};
+                    spots_[static_cast<unsigned>(physical-20)]={};
+                    return {}; // no contradictory individual action at true UP
+                }
                 if(wasHeld!=down)return spot(physical,down,captured,gestureMs,seq,sample);
             }
             if(accepted&&cmd==0xB0){
@@ -1488,6 +1494,7 @@ public:
         core_.observeBrowserGuardForDiagnostic(false,0,0);
         core_.onHostStop(); // must not fabricate UP or clear held keys
         core_.output()=output;
+        socleSpotGroups_.fill({});
         for(auto& held:spots_){
             if(held.cell>=0&&(held.mode==3||(held.mode==1&&held.previous==0)))
                 core_.commitNativeLive(held.cell,0,core_.nativeLive().revision());
@@ -1533,6 +1540,7 @@ public:
         // opportunity emits once, at/after 120ms; an UP at the threshold
         // uses the exact same source proof.
         for(auto& hold:groupHolds_)fireGroupLong(hold,ms);
+        for(auto& hold:socleSpotGroups_)fireSocleSpotGroup(hold,ms);
         if(!core_.gesture().timerNeeded())return;
         const auto navBeforeTimer=core_.nativeNav().revision();
         const auto seq=++sequence_;
@@ -1641,6 +1649,39 @@ private:
         }
     }
     std::array<GroupHold,12> groupHolds_{};
+    static constexpr std::int64_t SocleSpotLongMs=120;
+    void fireSocleSpotGroup(SocleSpotGroup& hold,std::int64_t now) noexcept {
+        if(hold.physical<20||hold.physical>=32||hold.fired||
+           now<hold.down||now-hold.down<SocleSpotLongMs)return;
+        const auto& nav=core_.nativeNav();
+        if(!nav.stable()||nav.hasStage()||nav.revision()!=hold.navRevision||
+           navMode()!=0||nav.active().contextMode!=0||mutePageVisible()||
+           !surfaceHeld(static_cast<unsigned>(hold.physical))||
+           core_.longNavPending())return;
+        std::array<int,97> cells{},values{};
+        unsigned count=0;
+        for(unsigned k=0;k<3;++k){
+            const auto live=core_.nativeLive().desired(hold.cells[k]);
+            if(!live.known||live.value>1)return;
+            if(live.value!=hold.target){
+                cells[count]=hold.cells[k];values[count]=hold.target;++count;
+            }
+        }
+        if(sourceWrite_-sourceRead_+count+alternativeFlight_.reserved>sourceMidi_.size())return;
+        if(count && !core_.commitNativeReset(cells,values,count,core_.nativeLive().sessionConfig()))return;
+        for(unsigned k=0;k<3;++k){
+            bool changed=false;
+            for(unsigned j=0;j<count;++j)if(cells[j]==hold.cells[k])changed=true;
+            if(!changed)continue;
+            const int api=hold.apis[k],value=hold.target;
+            sourceMidi_[sourceWrite_++%sourceMidi_.size()]=
+                {true,++sourcePacketToken_,11,api,value,
+                 {static_cast<std::uint8_t>((value?0x96:0x86)+api/128),
+                  static_cast<std::uint8_t>(api%128),
+                  static_cast<std::uint8_t>(value?127:0)}};
+        }
+        hold.fired=true;documentDirty_=true;
+    }
     struct SamplePatchRequest {int owner{-1},slot{-1};uint32_t revision{};bool s8{},machine{};};
     SamplePatchRequest samplePatch_{};int pairedTopSource_{-1};int64_t lastSamplePatchBar_{-1};
     void armSamplePatch(unsigned index) noexcept {
@@ -1750,6 +1791,13 @@ private:
     MuteMidiProjection muteMidi_{};
     MuteLedOutput muteLeds_{};std::uint64_t ledNavRevision_{};std::atomic<bool> ledRefreshRequest_{false};
     struct SpotHold {int cell{-1},api{-1},mode{},previous{};int64_t downMs{};};
+    // SOC-02: source-qualified ON/OFF groups only (SOCLE), distinct from
+    // S7 GROUP pulse and the borrowed RESET contexts.
+    struct SocleSpotGroup {
+        int physical{-1};int64_t down{};std::uint64_t navRevision{};
+        std::array<int,3> cells{},apis{},previous{};int target{};bool fired{};
+    };
+    std::array<SocleSpotGroup,12> socleSpotGroups_{};
     static int spotApi(int cell) noexcept {
         if(cell<320&&cell%40>=16&&cell%40<28)return 12*(cell/40)+cell%40-16;
         if(cell>=320&&cell<1328&&(cell-320)%42>=18&&(cell-320)%42<30)
@@ -1761,8 +1809,9 @@ private:
     Result spot(int physical,bool down,l01::NavRoute route,int64_t ms,uint32_t seq,int64_t sample) noexcept {
         auto& held=spots_[static_cast<std::size_t>(physical-20)];
         int cell=-1,api=-1,value=-1,mode=0,previous=0;
+        SocleSpotGroup candidate{};
         if(down){
-            held={};int preset=-1;
+            held={};socleSpotGroups_[static_cast<unsigned>(physical-20)]={};int preset=-1;
             // Source @w0 excludes d6=24; other owners are not guessed.
             if(route.address<0||route.address/1024!=3||
                !l01::LiveState::spotAddresses(route.address,route.position,cell,preset))return {};
@@ -1780,8 +1829,32 @@ private:
             api=spotApi(cell);
             if(!live.known||live.value>1||!selected.known||selected.value<1||selected.value>4||api<0)return {};
             mode=selected.value;previous=live.value;
+            // Only a genuine SOCLE effect switch has the GROUP ON/OFF
+            // action. Do not reassign borrowed parameter RESET or S8 modes.
+            const int family=(route.address%1024)/32;
+            if(navMode()==0 && core_.nativeNav().active().contextMode==0 &&
+               mode==1 && route.position>=0 && route.position<3 &&
+               family>=3 && family<=6 &&
+               !groupHolds_[static_cast<unsigned>(physical-20)].active){
+                candidate.physical=physical;candidate.down=ms;
+                candidate.navRevision=core_.nativeNav().revision();
+                candidate.target=previous==0?1:0;
+                for(int k=0;k<3;++k){
+                    int c=-1,p=-1;
+                    if(!l01::LiveState::spotAddresses(route.address,k,c,p)){
+                        candidate.physical=-1;break;
+                    }
+                    const auto v=core_.nativeLive().desired(c);
+                    const int a=spotApi(c);
+                    if(!v.known||v.value>1||a<0){candidate.physical=-1;break;}
+                    candidate.cells[static_cast<unsigned>(k)]=c;
+                    candidate.apis[static_cast<unsigned>(k)]=a;
+                    candidate.previous[static_cast<unsigned>(k)]=v.value;
+                }
+            }
             held={cell,api,mode,previous,ms};value=mode==4?0:1;
         }else{
+            socleSpotGroups_[static_cast<unsigned>(physical-20)]={};
             const auto capture=held;held={};
             if(capture.cell<0||capture.mode==4)return {};
             cell=capture.cell;api=capture.api;mode=capture.mode;previous=capture.previous;
@@ -1807,6 +1880,8 @@ private:
             // A bounded LIVE counter must not suppress an already owed release.
             if(down||value!=0||!core_.output().debt(api))return {};
         }
+        if(down && candidate.physical>=0)
+            socleSpotGroups_[static_cast<unsigned>(physical-20)]=candidate;
         if(!projection.emitted()){
             core_.output()=projection; // state-only nominal change, no MIDI debt erased
             return {};
