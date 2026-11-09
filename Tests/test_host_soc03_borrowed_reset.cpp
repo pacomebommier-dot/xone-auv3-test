@@ -88,7 +88,15 @@ static void flashState(HostEngine& h,const Strip& s,int ms,bool litAll){
     for(unsigned k=0;k<3;++k){
         const auto led=v[unsigned(s.controls[k]-4)];
         if(litAll){assert(led.known&&led.color==s.color&&!led.blinking);}
-        else assert(!led.known||led.color==MuteLedColor::Off);
+        else {
+            // In bare EQ SOCLE, a peer that has NOT been reset still
+            // advertises its nonneutral EQ value with its ordinary LED.
+            // Only the transient RESET overlay must disappear on UP.
+            const auto live=h.desiredLive(s.cells[k]);
+            const bool naturalEqOn=s.nav.at(292)==0&&live.known&&live.value!=63;
+            if(naturalEqOn)assert(led.known&&led.color==s.color&&!led.blinking);
+            else assert(!led.known||led.color==MuteLedColor::Off);
+        }
     }
 }
 static void test(const Strip& s,bool explicitBase){
