@@ -35,49 +35,7 @@ public:
         if(item.kind!=SurfaceKind::None){
             if(!gest.accept(item,ms,b)||!s3.accept(b,proposals,ms))return false;
         }
-        // SOC-01: SOCLE BASE header gestures are owned here, not by diagnostic TOUCH.
-        // Capture original NAV at DOWN; short keeps the toggled state, long restores.
-        auto socle=socleBase_;
-        bool socleConsumed=false;
-        if(!muteBaseOwned && diagnosticTouch_ && b.count==1){
-            const auto& e=b.items[0];
-            if(e.kind==GestureEventKind::RawEdge && e.control>=4 && e.control<20){
-                if(e.value==1 && socle.physical<0 && nav.stable() && !nav.hasStage() &&
-                   nav.active().at(292)==0 && !tx.pending() && !touch.busy() &&
-                   s3.physicalOwner(1)==-1 && s3.physicalOwner(2)==-1 && s3.physicalOwner(3)==-1){
-                    const auto route=nav.active().route(e.control);
-                    const int group=(route.address%1024)/32;
-                    const int page=nav.active().at(291);
-                    if(route.address>=0 && route.address/1024==2 &&
-                       (group==3+page || group==5+page)){
-                        const NavImage before=nav.active();
-                        NavImage next=before;
-                        const int value=route.address%32;
-                        int flag=-1,primary=-1;
-                        if(group==3+page){
-                            primary=293+2*page+(value>4?1:0);
-                            flag=299+2*page+(value>4?1:0);
-                        }else{primary=297+page;flag=303+page;}
-                        const bool selected=before.at(flag)==1 && before.at(primary)==value;
-                        next.at(299+2*page)=0;next.at(300+2*page)=0;next.at(303+page)=0;
-                        if(!selected){next.at(flag)=1;next.at(primary)=value;}
-                        if(NavS3::regenerate(next)&&NavS3::validate(next)&&nav.stage(next)&&nav.commit()){
-                            socle={e.control,ms,before};
-                            socleConsumed=true;
-                            s3.observeNav(nav.active().at(292),true);
-                        }
-                    }
-                }else if(e.value==0 && socle.physical==e.control){
-                    if(ms>=socle.down && ms-socle.down>=200 && nav.stable() && !nav.hasStage()){
-                        NavImage original=socle.before;
-                        if(NavS3::regenerate(original)&&NavS3::validate(original)&&nav.stage(original)&&nav.commit())
-                            s3.observeNav(nav.active().at(292),true);
-                    }
-                    socle={};socleConsumed=true;
-                }
-            }
-        }
-        if(!muteBaseOwned && !socleConsumed && !touch.process(b,ms,nav,s3,diagnosticTouch_,tx.pending() || touchOwner_!=-1))return false;
+        if(!muteBaseOwned && !touch.process(b,ms,nav,s3,diagnosticTouch_,tx.pending() || touchOwner_!=-1))return false;
         // Source R02: BOT2 in SAMPLE and BOT3 in MACHINE are deferred
         // SAVE/NAV_RELEASE candidates. An already-qualified combo owns the
         // gesture instead; candidate never wins retrospectively.
@@ -113,7 +71,7 @@ public:
                 }else if(item.phase==0&&fxHold.physical==item.control)fxHold={};
             }
         }
-        socleBase_=socle;machineFxHold_=fxHold;machineFxBorrowed_=fxView;machineFxViewMachine_=fxMachine;
+        machineFxHold_=fxHold;machineFxBorrowed_=fxView;machineFxViewMachine_=fxMachine;
         surface_=surf;gesture_=gest;s3_=s3;nav_=nav;longTx_=tx;touch_=touch;machineLastLow_=machineLow;machineLastHigh_=machineHigh;
         localSave_=save;
         append(b);appendS3(proposals);lastMs_=ms;started_=true;return true;
@@ -452,7 +410,7 @@ public:
     bool onHostStop()noexcept {
         if(!projection_.onHostStop())return false;
         live_.onHostStop();
-        surface_.onHostStop();gesture_.onHostStop();s3_.onHostStop();longTx_.onHostStop();touch_.onHostStop();touchOwner_=-1;socleBase_={};
+        surface_.onHostStop();gesture_.onHostStop();s3_.onHostStop();longTx_.onHostStop();touch_.onHostStop();touchOwner_=-1;
         localSave_={};machineFxHold_={};
         // The prototype has its own STOP contract and must be tested separately;
         // do not inject an unsequenced synthetic STOP into it.
@@ -574,8 +532,6 @@ private:
     S3DecisionBoundary s3_{};
     bool retainDjLoopPage_{},djLoopStopPush_{};
     NavS3 nav_{};bool shortNavDiagnostic_{};bool qualifiedNavDiagnostic_{};bool muteBot2Exclusive_{};
-    struct SocleBaseHold {int physical{-1};std::int64_t down{};NavImage before{};};
-    SocleBaseHold socleBase_{};
     S3LongTransaction longTx_{};S3TouchNav touch_{};bool diagnosticTouch_{};int touchOwner_{-1};
     int machineLastLow_{-1},machineLastHigh_{-1};
     std::array<std::uint32_t,96> memoryRevisionBase_{};std::array<std::uint32_t,84> patchRevisionBase_{};
