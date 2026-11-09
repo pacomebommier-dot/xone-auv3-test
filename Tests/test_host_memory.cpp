@@ -56,6 +56,28 @@ int main(){
  }
 
  HostEngine h;auto n=page();assert(h.setNavForDiagnostic(n));assert(h.restoreSessionBeforeRendering(session()));
+ // SOC-06: INST/YELLOW MEMORY now use the same true-UP grammar as DRUMS/FILL.
+ // No RECALL is fired before the physical UP confirms a SHORT.
+ for(int family:{3,4}){
+  HostEngine e;const auto n=page(family,1);assert(e.setNavForDiagnostic(n));assert(e.restoreSessionBeforeRendering(session()));
+  const int control=memoryButton(n,0),owner=family==3?0:6;
+  auto hold=[&](int down,int up){
+   for(int number=24;number<40;++number)if(xone::l01::SurfaceInput::physicalControl(number)==control){
+    const uint8_t press[]{0x9e,uint8_t(number),127},release[]{0x8e,uint8_t(number),0};
+    assert(!e.receive(0,press,3,down,down).emit);
+    assert(!e.receive(0,release,3,up,up).emit);return;
+   }assert(false);
+  };
+  hold(10,11); // empty SHORT -> first SAVE
+  xone::l01::BankS6::MemoryRecord m{};
+  assert(e.readMemory(owner,0,m)&&m.valid&&m.revision==1);
+  hold(20,220); // filled LONG, exactly 200ms -> overwrite
+  assert(e.readMemory(owner,0,m)&&m.revision==2&&e.pendingMemorySlot(owner)==-1);
+  hold(230,231); // filled SHORT -> NEXT_BEAT RECALL
+  assert(e.pendingMemorySlot(owner)==0);
+  e.stop(232); // STOP cancels recall but preserves saved memory
+  assert(e.pendingMemorySlot(owner)==-1&&e.readMemory(owner,0,m)&&m.revision==2);
+ }
  int p=memoryButton(n,0);physical(h,p,1); // first inactive engagement captures, no recall
  int cc=-1;for(int j=36;j<56;++j)if(continuousTarget(n.route(j)).cell==1552)cc=j-36;assert(cc>=0);
  uint8_t raw[]={0xbe,uint8_t(cc),50};auto result=h.receive(0,raw,3,3,3);assert(result.emit);h.sent(result,0);
