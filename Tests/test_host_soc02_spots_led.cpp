@@ -1,0 +1,64 @@
+// SOC-02: source-qualified effect SPOT group and steady state LEDs in SOCLE.
+// Borrowed RESET blinking belongs to SOC-03; CC pickup flash belongs SOC-05.
+#include "../Shared/XoneHostEngine.hpp"
+#include <cassert>
+#include <iostream>
+using namespace xone::host;
+static Result key(HostEngine& e,int note,bool down,int ms) {
+    const uint8_t b[]{static_cast<uint8_t>(down?0x9E:0x8E),
+                      static_cast<uint8_t>(note),static_cast<uint8_t>(down?127:0)};
+    return e.receive(0,b,3,ms,ms);
+}
+static void selectInst1(HostEngine& e){key(e,36,true,0);key(e,36,false,10);assert(e.navMode()==0);}
+static int tx(HostEngine& e,int expectValue) {
+    int count=0;
+    for(int i=0;i<8;++i){
+        auto p=e.nextSourcePacket();if(!p.valid)break;
+        assert(p.type==11 && p.value==expectValue);
+        assert(p.bytes[2]==(expectValue?127:0));
+        e.ackSourcePacket(p,true,0);++count;
+    }
+    return count;
+}
+static void check(HostEngine& e,int a,int b,int c){
+    const auto live=e.documentForHost().live;
+    assert(live.desired[1768]==a&&live.desired[1769]==b&&live.desired[1770]==c);
+    const auto image=e.ledImage();
+    const int values[]{a,b,c},positions[]{16,20,24};
+    for(int k=0;k<3;++k){
+        auto led=image[static_cast<unsigned>(positions[k])];
+        assert(led.known&&!led.blinking);
+        assert(led.color==(values[k]?MuteLedColor::Red:MuteLedColor::Off));
+    }
+}
+int main(){
+    HostEngine e;
+    // 28 real FX owners, including INST/YELLOW formerly UNKNOWN.
+    for(int owner=0;owner<28;++owner)for(int field=6;field<9;++field)
+        assert(e.desiredLive(xone::l01::FxS6::addressFor(owner,field)).known);
+    selectInst1(e);check(e,0,0,0);
+    auto r=key(e,48,true,20);assert(r.emit&&r.api==384);e.sent(r,0);
+    r=key(e,48,false,70);assert(!r.emit);check(e,1,0,0); // short: only touched
+    r=key(e,48,true,100);assert(!r.emit);
+    e.advance(220,220); // >=120ms: initial ON -> whole group OFF
+    assert(tx(e,0)==1);check(e,0,0,0);
+    assert(!key(e,48,false,250).emit);check(e,0,0,0);
+    r=key(e,48,true,300);assert(r.emit);e.sent(r,0);
+    e.advance(420,420); // initial OFF -> whole group ON
+    assert(tx(e,1)==2);check(e,1,1,1);
+    assert(!key(e,48,false,450).emit);check(e,1,1,1);
+    // Toggle one member OFF (mixed group), then long from OFF to all ON.
+    r=key(e,44,true,500);assert(!r.emit);
+    r=key(e,44,false,550);assert(r.emit&&r.api==385);e.sent(r,0);
+    check(e,1,0,1);
+    r=key(e,44,true,600);assert(r.emit&&r.api==385);e.sent(r,0);
+    e.advance(720,720);assert(tx(e,1)==0); // touched DOWN already sent ON
+    check(e,1,1,1);
+    assert(!key(e,44,false,740).emit);
+    // 119ms must remain individual; STOP keeps owed NoteOff management.
+    r=key(e,48,true,800);assert(!r.emit);
+    e.advance(919,919);assert(!e.nextSourcePacket().valid);
+    r=key(e,48,false,919);assert(r.emit&&r.api==384);e.sent(r,0);
+    check(e,0,1,1);
+    std::cout<<"PASS SOC-02 INST1 SPOT short, 120ms group from ON/OFF/mixed, release and LED state\n";
+}
