@@ -116,7 +116,12 @@ int main(){
         // an old transient light stuck when rendering proceeds.
         r=cc(host,4,65,400);if(r.emit)host.sent(r,0);
         hostRender(host,k2,400);
-        hostRender(host,k2,1000);k2.only(16,-1);
+        hostRender(host,k2,1000);
+        const auto semantic=host.ledImage(1000)[16];
+        assert(!semantic.blinking);
+        k2.only(16,semantic.known&&semantic.color==MuteLedColor::Red?0:-1);
+        // A non-neutral EQ can be legitimately lit forever; "not frozen"
+        // means hardware matches its semantic LED after any overlay expires.
     }
     std::cout<<"PASS SOC-05 no LED freeze after 50ms, callback loss/retry, simultaneous overlays, idle renders, STOP and semantic changes\n";
 }
