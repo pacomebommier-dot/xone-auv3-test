@@ -561,7 +561,10 @@ int main() {
     assert(xone::host::decodeSh01aAttachment((const uint8_t *)shData.bytes,shData.length,shDecoded));
     assert(shDecoded.image.mirrors[0].valid&&shPrograms==0&&shControls==0); // no RX echo
     shKey(13,true);shKey(15,true);shKey(15,false);shKey(13,false); // MACHINE pair source0
-    shKey(14,true);shKey(52,true);shKey(52,false);shKey(14,false);assert(shPrograms==0&&shControls==0); // SAVE suppressed
+    // SOC-06: the Roland owns WRITE. TOP LONG must neither SAVE nor send PC.
+    // Hold >200ms in sample-clock units without an obsolete BOT3+TOP chord.
+    shKey(52,true);for(int tick=0;tick<240;++tick)shPump(nullptr,0);
+    shKey(52,false);assert(shPrograms==0&&shControls==0); // SH LONG inert
     failShPc=true;shKey(53,true);shKey(53,false);assert(shPrograms==1&&shControls==0); // empty mirror recall is still PC2
     shPump(nullptr,0);assert(shPrograms==2&&shControls==0); // retry once in following render
     for(auto cc:provisional.cc){const uint8_t b[]{0xB0,cc,70};shPump(b,3);}
