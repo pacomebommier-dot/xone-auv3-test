@@ -169,8 +169,7 @@ static void verifyLedPackets(const Strip& s){
     edge(other,s.controls[0],true,100);drain(other,s,0,1,true);
     other.advance(220,220*48);drain(other,s,1,2,true);
     edge(other,s.controls[0],false,230);
-    xone::l01::NavS3 root;assert(root.initializeDefault());
-    assert(other.setNavForDiagnostic(root.active()));
+    assert(other.showPresetPage()); // supported live NAV transition
     assert(ledPackets(other,s,231,true)==0);
 }
 int main(){
