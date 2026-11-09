@@ -14,7 +14,11 @@ int main(){
  assert(ons==34&&offs==100&&flush(out).empty());
  image[0].blinking=true;out.observeFull(image,100);tx=flush(out);assert(tx.size()==1&&!tx[0].on);out.observeFull(image,200);tx=flush(out);assert(tx.size()==1&&tx[0].on);
  image[0].known=false;out.observeFull(image,201);assert(flush(out).size()==1); // UNKNOWN dark, not a fabricated musical OFF
- out.flash(16,MuteLedColor::Green,210);out.observeFull(image,210);tx=flush(out);assert(tx.size()==2&&tx.back().bytes[1]==120);out.observeFull(image,310);assert(flush(out).size()==2);
+ // SOC-04: invert the existing YELLOW light; never switch it to GREEN.
+ out.flash(16,MuteLedColor::Green,210);out.observeFull(image,210);tx=flush(out);
+ assert(tx.size()==1&&!tx[0].on&&tx[0].bytes[1]==84);
+ out.observeFull(image,259);assert(flush(out).empty()); // CLInterval=50ms
+ out.observeFull(image,260);tx=flush(out);assert(tx.size()==1&&tx[0].on&&tx[0].bytes[1]==84);
  out.flash(16,MuteLedColor::Green,320);out.cancelFlashes();out.observeFull(image,320);assert(flush(out).empty());
  image[33].color=MuteLedColor::Green;out.observeFull(image,400);unsigned cursor=0;auto failed=out.next(cursor);assert(failed.valid&&failed.target==33);out.confirm(failed,false);assert(flush(out).empty());
  out.beginBuffer();tx=flush(out);assert(tx.size()==4&&!tx[0].on&&tx.back().on&&tx.back().bytes[1]==23);
@@ -55,9 +59,19 @@ int main(){
   assert(pickup.setNavForDiagnostic(sample)&&pickup.restoreSessionBeforeRendering(state));
   if(configured)assert(pickup.setS8SampleModeBeforeRendering(0,0,2));
   pickup.beginRenderBuffer();pickup.prepareMuteLeds(0);unsigned c=0;for(unsigned i=0;i<136;++i){auto p=pickup.nextMuteLedPacket(c);if(!p.valid)break;pickup.ackMuteLedPacket(p,true);}
-  const uint8_t cc[]{0xBE,4,0};assert(!pickup.receive(0,cc,3,10,10).emit);pickup.prepareMuteLeds(10);c=0;auto feedback=pickup.nextMuteLedPacket(c);
-  if(configured){assert(feedback.valid&&feedback.on&&feedback.target==16&&feedback.bytes[1]==120);pickup.ackMuteLedPacket(feedback,true);pickup.prepareMuteLeds(110);c=0;auto off=pickup.nextMuteLedPacket(c);assert(off.valid&&!off.on&&off.bytes[1]==120);pickup.ackMuteLedPacket(off,true);}
-  else assert(!feedback.valid);
+  const uint8_t cc[]{0xBE,4,0};assert(!pickup.receive(0,cc,3,10,10).emit);
+  pickup.prepareMuteLeds(10);c=0;assert(!pickup.nextMuteLedPacket(c).valid);
+  // A blocked far-away pickup does not flash. A second identical value
+  // authorizes the original GOLDEN bypass and its transient witness.
+  if(configured){
+    auto accepted=pickup.receive(0,cc,3,20,20);assert(accepted.emit);pickup.sent(accepted,0);
+    pickup.prepareMuteLeds(20);c=0;auto feedback=pickup.nextMuteLedPacket(c);
+    assert(feedback.valid&&feedback.on&&feedback.target==16&&feedback.bytes[1]==120);
+    pickup.ackMuteLedPacket(feedback,true);
+    pickup.prepareMuteLeds(69);c=0;assert(!pickup.nextMuteLedPacket(c).valid);
+    pickup.prepareMuteLeds(70);c=0;auto off=pickup.nextMuteLedPacket(c);
+    assert(off.valid&&!off.on&&off.bytes[1]==120);pickup.ackMuteLedPacket(off,true);
+  }
   pickup.requestLedRefresh();pickup.beginRenderBuffer();pickup.prepareMuteLeds(120);c=0;unsigned purged=0;
   for(unsigned i=0;i<136;++i){auto p=pickup.nextMuteLedPacket(c);if(!p.valid)break;if(!p.on)++purged;pickup.ackMuteLedPacket(p,true);}assert(purged==100);
  }
