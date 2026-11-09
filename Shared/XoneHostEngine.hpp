@@ -874,9 +874,6 @@ private:
             // BOT2 is also DJ1 PUSH. Ownership is captured on its true DOWN,
             // never reconstructed from a deadline at UP.
             const bool browserBot2Release=physical==1&&wasHeld&&browser_.pushOwned();
-            const bool localSampleBot2Release=physical==1&&wasHeld&&
-                !(cmd==0x90&&data[2]!=0)&&core_.localSaveCandidateMode()==3;
-            const bool localSampleBot2Consumed=core_.localSaveCandidateConsumed();
             const bool wasMuteVisible=mutePageVisible();
             auto muteNext=muteGate_;muteNext.advance(gestureMs);
             const bool baseEvent=(cmd==0x90||cmd==0x80)&&physical>=4&&physical<20;
@@ -1074,51 +1071,20 @@ private:
                 // In that case BOT2 is no longer entitled to a solo MUTE short/long.
                 if(down&&physical<4&&physical!=1&&muteGate_.botHeld()&&core_.s3().physicalOwner(1)==30)muteGate_.cancelBot2();
             }
-            if(accepted && localSampleBot2Release && !localSampleBot2Consumed &&
-               mutePageEnabled_ && !muteGate_.botHeld()) {
-                // An unconsumed BOT2 candidate opens MUTE on physical UP,
-                // never by a premature 200ms LONG. It is an explicit SHORT.
-                muteGate_.beginBot2(gestureMs,true);
-                muteGate_.releaseBot2(gestureMs);
-            }
             if(accepted && !wasMuteVisible && mutePageVisible() && (navMode()==2 || navMode()==4))
                 requestDjLoopStop(true);
             if(accepted&&(cmd==0x90||cmd==0x80)&&physical>=32&&physical<36&&wasHeld!=(cmd==0x90&&data[2]!=0)){
                 const bool down=cmd==0x90&&data[2]!=0;
                 const auto topIndex=static_cast<std::size_t>(physical-32);
                 if(down){
-                    topSaveSuppress_[topIndex]=false;
-                    if(topIndex<3){
-                        const int candidateMode=core_.localSaveCandidateMode();
-                        if(candidateMode==3||candidateMode==7){
-                            // An accepted local candidate owns this TOP even
-                            // if its NAV/profile preflight fails: never fall
-                            // back to RECALL or reinterpret the BOT release.
-                            topSaveSuppress_[topIndex]=true;
-                            const bool admitted=core_.consumeLocalSaveCandidate(candidateMode);
-                            if(!admitted)core_.declineLocalSaveCandidate();
-                            const bool saved=admitted&&
-                                (candidateMode==3?saveSamplePatchFromLive(static_cast<int>(topIndex)):
-                                 saveMachinePatchFromLive(static_cast<int>(topIndex)));
-                            if(saved)++sampleSavesAccepted_;
-                            else ++sampleSavesRefused_;
-                            if(candidateMode==3)muteGate_.cancelBot2();
-                            record(seq,sample,Stage::Decision,
-                                   saved?Reason::Musical:Reason::UnknownLive,
-                                   0,data,3,saved?static_cast<int>(topIndex):-1);
-                        }
-                    }
-                    topHold_[topIndex]=topSaveSuppress_[topIndex]?TopCapture{}:TopCapture{
+                    // SOC-06: TOP owns its own SHORT/LONG decision.
+                    // No candidate BOT+TOP may SAVE or suppress this TOP.
+                    topHold_[topIndex]=TopCapture{
                         core_.nativeRoute(physical),
                         core_.nativeNav().active().contextMode,
                         core_.nativeNav().revision(),core_.nativeNav().active().at(291),gestureMs
                     };
                 }else{
-                    if(topSaveSuppress_[topIndex]){
-                        topSaveSuppress_[topIndex]=false;
-                        topHold_[topIndex]={};
-                        return {};
-                    }
                     const auto captured=topHold_[static_cast<std::size_t>(physical-32)];
                     topHold_[static_cast<std::size_t>(physical-32)]={};
                     // TOP is a RESET request. Without authenticated RESET_DEFAULT
@@ -1169,7 +1135,7 @@ private:
                         const bool patch=(physical!=35&&(captured.context==3||captured.context==7));
                         topIntents_[index]={physical,captured.route,seq,patch?TopAction::PatchRecall:TopAction::FilterReset};
                         topIntentValid_[index]=true;
-                        if(patch && captured.context==3)armSamplePatch(index);
+                        if(patch && captured.context==3)armSamplePatch(index,gestureMs-captured.down>=200);
                         else if(patch && captured.context==7)armMachinePatch(index,gestureMs-captured.down>=200);
                         if(patch)++topPatchRecallsDeferred_;
                         bool reset=false;
@@ -3013,7 +2979,6 @@ private:
     unsigned sourceRead_{},sourceWrite_{},sourcePacketToken_{};
     bool sourceBlocked_{};
     CueLoadBar cueLoad_{};
-    std::array<bool,4> topSaveSuppress_{};
     unsigned sampleSavesAccepted_{},sampleSavesRefused_{};
     std::array<std::uint32_t,36> groupDownEpoch_{};
     std::uint32_t groupEpochCounter_{1};
