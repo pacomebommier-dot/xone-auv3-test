@@ -1826,6 +1826,12 @@ private:
     SamplePatchRequest samplePatch_{};int pairedTopSource_{-1};int64_t lastSamplePatchBar_{-1};
     void armSamplePatch(unsigned index,bool longPress) noexcept {
         if(samplePatchPending() || index>=3 || !topIntentValid_[index])return;
+        // A SAMPLE PATCH can be captured/recalled only on the real SAMPLE
+        // page. PRESET/RESET overlays retain their deferred TOP intent:
+        // they must not interpret an EMPTY slot as an implicit SAVE.
+        const auto& nav=core_.nativeNav();
+        if(!nav.stable()||nav.hasStage()||nav.active().at(292)!=3||
+           nav.active().contextMode!=3)return;
         const auto& intent=topIntents_[index];
         const int packed=intent.route.address;
         if(packed<0 || packed/1024!=11 || (packed%1024)/32!=1)return;
