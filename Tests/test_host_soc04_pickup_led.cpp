@@ -127,6 +127,18 @@ int main(){
   assert(hostLeds(borrowed,110).empty()); // RESET LED has priority over CC witness
   borrowed.receive(0,release,3,5760,120);
   packets=hostLeds(borrowed,120);assert(has(packets,17,0,false));
+  // GROUP RESET keeps its three-LED 100ms signal after UP. A CC
+  // arriving in that interval must not steal even the touched LED.
+  borrowed.receive(0,press,3,9600,200);
+  borrowed.advance(320,15360);
+  borrowed.receive(0,release,3,15840,330);
+  packets=hostLeds(borrowed,330);
+  assert(has(packets,17,0,true)&&has(packets,21,0,true)&&has(packets,25,0,true));
+  r=cc(borrowed,5,0,340);assert(r.emit);borrowed.sent(r,0);
+  packets=hostLeds(borrowed,340);
+  assert(!has(packets,17,0,false)&&!has(packets,21,0,false)&&!has(packets,25,0,false));
+  packets=hostLeds(borrowed,421);
+  assert(has(packets,17,0,false)&&has(packets,21,0,false)&&has(packets,25,0,false));
  }
  std::cout<<"PASS SOC-04 GOLDEN pickup duplicate/rapid/slow/glide, LED 50ms layers, borrowed RESET priority\n";
 }
