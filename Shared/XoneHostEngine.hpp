@@ -747,7 +747,8 @@ public:
             const auto& hold=resetSpotHolds_[k];
             const bool held=hold.physical==physical && core_.surface().held(physical) &&
                 nav.revision()==hold.navRevision;
-            const bool pulse=ms>=0&&resetSpotPulseUntil_[k]>ms;
+            const bool pulse=ms>=0&&resetSpotPulseUntil_[k]>ms&&
+                resetSpotPulseRevision_[k]==nav.revision();
             if(held||pulse)set(16+k,pulse?resetSpotPulseColor_[k]:hold.color);
         }
         return image;
@@ -1199,7 +1200,13 @@ private:
                                 continuousTarget({source.address-offset,source.position});
                             if(!candidate.targets[static_cast<unsigned>(row)].valid())valid=false;
                         }
-                        if(valid)hold=candidate;
+                        if(valid){
+                            // A fresh physical gesture invalidates any old
+                            // 100ms confirmation on the same vertical strip.
+                            for(int peer:candidate.physicalPeers)
+                                resetSpotPulseUntil_[static_cast<unsigned>(peer-20)]=0;
+                            hold=candidate;
+                        }
                     }
                 }
                 record(seq,sample,Stage::Decision,reset?Reason::Musical:Reason::UnknownLive,0,data,3);
@@ -1728,6 +1735,7 @@ private:
     };
     std::array<ResetSpotHold,12> resetSpotHolds_{};
     std::array<std::int64_t,12> resetSpotPulseUntil_{};
+    std::array<std::uint64_t,12> resetSpotPulseRevision_{};
     std::array<MuteLedColor,12> resetSpotPulseColor_{};
     bool isBareSocleEqSpot(l01::NavRoute route) const noexcept {
         const auto& n=core_.nativeNav().active();
@@ -1760,6 +1768,7 @@ private:
         for(int peer:hold.physicalPeers){
             const unsigned k=static_cast<unsigned>(peer-20);
             resetSpotPulseUntil_[k]=ms<=INT64_MAX-100?ms+100:INT64_MAX;
+            resetSpotPulseRevision_[k]=hold.navRevision;
             resetSpotPulseColor_[k]=hold.color;
         }
         hold.fired=true;
