@@ -137,9 +137,46 @@ static void test(const Strip& s,bool explicitBase){
         assert(h.desiredLive(s.cells[1]).value==64);
     }
 }
+// Verify actual Xone K2 LED MIDI packets, not only semantic ledImage().
+static unsigned ledPackets(HostEngine& h,const Strip& s,int ms,bool on){
+    h.beginRenderBuffer();h.prepareMuteLeds(ms);
+    unsigned cursor=0,count=0;
+    for(unsigned n=0;n<136;++n){
+        auto packet=h.nextMuteLedPacket(cursor);if(!packet.valid)break;
+        for(int physical:s.controls)
+            if(packet.target==unsigned(physical-4) &&
+               packet.color==unsigned(s.color)-1 && packet.on==on){
+                assert(packet.bytes[2]==(on?127:0));++count;
+            }
+        h.ackMuteLedPacket(packet,true);
+    }
+    return count;
+}
+static void verifyLedPackets(const Strip& s){
+    HostEngine h;setup(h,s,true);
+    // Individual signal ON while the key remains down.
+    edge(h,s.controls[0],true,100);drain(h,s,0,1,true);
+    assert(ledPackets(h,s,101,true)==1);
+    h.advance(220,220*48);drain(h,s,1,2,true);
+    // The two peers light simultaneously; touched key was already ON.
+    assert(ledPackets(h,s,220,true)==2);
+    edge(h,s.controls[0],false,230);
+    assert(ledPackets(h,s,319,false)==0);
+    assert(ledPackets(h,s,320,false)==3); // after exactly 100ms
+
+    // A new NAV epoch must suppress an old LED pulse, even mid-flash.
+    HostEngine other;setup(other,s,true);
+    edge(other,s.controls[0],true,100);drain(other,s,0,1,true);
+    other.advance(220,220*48);drain(other,s,1,2,true);
+    edge(other,s.controls[0],false,230);
+    xone::l01::NavS3 root;assert(root.initializeDefault());
+    assert(other.setNavForDiagnostic(root.active()));
+    assert(ledPackets(other,s,231,true)==0);
+}
 int main(){
+ for(int family:{3,4,5,6})verifyLedPackets(strip(family));
  for(int family:{3,4,5,6})test(strip(family),true);
  for(int family:{3,4,5,6})test(strip(family),false);
  for(int side:{0,1})test(eq(side),false);
- std::cout<<"PASS SOC-03 borrowed FX/EQ RESET individual/group at 119/120ms, BASE overrides, LED hold/100ms, STOP\n";
+ std::cout<<"PASS SOC-03 borrowed FX/EQ RESET individual/group at 119/120ms, BASE overrides, K2 MIDI LED hold/100ms, STOP\n";
 }
