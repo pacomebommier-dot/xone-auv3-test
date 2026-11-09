@@ -982,18 +982,16 @@ private:
                !muteBaseOwned&&physical>=4&&physical<20&&
                !core_.longNavPending()&&!core_.nativeNav().hasStage())
                 soft_.requestFromRoute(physical,softRoute,softRoot);
-            if(accepted&&cueSource&&(cueIndex%4==3||!sh01aSource(cueGroup))){
+            if(accepted&&cueSource){
+                // SOC-06: SH CUE/LOAD LONG must not emit a premature PC at DOWN.
                 cueHolds_[static_cast<unsigned>(physical-4)]={static_cast<int>(cueGroup),cueIndex,activeAlternative(cueGroup),gestureMs};
-            }else if(accepted&&cueSource){
-                requestSourceRecall(cueGroup,cueIndex%4);
             }
             if(accepted&&baseEvent&&wasHeld&&(cmd==0x80||data[2]==0)){
                 auto& hold=cueHolds_[static_cast<unsigned>(physical-4)];
                 const auto captured=hold;
                 hold={};
                 if(captured.source>=0&&gestureMs>=captured.down&&
-                   activeAlternative(static_cast<unsigned>(captured.source))==captured.instrument&&
-                   (captured.index%4==3||!sh01aSource(static_cast<unsigned>(captured.source)))){
+                   activeAlternative(static_cast<unsigned>(captured.source))==captured.instrument){
                     const auto source=static_cast<unsigned>(captured.source);
                     const unsigned slot=captured.index%4;
                     const bool longPress=gestureMs-captured.down>=200;
@@ -1001,6 +999,10 @@ private:
                         if(saveSourceBase(source)){
                             baseWriteFeedback_={static_cast<int>(source),gestureMs};
                         }
+                    }else if(slot<3&&sh01aSource(source)){
+                        // Roland WRITE is the only program SAVE; a LONG XONE
+                        // slot gesture is inert, not a disguised PC recall.
+                        if(!longPress)requestSourceRecall(source,slot);
                     }else if(slot<3&&(longPress||!hasSourcePatch(source,slot))){
                         saveSourcePatch(source,slot);
                     }else if(requestSourceRecall(source,slot)&&!sh01aSource(source)){
@@ -1865,6 +1867,10 @@ private:
         if(selected<1||selected>24||slot<0||slot>=3)return;
         if(selected<=8){
             const unsigned source=static_cast<unsigned>((selected-1)/2);
+            if(sh01aSource(source)&&longPress){
+                // SOC-06: no SAVE and no PC replay on SH LONG TOP.
+                topIntentValid_[index]=false;return;
+            }
             SourcePatchBank::Patch patch{};
             if(!sh01aSource(source)){
                 if(longPress||!readSourcePatch(source,static_cast<unsigned>(slot),patch)){
