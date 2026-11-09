@@ -1009,10 +1009,8 @@ private:
                     }
                 }
             }
-            if(accepted&&memorySource){
-                if(memoryOwner<12)memoryGesture(memoryOwner,memorySlot);
-                else rhythmMemoryHolds_[static_cast<unsigned>(physical-4)]={memoryOwner,memorySlot,gestureMs};
-            }
+            if(accepted&&memorySource)
+                rhythmMemoryHolds_[static_cast<unsigned>(physical-4)]={memoryOwner,memorySlot,gestureMs};
             if(accepted&&baseEvent&&wasHeld&&(cmd==0x80||data[2]==0)){
                 auto& hold=rhythmMemoryHolds_[static_cast<unsigned>(physical-4)];
                 const auto captured=hold;
@@ -1021,10 +1019,23 @@ private:
                     finishRhythmMemoryGesture(captured.owner,captured.slot,gestureMs-captured.down>=200);
             }
             if(accepted&&presetSource){
-                const unsigned slot=static_cast<unsigned>(presetRoute.position);
-                if(slot==4)requestGlobalInit();
-                else if(!presetEngaged(slot))capturePreset(slot);
-                else requestPresetRecall(slot);
+                // SOC-06: PRESET is decided at true UP, not on DOWN.
+                presetHolds_[static_cast<unsigned>(physical-4)]=
+                    {static_cast<int>(presetRoute.position),gestureMs,core_.nativeNav().revision()};
+            }
+            if(accepted&&baseEvent&&wasHeld&&(cmd==0x80||data[2]==0)){
+                auto& hold=presetHolds_[static_cast<unsigned>(physical-4)];
+                const auto captured=hold;hold={};
+                const auto route=core_.nativeRoute(physical);
+                if(captured.slot>=0&&gestureMs>=captured.down&&
+                   captured.navRevision==core_.nativeNav().revision()&&
+                   core_.nativeNav().active().presetFlag==1&&!mutePageVisible()&&
+                   route.address==14*1024+17*32&&route.position==captured.slot){
+                    if(captured.slot==4)requestGlobalInit();
+                    else if(gestureMs-captured.down>=200||!presetEngaged(static_cast<unsigned>(captured.slot)))
+                        capturePreset(static_cast<unsigned>(captured.slot));
+                    else requestPresetRecall(static_cast<unsigned>(captured.slot));
+                }
             }
             if(accepted&&physical==0){
                 const bool down=cmd==0x90&&data[2]!=0;
@@ -1419,7 +1430,7 @@ public:
             alternativeFlight_={};alternatives_.stop();alternativeBaseValid_.fill(false);
             pendingPresetSlot_=-1;initPending_=false;redActive_=false;redImage_.valid=false;redHeld_=false;
             sourceRead_=sourceWrite_;sourceBlocked_=false;cueLoad_.stop();
-            cueHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});
+            cueHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});presetHolds_.fill({});
         }
         applyPendingResetDefaults();
         beginSh01aBuffer(appliedToken_!=beforeRestore);
@@ -1542,10 +1553,9 @@ public:
         for(auto& pending:memoryPending_)pending={};
         sourcePending_.fill(-1);sourceRead_=sourceWrite_;sourceBlocked_=false;
         for(auto& status:sourceStatus_)if(status==SourceRecallStatus::Pending)status=SourceRecallStatus::None;
-        cueHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});
+        cueHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});presetHolds_.fill({});
         cueLoad_.stop(); // cancel pending BAR intents, preserve actual CC-sent state
         topPulse_.stop(); // cancels unattempted pulses; retains every attempted OFF
-        topSaveSuppress_.fill(false);
         browserLoadPending_=false;browserSelectionSequence_=0;
         core_.observeBrowserGuardForDiagnostic(false,0,0);
         core_.onHostStop(); // must not fabricate UP or clear held keys
@@ -2521,7 +2531,7 @@ private:
         openingLive_=live;rhythmDials_.fill({});
         s8Sample_=d.sample;s8Machine_=d.machine;sourcePatches_=d.source;alternativeBank_=d.alternative;sourceBases_=d.sourceBases;shBase_=d.shBase;shBaseSentMs_=-1;alternatives_=arbiter;sixSynths_=d.sixSynths;synthState_=d.synthState;synthCables_=uniqueSynthCables(arbiter.active());
         presets_=d.presets;globalInit_=d.init;soft_=soft;muteBridge_=mute;muteGate_.restoreVisible(d.current.muteVisible);
-        cueHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});
+        cueHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});presetHolds_.fill({});
         cueLoad_=CueLoadBar{}; // desired selection is rebuilt below; no historical service pulse
         cueLoad_.restoreDocumentSelections(d.current.cueSelections);
         memoryEngaged_=d.current.memoryEngaged;presetEngaged_=d.current.presetEngaged;presetValid_.fill(false);
@@ -2817,9 +2827,8 @@ private:
     }
     std::array<RhythmMemoryRequest,3> rhythmMemoryPending_{};
     std::array<RhythmMemoryHold,16> rhythmMemoryHolds_{};
-    bool memoryGesture(int owner,int slot) noexcept {
-        return memoryEngaged(owner,slot)?requestMemoryRecall(owner,slot):captureMemory(owner,slot);
-    }
+    struct PresetSlotHold {int slot{-1};int64_t down{};std::uint64_t navRevision{};};
+    std::array<PresetSlotHold,16> presetHolds_{};
     void disengageSourceMemories(unsigned source) noexcept {
         // Only the three explicitly mapped INST/YELLOW pages of this source.
         for(unsigned page=3*source;page<3*source+3;++page){
