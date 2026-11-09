@@ -51,7 +51,7 @@ int main(){
  // A STOP between PRESET DOWN/UP cannot overwrite an existing slot.
  {HostEngine e;assert(e.restoreSessionBeforeRendering(session(64)));assert(e.showPresetPage());
   click(e,36,1);GlobalSnapshot before{};assert(e.readPreset(0,before));
-  cc(e,100,10);button(e,36,true,20);e.stop(21);button(e,36,false,240);
+  cc(e,64,9);cc(e,100,10);button(e,36,true,20);e.stop(21);button(e,36,false,240);
   GlobalSnapshot after{};assert(e.readPreset(0,after));
   assert(after.live.desired[1328]==before.live.desired[1328]);}
  {HostEngine e;assert(e.restoreSessionBeforeRendering(session(64)));click(e,12,1);assert(e.redActive());cc(e,64,3);cc(e,100,4);
