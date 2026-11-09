@@ -30,6 +30,10 @@ public:
         nav_=mode;navKnown_=true;return true;
     }
     void invalidateNav() noexcept {navKnown_=false;nav_=-2;}
+    // SOC-06: the historical SAMPLE/MACHINE BOT reservation belonged to
+    // BOT+TOP SAVE. CoreV3 disables it so BOT2/BOT3 keep normal SMART roles.
+    // Direct frozen-S3 diagnostics retain their historical default.
+    void enableLegacyBotPatchOwners(bool enabled) noexcept {legacyBotPatchOwners_=enabled;}
     bool navKnown() const noexcept{return navKnown_;}
     int nav() const noexcept{return nav_;}
     bool held(int i) const noexcept {return i>=0&&i<36&&held_[static_cast<std::size_t>(i)];}
@@ -104,8 +108,8 @@ private:
                 owner_[c]=-1;
                 if(c<4){
                     owner_[c]=c;
-                    if(c==1&&nav_==3&&navKnown_)owner_[c]=20;
-                    else if(c==2&&nav_==7&&navKnown_)owner_[c]=20;
+                    if(legacyBotPatchOwners_ && c==1&&nav_==3&&navKnown_)owner_[c]=20;
+                    else if(legacyBotPatchOwners_ && c==2&&nav_==7&&navKnown_)owner_[c]=20;
                     else if(c==3&&(nav_==3||nav_==7)&&navKnown_){
                         if(spotHeldForBrowser())owner_[c]=22;
                         else if(nav_==7)owner_[c]=21;
@@ -175,7 +179,7 @@ private:
     std::array<int,36> owner_=[]{std::array<int,36>a{};a.fill(-1);return a;}();
     std::array<int,36> downNav_=[]{std::array<int,36>a{};a.fill(-2);return a;}();
     std::array<int,36> comboRole_=[]{std::array<int,36>a{};a.fill(-1);return a;}();
-    bool navKnown_{};int nav_{-2};
+    bool navKnown_{};int nav_{-2};bool legacyBotPatchOwners_{true};
     int pendingRole_{-1},pendingFirst_{-1},pendingSecond_{-1};
     bool browserB2_{};int browserA5_{};std::int64_t browserUntil_{};
     std::int64_t sourceNow_{-1};
