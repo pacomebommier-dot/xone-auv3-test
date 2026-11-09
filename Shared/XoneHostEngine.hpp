@@ -761,6 +761,13 @@ public:
         // a pot rotation: neither LED nor its momentary 100ms group cue
         // may be stolen by the CC witness.
         if(surfaceHeld(static_cast<unsigned>(physical)))return;
+        // The three-LED RESET group signal (SOC-03) owns its complete
+        // 100ms lifetime, including after physical UP.
+        const auto navRevision=core_.nativeNav().revision();
+        for(const auto& signal:resetSpotSignals_)
+            if(signal.until>=ms && signal.navRevision==navRevision)
+                for(int resetPhysical:signal.physical)
+                    if(resetPhysical==physical)return;
         const auto route=core_.nativeRoute(physical);
         if(route.address<0||route.position<0)return;
         const int kind=route.address/1024,family=(route.address%1024)/32;
@@ -788,6 +795,8 @@ public:
         // The semantic LED retains authority. A light already shown in a
         // different active color must blink OFF, not receive a second color.
         const auto baseline=ledImage(ms)[static_cast<unsigned>(physical-4)];
+        // Never mask an armed NEXT_BAR/MEMORY/PRESET LED blink.
+        if(baseline.blinking)return;
         if(baseline.known && baseline.color!=MuteLedColor::Off)
             color=baseline.color;
         muteLeds_.flash(static_cast<unsigned>(cc+12),color,ms);
