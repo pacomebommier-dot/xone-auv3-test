@@ -124,6 +124,12 @@ public:
                 if(source>=0&&resetDefaults_.alternatives[static_cast<unsigned>(source)]!=activeAlternative(static_cast<unsigned>(source)))return false;
                 const int overrideValue=resetDefaults_.get(target.api,config);
                 value=overrideValue>=0?overrideValue:universalContinuousBase(target.cell);
+                // SOC-03: GOLDEN borrowed INST/YELLOW FX parameter
+                // reset zero. Only the three borrowed parameters (q=3..5)
+                // have this proven neutral reference; preserve all other
+                // UNKNOWNs, and always prefer explicit/personalized BASE.
+                if(value<0 && target.cell>=1552 && target.cell<1648 &&
+                   ((target.cell-1552)%6)>=3)value=0;
             }
             if(value<0)return false;
             for(unsigned j=0;j<i;++j)if(targets[j].cell==target.cell)return false;
@@ -731,6 +737,20 @@ public:
         }
         set(32,redActive_?MuteLedColor::Red:MuteLedColor::Off);
         set(33,(n.at(292)==7?n.at(315):n.at(291))==1?MuteLedColor::Yellow:MuteLedColor::Off);
+        // SOC-03: momentary RED/YELLOW/GREEN borrowed RESET LEDs. The
+        // group signal is a solid 100ms simultaneous flash, not a toggle.
+        if(!mutePageVisible() && n.at(292)==0 && n.contextMode==0){
+            for(const auto& held:resetSpotHolds_)
+                if(held.physical>=20&&!held.fired&&
+                   held.navRevision==nav.revision()&&
+                   surfaceHeld(static_cast<unsigned>(held.physical)))
+                    set(static_cast<unsigned>(held.physical-4),held.color);
+            if(ms>=0)for(const auto& signal:resetSpotSignals_)
+                if(signal.until>=ms && signal.navRevision==nav.revision()){
+                    for(int physical:signal.physical)
+                        if(physical>=20&&physical<32)set(static_cast<unsigned>(physical-4),signal.color);
+                }
+        }
         if(mutePageVisible()){const auto mute=MuteLedView::compose(globalMute());for(unsigned i=0;i<16;++i)set(i,mute[i].color,mute[i].blinking);}
         return image;
     }
@@ -1140,8 +1160,32 @@ private:
                     return {};
                 }
             }
-            // A RESET SPOT owns a continuous parameter, never the effect's ON/OFF.
-            // In MUTE the same knob underneath is reset; BASE remain MUTE/SOLO.
+            // SOC-03: a real SOCLE RESET SPOT is a separate physical
+            // owner from the ON/OFF FX switches and from MUTE overlays.
+            // Short: its own CC at DOWN. Long >=120ms: the two peer CCs;
+            // the three SPOT LEDs indicate the group for 100ms.
+            if(accepted&&physical>=20&&physical<32){
+                const bool down=cmd==0x90&&data[2]!=0;
+                auto& hold=resetSpotHolds_[static_cast<unsigned>(physical-20)];
+                if(down&&!wasHeld && !mutePageVisible() && navMode()==0 &&
+                   core_.nativeNav().active().contextMode==0 &&
+                   resetSpotRoute(inputRoute)){
+                    const auto target=resetSpotTarget(inputRoute);
+                    std::array<ContinuousTarget,97> scope{};scope[0]=target;
+                    const bool reset=resetContinuousTargets(scope,1);
+                    hold=reset?ResetSpotHold{physical,gestureMs,
+                        core_.nativeNav().revision(),inputRoute,
+                        inputRoute.position/3,resetSpotColor(inputRoute),false}:ResetSpotHold{};
+                    record(seq,sample,Stage::Decision,reset?Reason::Musical:Reason::UnknownLive,0,data,3);
+                    return {};
+                }
+                if(!down&&wasHeld&&hold.physical==physical){
+                    fireResetSpotGroup(hold,gestureMs,true);
+                    hold={};
+                    return {};
+                }
+            }
+            // Non-SOCLE RESET (e.g. MUTE) keeps its original owner.
             if(accepted&&cmd==0x90&&data[2]!=0&&!wasHeld&&physical>=20&&physical<32&&
                (inputRoute.address/1024==1||mutePageVisible())){
                 std::array<ContinuousTarget,97> scope{};
@@ -1502,6 +1546,8 @@ public:
         core_.onHostStop(); // must not fabricate UP or clear held keys
         core_.output()=output;
         socleSpotGroups_.fill({});
+        resetSpotHolds_.fill({});
+        resetSpotSignals_.fill({});
         for(auto& held:spots_){
             if(held.cell>=0&&(held.mode==3||(held.mode==1&&held.previous==0)))
                 core_.commitNativeLive(held.cell,0,core_.nativeLive().revision());
@@ -1548,6 +1594,7 @@ public:
         // uses the exact same source proof.
         for(auto& hold:groupHolds_)fireGroupLong(hold,ms);
         for(auto& hold:socleSpotGroups_)fireSocleSpotGroup(hold,ms);
+        for(auto& hold:resetSpotHolds_)fireResetSpotGroup(hold,ms);
         if(!core_.gesture().timerNeeded())return;
         const auto navBeforeTimer=core_.nativeNav().revision();
         const auto seq=++sequence_;
@@ -1625,6 +1672,62 @@ private:
            (prior.valid&&prior.config!=config))return false;
         return s8Machine_.save(static_cast<unsigned>(owner),static_cast<unsigned>(slot),
                                config,values,prior.revision);
+    }
+    struct ResetSpotHold {
+        int physical{-1};std::int64_t down{};std::uint64_t navRevision{};
+        l01::NavRoute route{};int group{};MuteLedColor color{MuteLedColor::Red};
+        bool fired{};
+    };
+    struct ResetSpotSignal {
+        std::array<int,3> physical{{-1,-1,-1}};
+        MuteLedColor color{MuteLedColor::Red};
+        std::uint64_t navRevision{};std::int64_t until{-1};
+    };
+    static constexpr std::int64_t ResetSpotLongMs=120;
+    static constexpr std::int64_t ResetSpotSignalMs=100;
+    std::array<ResetSpotHold,12> resetSpotHolds_{};
+    std::array<ResetSpotSignal,12> resetSpotSignals_{};
+    static MuteLedColor resetSpotColor(l01::NavRoute route) noexcept {
+        const int family=(route.address%1024)/32;
+        if(family==4||family==8)return MuteLedColor::Yellow;
+        if(family==5)return MuteLedColor::Green;
+        return MuteLedColor::Red;
+    }
+    static bool resetSpotRoute(l01::NavRoute route) noexcept {
+        if(route.address<0||route.position<0)return false;
+        const int family=(route.address%1024)/32,kind=route.address/1024;
+        return (kind==1 && family>=3 && family<=6 && route.position>=3&&route.position<=5)||
+               (kind==9 && (family==7||family==8) && route.position<6);
+    }
+    static ContinuousTarget resetSpotTarget(l01::NavRoute route) noexcept {
+        return continuousTarget({route.address-(route.address/1024)*1024,route.position});
+    }
+    bool fireResetSpotGroup(ResetSpotHold& hold,std::int64_t now,
+                            bool acceptedRelease=false) noexcept {
+        if(hold.physical<20||hold.physical>=32||hold.fired||now<hold.down||
+           now-hold.down<ResetSpotLongMs)return false;
+        const auto& nav=core_.nativeNav();
+        if(!nav.stable()||nav.hasStage()||nav.revision()!=hold.navRevision||
+           navMode()!=0||nav.active().contextMode!=0||mutePageVisible()||
+           (!acceptedRelease&&!surfaceHeld(static_cast<unsigned>(hold.physical)))||
+           core_.longNavPending())return false;
+        const int column=(hold.physical-20)%4;
+        std::array<ContinuousTarget,97> targets{};
+        std::array<int,3> physical{{-1,-1,-1}};unsigned count=0;
+        for(int row=0;row<3;++row){
+            const int p=20+column+4*row;
+            const auto route=core_.nativeRoute(p);
+            if(!resetSpotRoute(route)||route.address!=hold.route.address||
+               route.position/3!=hold.group)return false;
+            physical[static_cast<unsigned>(row)]=p;
+            if(p!=hold.physical)targets[count++]=resetSpotTarget(route);
+        }
+        if(count!=2||!resetContinuousTargets(targets,count))return false;
+        hold.fired=true;
+        resetSpotSignals_[static_cast<unsigned>(hold.physical-20)]=
+            {physical,hold.color,hold.navRevision,now+ResetSpotSignalMs};
+        documentDirty_=true;
+        return true;
     }
     struct GroupHold {
         QualifiedGroupAction action{};
