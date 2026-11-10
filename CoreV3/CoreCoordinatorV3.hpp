@@ -29,7 +29,10 @@ public:
         // Stage *all* components, including surface; invalid input cannot leave a phantom Held.
         auto surf=surface_;auto gest=gesture_;auto s3=s3_;auto nav=nav_;auto tx=longTx_;auto touch=touch_;
         int machineLow=machineLastLow_,machineHigh=machineLastHigh_;
-        auto save=localSave_;auto fxHold=machineFxHold_;bool fxView=machineFxBorrowed_;int fxMachine=machineFxViewMachine_;
+        // SOC-06 keeps S3 historical intact; the MACHINE long override is local to V3.
+        auto fxHold=machineFxHold_;auto machineBot3=machineBot3_;
+        const int bot3OwnerBefore=s3.physicalOwner(2);
+        bool fxView=machineFxBorrowed_;int fxMachine=machineFxViewMachine_;
         const auto item=surf.accept(msg);
         GestureBatch b{};S3ProposalBatch proposals{};
         if(item.kind!=SurfaceKind::None){
@@ -83,28 +86,29 @@ public:
             }
             socle={};
         }
-        // Source R02: BOT2 in SAMPLE and BOT3 in MACHINE are deferred
-        // SAVE/NAV_RELEASE candidates. An already-qualified combo owns the
-        // gesture instead; candidate never wins retrospectively.
-        if(item.kind==SurfaceKind::Edge&&item.control<4){
-            const int physical=item.control;
-            if(item.phase==1){
-                if(save.bot>=0&&physical!=save.bot)save={};
-                if(save.bot<0 && !tx.pending() && !touch.busy() && nav.stable() &&
-                   ((physical==1&&nav.active().at(292)==3&&s3.physicalOwner(1)==20) ||
-                    (physical==2&&nav.active().at(292)==7&&s3.physicalOwner(2)==20)))
-                    save={physical,nav.active().at(292),nav.revision(),false};
-            }
+        // Archived S3 owner20 permits BOT3 MACHINE SHORT only. V3 handles
+        // LONG as a momentary GLOBAL visit, preserving the true UP owner.
+        const bool bot3Down=item.kind==SurfaceKind::Edge&&item.control==2&&item.phase==1;
+        const bool bot3Up=item.kind==SurfaceKind::Edge&&item.control==2&&item.phase==0;
+        if(bot3Down){
+            machineBot3={};
+            if(nav.stable()&&!nav.hasStage()&&nav.active().at(292)==7&&
+               s3.physicalOwner(2)==20&&!tx.pending())
+                machineBot3={true,ms,nav.revision(),false};
         }
-        if(!processQualifiedNav(nav,s3,tx,proposals,machineLow,machineHigh,touch.busy(),save.bot))return false;
-        if(item.kind==SurfaceKind::Edge&&item.phase==0&&item.control==save.bot){
-            // No TOP: BOT3 exits MACHINE to GLOBAL persistently, regardless
-            // of hold duration. BOT2's SAMPLE->MUTE is managed in host layer.
-            if(!save.consumed && save.mode==7 && nav.active().at(292)==7 &&
-               nav.revision()==save.revision && !tx.pending() && !touch.busy()){
-                if(!nav.applyShortMode(2)||!s3.observeNav(nav.active().at(292),true))return false;
+        if(bot3Up&&machineBot3.active&&!machineBot3.longBegun&&
+           bot3OwnerBefore==20&&ms>=machineBot3.down&&ms-machineBot3.down>=200&&
+           nav.revision()==machineBot3.revision&&nav.active().at(292)==7&&
+           !tx.pending()&&!touch.busy()&&touchOwner_==-1){
+            if(!tx.begin(nav,2,2)||!s3.observeNav(nav.active().at(292),true))return false;
+            machineBot3.longBegun=true;
+        }
+        if(!processQualifiedNav(nav,s3,tx,proposals,machineLow,machineHigh,touch.busy()))return false;
+        if(bot3Up){
+            if(machineBot3.longBegun&&tx.pending()&&tx.owner()==2){
+                if(!tx.release(nav,2)||!s3.observeNav(nav.active().at(292),true))return false;
             }
-            save={};
+            machineBot3={};
         }
         if(nav.revision()!=nav_.revision()){
             updateMachineFxNavigation(nav_,nav,longTx_.pending(),tx.pending(),fxView,fxMachine);fxHold={};
@@ -119,23 +123,30 @@ public:
             }
         }
         socleBase_=socle;
-        machineFxHold_=fxHold;machineFxBorrowed_=fxView;machineFxViewMachine_=fxMachine;
+        machineFxHold_=fxHold;machineBot3_=machineBot3;machineFxBorrowed_=fxView;machineFxViewMachine_=fxMachine;
         surface_=surf;gesture_=gest;s3_=s3;nav_=nav;longTx_=tx;touch_=touch;machineLastLow_=machineLow;machineLastHigh_=machineHigh;
-        localSave_=save;
         append(b);appendS3(proposals);lastMs_=ms;started_=true;return true;
     }
     bool onTimer(std::int64_t ms)noexcept {
         if(ms<0||(started_&&ms<lastMs_)||count_+8>TraceCapacity||s3Count_+20>S3TraceCapacity)return false;
         auto gest=gesture_;auto s3=s3_;auto nav=nav_;auto tx=longTx_;auto touch=touch_;
+        auto machineBot3=machineBot3_;
         int machineLow=machineLastLow_,machineHigh=machineLastHigh_;
         GestureBatch b{};if(!gest.onTimer(ms,b))return false;
         S3ProposalBatch proposals{};if(!s3.accept(b,proposals,ms))return false;
         if(!touch.process(b,ms,nav,s3,diagnosticTouch_,tx.pending() || touchOwner_!=-1))return false;
-        if(!processQualifiedNav(nav,s3,tx,proposals,machineLow,machineHigh,touch.busy(),localSave_.bot))return false;
+        if(machineBot3.active&&!machineBot3.longBegun&&ms>=machineBot3.down&&
+           ms-machineBot3.down>=200&&s3.physicalOwner(2)==20&&
+           surface_.held(2)&&nav.revision()==machineBot3.revision&&
+           nav.active().at(292)==7&&!tx.pending()&&!touch.busy()&&touchOwner_==-1){
+            if(!tx.begin(nav,2,2)||!s3.observeNav(nav.active().at(292),true))return false;
+            machineBot3.longBegun=true;
+        }
+        if(!processQualifiedNav(nav,s3,tx,proposals,machineLow,machineHigh,touch.busy()))return false;
         if(nav.revision()!=nav_.revision()){
             updateMachineFxNavigation(nav_,nav,longTx_.pending(),tx.pending(),machineFxBorrowed_,machineFxViewMachine_);machineFxHold_={};
         }
-        gesture_=gest;s3_=s3;nav_=nav;longTx_=tx;touch_=touch;machineLastLow_=machineLow;machineLastHigh_=machineHigh;
+        gesture_=gest;s3_=s3;nav_=nav;longTx_=tx;touch_=touch;machineBot3_=machineBot3;machineLastLow_=machineLow;machineLastHigh_=machineHigh;
         append(b);appendS3(proposals);lastMs_=ms;started_=true;return true;
     }
     // SOURCE @z6; unlike observeS3NavForDiagnostic this supplies a validated full NAV.
@@ -421,22 +432,6 @@ public:
         auto s=s3_;if(!s.observeNav(copy.active().at(292),true))return false;
         nav_=copy;s3_=s;machineFxHold_={};machineFxBorrowed_=false;machineFxViewMachine_=copy.active().at(314);return true;
     }
-    int localSaveCandidateMode()const noexcept {return localSave_.bot<0?-1:localSave_.mode;}
-    bool localSaveCandidateConsumed()const noexcept {return localSave_.consumed;}
-    // Even a refused SAVE consumes the TOP/BOT ownership; no fallback
-    // RECALL or stale solo NAV is permitted after a failed preflight.
-    void declineLocalSaveCandidate() noexcept {
-        if(localSave_.bot>=0)localSave_.consumed=true;
-    }
-    bool consumeLocalSaveCandidate(int expectedMode) noexcept {
-        const int bot=localSave_.bot;
-        if(bot<0||localSave_.consumed||localSave_.mode!=expectedMode||
-           !surface_.held(static_cast<std::size_t>(bot))||
-           s3_.physicalOwner(bot)!=20||
-           !nav_.stable()||nav_.hasStage()||nav_.revision()!=localSave_.revision||
-           nav_.active().at(292)!=expectedMode||longTx_.pending()||touch_.busy())return false;
-        localSave_.consumed=true;return true;
-    }
     const NavS3& nativeNav() const noexcept{return nav_;}
     NavRoute nativeRoute(int physical) const noexcept {
         const auto route=MachineFxAliases::route(nav_.active(),physical,
@@ -468,7 +463,7 @@ public:
         }
         socleBase_={};
         surface_.onHostStop();gesture_.onHostStop();s3_.onHostStop();longTx_.onHostStop();touch_.onHostStop();touchOwner_=-1;
-        localSave_={};machineFxHold_={};
+        machineFxHold_={};machineBot3_={};
         // The prototype has its own STOP contract and must be tested separately;
         // do not inject an unsequenced synthetic STOP into it.
         return true;
@@ -502,7 +497,7 @@ public:
 private:
     bool processQualifiedNav(NavS3& nav,S3DecisionBoundary& s3,S3LongTransaction& tx,
                              const S3ProposalBatch& proposals,int& machineLow,int& machineHigh,
-                             bool physicalTouchBusy,int localSaveBot) noexcept {
+                             bool physicalTouchBusy) noexcept {
         djLoopStopPush_=false;
         if(!nav.stable())return true;
         for(std::size_t i=0;i<proposals.count;++i){
@@ -526,10 +521,6 @@ private:
                 continue;
             }
             if(!normal&&!combo)continue;
-            // A local PATCH candidate cannot open a solo NAV or LONG while
-            // waiting for TOP (including 800 ms holds). Other BOT combos
-            // retain full priority and are processed normally.
-            if(normal && p.role==localSaveBot)continue;
             // BOT2 solo belongs exclusively to the native global-MUTE overlay.
             // Keep BOT2 combos and their qualified NAV roles independent.
             if(muteBot2Exclusive_ && p.role==1 && normal)continue;
@@ -580,11 +571,9 @@ private:
         borrowed=false;owner=next.contextMode==7?next.at(314):-1;
     }
     MachineFxHold machineFxHold_{};bool machineFxBorrowed_{};int machineFxViewMachine_{-1};
+    struct MachineBot3Hold {bool active{};std::int64_t down{};std::uint64_t revision{};bool longBegun{};};
+    MachineBot3Hold machineBot3_{};
     SurfaceInput surface_{};
-    struct LocalSaveCandidate {
-        int bot{-1},mode{-1};std::uint64_t revision{};bool consumed{};
-    };
-    LocalSaveCandidate localSave_{};
     GestureS2 gesture_{};
     S3DecisionBoundary s3_{};
     bool retainDjLoopPage_{},djLoopStopPush_{};

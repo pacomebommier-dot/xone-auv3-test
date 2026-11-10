@@ -16,6 +16,9 @@ SORTIE : API virtuelle S7 V1.2 MIDI7..14, MIDI15 exclusivement LED. AUM MIDI Lea
 ## Décisions actives du 05/11/2026
 Le [addendum du 5 novembre](11_ADDENDUM_BASE_CUE4_DRUMS_FILL_20261105.md) fixe les références BASE et RESET locales, CUE4 court/long et DRUMS/FILL 7–8. Il prévaut sur les formulations historiques de ces périmètres.
 
+## Décision active du 09/11/2026 — SOC-06 / SAVE-RECALL
+Le [contrat SOC-06 du 9 novembre](12_DECISION_UNIFICATION_GESTES_SAVE_RECALL_20261109.md) définit la règle **slot vide court ou long = première capture ; slot rempli court = RECALL ; slot rempli long (>=200 ms) = SAVE/remplacement**. Décision au vrai relâchement, propriétaire fixé au DOWN, STOP sûr, aucun RECALL de secours sur SAVE refusé. Elle prévaut sur l'ancienne combinaison BOT2+TOP SAMPLE / BOT3+TOP MACHINE, qui doit être remplacée par **TOP1..3 seul LONG pour SAVE** ; les BOT retrouvent leur SMART de navigation normal. Portée : MEMORY, PATCH, CUE/LOAD, BASE et PRESET ; SH-01A reste maître de ses programmes, WRITE physique exclusivement. Ce contrat est intégré à la recette SOC-01..05 comme **SOC-06**, sans le considérer implémenté avant tests.
+
 ## Connu / inconnu : deux couches séparées
 - Adresse et commande virtuelle prévues : émission MIDI contractuelle même sans binding instrument, observable au moniteur.
 - Les commandes locales couvertes utilisent un BASE personnalisé ou universel selon le [addendum du 5 novembre](11_ADDENDUM_BASE_CUE4_DRUMS_FILL_20261105.md). La réouverture reprend le LIVE sauvegardé.

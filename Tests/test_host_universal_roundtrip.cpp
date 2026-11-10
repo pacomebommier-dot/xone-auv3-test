@@ -45,9 +45,11 @@ int main(){
          !rig.post.contains(beforeSpot,11,384,0));
  rig.tap(37);assert(e.memoryEngaged(0,0));rig.cc(4,0);rig.cc(4,100);assert(e.desiredLive(1552).value==100);
  rig.tap(37);assert(e.pendingMemorySlot(0)==0&&e.desiredLive(1552).value==100);rig.grid(5);assert(e.desiredLive(1552).value==0);
- // Physical MACHINE mode and common pair SAVE. Modes remain UNKNOWN, outside PATCH36.
+ // SOC-06: MACHINE TOP1 SHORT on EMPTY captures PATCH directly.
+ // BOT3 is no longer a SAVE modifier; its SHORT would navigate to GLOBAL.
+ // Modes remain UNKNOWN, outside PATCH36.
  rig.down(13);rig.down(15);rig.up(15);rig.up(13);assert(e.navMode()==7);
- rig.down(14);rig.tap(52);rig.up(14);SourcePatchBank::Patch patch{};assert(e.readSourcePatch(0,0,patch)&&patch.values[0]==0&&patch.values[42]==0&&patch.values[30]==-2);
+ rig.tap(52);SourcePatchBank::Patch patch{};assert(e.readSourcePatch(0,0,patch)&&patch.values[0]==0&&patch.values[42]==0&&patch.values[30]==-2);
  rig.cc(0,0);rig.cc(0,73);assert(e.desiredLive(377).value==73);rig.tap(52);assert(e.samplePatchPending());rig.grid(8);
  assert(e.desiredLive(377).value==0&&!e.memoryEngaged(0,0)&&!e.desiredLive(350).known);
  // PRESET uses the actual render-boundary UI intent. RED restore retries nominal MIDI.

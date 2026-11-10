@@ -464,10 +464,14 @@ public:
     void observeTransport(bool running) noexcept {if(running&&transportStopped_)muteLeds_.invalidate();transportStopped_=!running;}
     void forgetTransport() noexcept {transportStopped_=false;}
     bool requestMemoryRecall(int owner,int slot) noexcept { documentDirty_=true;
-        if(!memoryEngaged(owner,slot)||(owner<12&&alternativeSourceBusy(owner/3)))return false;
+        const int index=l01::BankS6::memoryIndex(owner,slot);
+        if(index<0||(owner<12&&alternativeSourceBusy(owner/3)))return false;
         l01::BankS6::MemoryRecord saved{};
         if(!readMemory(owner,slot,saved)||!saved.valid||saved.config!=core_.nativeLive().sessionConfig())return false;
         if(!transportStopped_&&!musicalScheduler_.replace(2,static_cast<uint16_t>(owner),ScheduleWhen::NextBeat))return false;
+        // SOC-06: a filled but disengaged slot is still a RECALL target,
+        // never an implicit SAVE just because its active marker was cleared.
+        memoryEngaged_[static_cast<unsigned>(index)]=true;
         memoryPending_[static_cast<unsigned>(owner)]={slot,saved.config,saved.values};
         if(transportStopped_)applyMemoryRecall(static_cast<unsigned>(owner));
         return true;
@@ -874,9 +878,6 @@ private:
             // BOT2 is also DJ1 PUSH. Ownership is captured on its true DOWN,
             // never reconstructed from a deadline at UP.
             const bool browserBot2Release=physical==1&&wasHeld&&browser_.pushOwned();
-            const bool localSampleBot2Release=physical==1&&wasHeld&&
-                !(cmd==0x90&&data[2]!=0)&&core_.localSaveCandidateMode()==3;
-            const bool localSampleBot2Consumed=core_.localSaveCandidateConsumed();
             const bool wasMuteVisible=mutePageVisible();
             auto muteNext=muteGate_;muteNext.advance(gestureMs);
             const bool baseEvent=(cmd==0x90||cmd==0x80)&&physical>=4&&physical<20;
@@ -985,18 +986,16 @@ private:
                !muteBaseOwned&&physical>=4&&physical<20&&
                !core_.longNavPending()&&!core_.nativeNav().hasStage())
                 soft_.requestFromRoute(physical,softRoute,softRoot);
-            if(accepted&&cueSource&&(cueIndex%4==3||!sh01aSource(cueGroup))){
+            if(accepted&&cueSource){
+                // SOC-06: SH CUE/LOAD LONG must not emit a premature PC at DOWN.
                 cueHolds_[static_cast<unsigned>(physical-4)]={static_cast<int>(cueGroup),cueIndex,activeAlternative(cueGroup),gestureMs};
-            }else if(accepted&&cueSource){
-                requestSourceRecall(cueGroup,cueIndex%4);
             }
             if(accepted&&baseEvent&&wasHeld&&(cmd==0x80||data[2]==0)){
                 auto& hold=cueHolds_[static_cast<unsigned>(physical-4)];
                 const auto captured=hold;
                 hold={};
                 if(captured.source>=0&&gestureMs>=captured.down&&
-                   activeAlternative(static_cast<unsigned>(captured.source))==captured.instrument&&
-                   (captured.index%4==3||!sh01aSource(static_cast<unsigned>(captured.source)))){
+                   activeAlternative(static_cast<unsigned>(captured.source))==captured.instrument){
                     const auto source=static_cast<unsigned>(captured.source);
                     const unsigned slot=captured.index%4;
                     const bool longPress=gestureMs-captured.down>=200;
@@ -1004,6 +1003,10 @@ private:
                         if(saveSourceBase(source)){
                             baseWriteFeedback_={static_cast<int>(source),gestureMs};
                         }
+                    }else if(slot<3&&sh01aSource(source)){
+                        // Roland WRITE is the only program SAVE; a LONG XONE
+                        // slot gesture is inert, not a disguised PC recall.
+                        if(!longPress)requestSourceRecall(source,slot);
                     }else if(slot<3&&(longPress||!hasSourcePatch(source,slot))){
                         saveSourcePatch(source,slot);
                     }else if(requestSourceRecall(source,slot)&&!sh01aSource(source)){
@@ -1012,10 +1015,8 @@ private:
                     }
                 }
             }
-            if(accepted&&memorySource){
-                if(memoryOwner<12)memoryGesture(memoryOwner,memorySlot);
-                else rhythmMemoryHolds_[static_cast<unsigned>(physical-4)]={memoryOwner,memorySlot,gestureMs};
-            }
+            if(accepted&&memorySource)
+                rhythmMemoryHolds_[static_cast<unsigned>(physical-4)]={memoryOwner,memorySlot,gestureMs};
             if(accepted&&baseEvent&&wasHeld&&(cmd==0x80||data[2]==0)){
                 auto& hold=rhythmMemoryHolds_[static_cast<unsigned>(physical-4)];
                 const auto captured=hold;
@@ -1024,10 +1025,23 @@ private:
                     finishRhythmMemoryGesture(captured.owner,captured.slot,gestureMs-captured.down>=200);
             }
             if(accepted&&presetSource){
-                const unsigned slot=static_cast<unsigned>(presetRoute.position);
-                if(slot==4)requestGlobalInit();
-                else if(!presetEngaged(slot))capturePreset(slot);
-                else requestPresetRecall(slot);
+                // SOC-06: PRESET is decided at true UP, not on DOWN.
+                presetHolds_[static_cast<unsigned>(physical-4)]=
+                    {static_cast<int>(presetRoute.position),gestureMs,core_.nativeNav().revision()};
+            }
+            if(accepted&&baseEvent&&wasHeld&&(cmd==0x80||data[2]==0)){
+                auto& hold=presetHolds_[static_cast<unsigned>(physical-4)];
+                const auto captured=hold;hold={};
+                const auto route=core_.nativeRoute(physical);
+                if(captured.slot>=0&&gestureMs>=captured.down&&
+                   captured.navRevision==core_.nativeNav().revision()&&
+                   core_.nativeNav().active().presetFlag==1&&!mutePageVisible()&&
+                   route.address==14*1024+17*32&&route.position==captured.slot){
+                    if(captured.slot==4)requestGlobalInit();
+                    else if(gestureMs-captured.down>=200||!presetEngaged(static_cast<unsigned>(captured.slot)))
+                        capturePreset(static_cast<unsigned>(captured.slot));
+                    else requestPresetRecall(static_cast<unsigned>(captured.slot));
+                }
             }
             if(accepted&&physical==0){
                 const bool down=cmd==0x90&&data[2]!=0;
@@ -1063,7 +1077,8 @@ private:
                 muteGate_=muteNext; // commit time qualification only after accepted input
                 const bool down=cmd==0x90&&data[2]!=0;
                 if(physical==1){
-                    if(down)muteGate_.beginBot2(gestureMs,core_.s3().physicalOwner(1)==1);
+                    if(down)muteGate_.beginBot2(gestureMs,core_.s3().physicalOwner(1)==1 ||
+                        (navMode()==3&&core_.s3().physicalOwner(1)==20));
                     else muteGate_.releaseBot2(gestureMs);
                 }else if(physical>=4&&physical<20){
                     const unsigned base=static_cast<unsigned>(physical-4);
@@ -1074,51 +1089,20 @@ private:
                 // In that case BOT2 is no longer entitled to a solo MUTE short/long.
                 if(down&&physical<4&&physical!=1&&muteGate_.botHeld()&&core_.s3().physicalOwner(1)==30)muteGate_.cancelBot2();
             }
-            if(accepted && localSampleBot2Release && !localSampleBot2Consumed &&
-               mutePageEnabled_ && !muteGate_.botHeld()) {
-                // An unconsumed BOT2 candidate opens MUTE on physical UP,
-                // never by a premature 200ms LONG. It is an explicit SHORT.
-                muteGate_.beginBot2(gestureMs,true);
-                muteGate_.releaseBot2(gestureMs);
-            }
             if(accepted && !wasMuteVisible && mutePageVisible() && (navMode()==2 || navMode()==4))
                 requestDjLoopStop(true);
             if(accepted&&(cmd==0x90||cmd==0x80)&&physical>=32&&physical<36&&wasHeld!=(cmd==0x90&&data[2]!=0)){
                 const bool down=cmd==0x90&&data[2]!=0;
                 const auto topIndex=static_cast<std::size_t>(physical-32);
                 if(down){
-                    topSaveSuppress_[topIndex]=false;
-                    if(topIndex<3){
-                        const int candidateMode=core_.localSaveCandidateMode();
-                        if(candidateMode==3||candidateMode==7){
-                            // An accepted local candidate owns this TOP even
-                            // if its NAV/profile preflight fails: never fall
-                            // back to RECALL or reinterpret the BOT release.
-                            topSaveSuppress_[topIndex]=true;
-                            const bool admitted=core_.consumeLocalSaveCandidate(candidateMode);
-                            if(!admitted)core_.declineLocalSaveCandidate();
-                            const bool saved=admitted&&
-                                (candidateMode==3?saveSamplePatchFromLive(static_cast<int>(topIndex)):
-                                 saveMachinePatchFromLive(static_cast<int>(topIndex)));
-                            if(saved)++sampleSavesAccepted_;
-                            else ++sampleSavesRefused_;
-                            if(candidateMode==3)muteGate_.cancelBot2();
-                            record(seq,sample,Stage::Decision,
-                                   saved?Reason::Musical:Reason::UnknownLive,
-                                   0,data,3,saved?static_cast<int>(topIndex):-1);
-                        }
-                    }
-                    topHold_[topIndex]=topSaveSuppress_[topIndex]?TopCapture{}:TopCapture{
+                    // SOC-06: TOP owns its own SHORT/LONG decision.
+                    // No candidate BOT+TOP may SAVE or suppress this TOP.
+                    topHold_[topIndex]=TopCapture{
                         core_.nativeRoute(physical),
                         core_.nativeNav().active().contextMode,
                         core_.nativeNav().revision(),core_.nativeNav().active().at(291),gestureMs
                     };
                 }else{
-                    if(topSaveSuppress_[topIndex]){
-                        topSaveSuppress_[topIndex]=false;
-                        topHold_[topIndex]={};
-                        return {};
-                    }
                     const auto captured=topHold_[static_cast<std::size_t>(physical-32)];
                     topHold_[static_cast<std::size_t>(physical-32)]={};
                     // TOP is a RESET request. Without authenticated RESET_DEFAULT
@@ -1169,7 +1153,7 @@ private:
                         const bool patch=(physical!=35&&(captured.context==3||captured.context==7));
                         topIntents_[index]={physical,captured.route,seq,patch?TopAction::PatchRecall:TopAction::FilterReset};
                         topIntentValid_[index]=true;
-                        if(patch && captured.context==3)armSamplePatch(index);
+                        if(patch && captured.context==3)armSamplePatch(index,gestureMs-captured.down>=200);
                         else if(patch && captured.context==7)armMachinePatch(index,gestureMs-captured.down>=200);
                         if(patch)++topPatchRecallsDeferred_;
                         bool reset=false;
@@ -1453,7 +1437,7 @@ public:
             alternativeFlight_={};alternatives_.stop();alternativeBaseValid_.fill(false);
             pendingPresetSlot_=-1;initPending_=false;redActive_=false;redImage_.valid=false;redHeld_=false;
             sourceRead_=sourceWrite_;sourceBlocked_=false;cueLoad_.stop();
-            cueHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});
+            cueHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});presetHolds_.fill({});
         }
         applyPendingResetDefaults();
         beginSh01aBuffer(appliedToken_!=beforeRestore);
@@ -1576,10 +1560,9 @@ public:
         for(auto& pending:memoryPending_)pending={};
         sourcePending_.fill(-1);sourceRead_=sourceWrite_;sourceBlocked_=false;
         for(auto& status:sourceStatus_)if(status==SourceRecallStatus::Pending)status=SourceRecallStatus::None;
-        cueHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});
+        cueHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});presetHolds_.fill({});
         cueLoad_.stop(); // cancel pending BAR intents, preserve actual CC-sent state
         topPulse_.stop(); // cancels unattempted pulses; retains every attempted OFF
-        topSaveSuppress_.fill(false);
         browserLoadPending_=false;browserSelectionSequence_=0;
         core_.observeBrowserGuardForDiagnostic(false,0,0);
         core_.onHostStop(); // must not fabricate UP or clear held keys
@@ -1841,26 +1824,40 @@ private:
     }
     struct SamplePatchRequest {int owner{-1},slot{-1};uint32_t revision{};bool s8{},machine{};};
     SamplePatchRequest samplePatch_{};int pairedTopSource_{-1};int64_t lastSamplePatchBar_{-1};
-    void armSamplePatch(unsigned index) noexcept {
+    void armSamplePatch(unsigned index,bool longPress) noexcept {
         if(samplePatchPending() || index>=3 || !topIntentValid_[index])return;
+        // A SAMPLE PATCH can be captured/recalled only on the real SAMPLE
+        // page. PRESET/RESET overlays retain their deferred TOP intent:
+        // they must not interpret an EMPTY slot as an implicit SAVE.
+        const auto& nav=core_.nativeNav();
+        if(!nav.stable()||nav.hasStage()||nav.active().at(292)!=3||
+           nav.active().contextMode!=3)return;
         const auto& intent=topIntents_[index];
         const int packed=intent.route.address;
         if(packed<0 || packed/1024!=11 || (packed%1024)/32!=1)return;
         const int owner=packed%32-1,slot=intent.route.position;
         if(owner<0||owner>=8||slot<0||slot>=3)return;
         S8SamplePatchBank::Patch native{};
-        if(s8Sample_.read(static_cast<unsigned>(owner),static_cast<unsigned>(slot),native) &&
-           native.valid && native.config==core_.nativeLive().sessionConfig()) {
+        if(!s8Sample_.read(static_cast<unsigned>(owner),static_cast<unsigned>(slot),native))return;
+        l01::BankS6::PatchRecord historical{};
+        const bool historicalValid=core_.readNativePatch(owner,slot,historical)&&historical.valid;
+        if(longPress||(!native.valid&&!historicalValid)){
+            // Short on EMPTY and LONG on any slot capture exactly once.
+            // Failed capture must never fall back to a BAR RECALL.
+            topIntentValid_[index]=false;
+            const bool saved=saveSamplePatchFromLive(slot);
+            if(saved)++sampleSavesAccepted_;else ++sampleSavesRefused_;
+            return;
+        }
+        if(native.valid){
+            if(native.config!=core_.nativeLive().sessionConfig())return;
             samplePatch_={owner,slot,native.revision,true};
         }else{
-            // Explicit pre-render S6 fixtures remain available for historical
-            // compatibility tests; normal physical SAVE never writes S6.
-            l01::BankS6::PatchRecord historical{};
-            if(!core_.readNativePatch(owner,slot,historical)||!historical.valid||
-               historical.config!=core_.nativeLive().sessionConfig())return;
+            // Historical S6 fixtures may be recalled, never written.
+            if(historical.config!=core_.nativeLive().sessionConfig())return;
             samplePatch_={owner,slot,historical.revision,false};
         }
-        topIntentValid_[index]=false; // command accepted once; BAR still has not applied it
+        topIntentValid_[index]=false; // One BAR recall only.
     }
     bool hasSourcePatch(unsigned source,unsigned slot) const noexcept {
         SourcePatchBank::Patch patch{};
@@ -1880,11 +1877,16 @@ private:
         if(selected<1||selected>24||slot<0||slot>=3)return;
         if(selected<=8){
             const unsigned source=static_cast<unsigned>((selected-1)/2);
+            if(sh01aSource(source)&&longPress){
+                // SOC-06: no SAVE and no PC replay on SH LONG TOP.
+                topIntentValid_[index]=false;return;
+            }
             SourcePatchBank::Patch patch{};
             if(!sh01aSource(source)){
                 if(longPress||!readSourcePatch(source,static_cast<unsigned>(slot),patch)){
                     topIntentValid_[index]=false;
-                    saveMachinePatchFromLive(slot);
+                    const bool saved=saveMachinePatchFromLive(slot);
+                    if(saved)++sampleSavesAccepted_;else ++sampleSavesRefused_;
                     return;
                 }
                 if(patch.config!=core_.nativeLive().sessionConfig())return;
@@ -1897,7 +1899,8 @@ private:
         if(!s8Machine_.read(static_cast<unsigned>(selected-1),static_cast<unsigned>(slot),patch))return;
         if(longPress||!patch.valid){
             topIntentValid_[index]=false;
-            saveMachinePatchFromLive(slot);
+            const bool saved=saveMachinePatchFromLive(slot);
+            if(saved)++sampleSavesAccepted_;else ++sampleSavesRefused_;
             return;
         }
         if(patch.config!=core_.nativeLive().sessionConfig())return;
@@ -2545,7 +2548,7 @@ private:
         openingLive_=live;rhythmDials_.fill({});
         s8Sample_=d.sample;s8Machine_=d.machine;sourcePatches_=d.source;alternativeBank_=d.alternative;sourceBases_=d.sourceBases;shBase_=d.shBase;shBaseSentMs_=-1;alternatives_=arbiter;sixSynths_=d.sixSynths;synthState_=d.synthState;synthCables_=uniqueSynthCables(arbiter.active());
         presets_=d.presets;globalInit_=d.init;soft_=soft;muteBridge_=mute;muteGate_.restoreVisible(d.current.muteVisible);
-        cueHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});
+        cueHolds_.fill({});baseWriteFeedback_={};rhythmMemoryPending_.fill({});rhythmMemoryHolds_.fill({});presetHolds_.fill({});
         cueLoad_=CueLoadBar{}; // desired selection is rebuilt below; no historical service pulse
         cueLoad_.restoreDocumentSelections(d.current.cueSelections);
         memoryEngaged_=d.current.memoryEngaged;presetEngaged_=d.current.presetEngaged;presetValid_.fill(false);
@@ -2751,9 +2754,13 @@ private:
         unsigned count=1;
         owners[0]=owner;
         if(group>=0)count=rhythmMemoryOwners(group,owners);
-        bool engaged=false;
-        for(unsigned i=0;i<count;++i)engaged|=memoryEngaged(owners[i],slot);
-        if(engaged&&!longPress){
+        bool filled=false;
+        for(unsigned i=0;i<count;++i){
+            l01::BankS6::MemoryRecord record{};
+            filled|=readMemory(owners[i],slot,record)&&record.valid;
+        }
+        // Distinguish EMPTY content from merely disengaged status.
+        if(filled&&!longPress){
             if(group<0)requestMemoryRecall(owner,slot);
             else requestRhythmMemory(group,slot);
             return;
@@ -2767,10 +2774,14 @@ private:
                 musicalScheduler_.cancel(2,static_cast<uint16_t>(sound));
                 memoryPending_[sound]={};
             }
-            const unsigned family=(sound-12)/8;
-            for(unsigned pending:{family,2u})if(rhythmMemoryPending_[pending].slot==slot){
-                musicalScheduler_.cancel(6,static_cast<uint16_t>(pending));
-                rhythmMemoryPending_[pending]={};
+            // SOC-06: INST/YELLOW owners 0..11 have no rhythm family.
+            // Unsigned (sound-12) underflows and indexes outside [0..2].
+            if(sound>=12){
+                const unsigned family=(sound-12)/8;
+                for(unsigned pending:{family,2u})if(rhythmMemoryPending_[pending].slot==slot){
+                    musicalScheduler_.cancel(6,static_cast<uint16_t>(pending));
+                    rhythmMemoryPending_[pending]={};
+                }
             }
         }
     }
@@ -2841,9 +2852,8 @@ private:
     }
     std::array<RhythmMemoryRequest,3> rhythmMemoryPending_{};
     std::array<RhythmMemoryHold,16> rhythmMemoryHolds_{};
-    bool memoryGesture(int owner,int slot) noexcept {
-        return memoryEngaged(owner,slot)?requestMemoryRecall(owner,slot):captureMemory(owner,slot);
-    }
+    struct PresetSlotHold {int slot{-1};int64_t down{};std::uint64_t navRevision{};};
+    std::array<PresetSlotHold,16> presetHolds_{};
     void disengageSourceMemories(unsigned source) noexcept {
         // Only the three explicitly mapped INST/YELLOW pages of this source.
         for(unsigned page=3*source;page<3*source+3;++page){
@@ -3013,7 +3023,6 @@ private:
     unsigned sourceRead_{},sourceWrite_{},sourcePacketToken_{};
     bool sourceBlocked_{};
     CueLoadBar cueLoad_{};
-    std::array<bool,4> topSaveSuppress_{};
     unsigned sampleSavesAccepted_{},sampleSavesRefused_{};
     std::array<std::uint32_t,36> groupDownEpoch_{};
     std::uint32_t groupEpochCounter_{1};

@@ -95,12 +95,16 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist" | grep -qx org.xonelab.XoneEngineNativeV02
           /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionAttributes:AudioComponents:0:subtype' "$EXT/Info.plist" | grep -qx Xn02
           /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionAttributes:AudioComponents:0:type' "$EXT/Info.plist" | grep -qx aumi
+          # SOC-01..05 candidate: app and AU extension must carry the same
+          # incremented build number; preserve the AU identity for AUM.
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -qx 2
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$EXT/Info.plist" | grep -qx 2
           mkdir -p output/Payload
           ditto "$APP" output/Payload/XoneEngineTest.app
           (cd output && /usr/bin/zip -q -r -y XoneEngineNative_V0_2_UNSIGNED.ipa Payload)
           git archive --format=zip --output=output/XONE_V0_SOURCES.zip HEAD
           mkdir -p output/recette
-          cp docs/reprise/RECETTE_AUM_V02.md docs/reprise/RECETTE_SH36_MACHINE_20261104.md Mozaic/K2_SIM_V3.txt Mozaic/README.md output/recette/
+          cp docs/reprise/RECETTE_AUM_V02.md docs/reprise/RESULTATS_AUM_V0.csv docs/reprise/RECETTE_SH36_MACHINE_20261104.md Mozaic/K2_SIM_V3.txt Mozaic/README.md output/recette/
           echo "$GITHUB_SHA" > output/COMMIT.txt
           shasum -a 256 output/XoneEngineNative_V0_2_UNSIGNED.ipa > output/IPA_SHA256.txt
       - uses: actions/upload-artifact@v4
