@@ -1,6 +1,6 @@
 # Recette AUM / iPhone / K2 / SH — préparation du 4 novembre2026
 
-Statut : protocole préparé, **aucun essai physique exécuté par cette reprise**. Branche reprise/global-20261104, PR17 draft. Ne qualifier que le SHA réellement installé.
+Statut : protocole préparé, **aucun essai physique exécuté par cette reprise**. Depuis SOC-06, poursuivre la recette avec la **PR #24** `prep/ipa-soc01-05-recette-20261109`, et uniquement le SHA réellement signé/installé. Les mentions de PR17 ci-dessous étaient historiques.
 
 ## Préparation
 
@@ -23,13 +23,16 @@ Correspondance du prochain patch. Programme 1 = BASE (PC0), programmes 2–4 = P
 | T05 | TournerVCF depuisK2 puisSH | OctetsTX74 corrects, LIVE/LED/pickup cohérents ; miroir non modifié hors rappel | NON_TESTE matériel |
 | T06 | Éditer parK2, WRITE physiqueSH, quitter/rappeler | Valeur reçue après rappel conservée parWRITE ; nouveau miroir, aucun SAVE XONE | NON_TESTE matériel |
 | T07 | TOP1..3 et CUE/LOAD depuisXONE en marche puis arrêt | PC seul 1..3 au vrai BAR, immédiat si arrêt prouvé ; aucune rafaleCC36 émise | NON_TESTE matériel |
-| T08 | GesteSAVE surSH puis autre profil | Aucun WRITE/miroir/succèsSAVE SH ; autre instrument conserve SAVE/RECALL | NON_TESTE matériel |
+| T08 | LONG sur slot de PATCH SH, puis autre profil non-SH ; comparer TOP et CUE/LOAD | Sur SH : **aucun WRITE, PC de rappel, miroir modifié ou faux succès SAVE** ; sur profil non-SH : LONG = SAVE/remplacement. | NON_TESTE matériel |
 | T09 | Save/reopenAUM, réallocation/reconnexion | MiroirsVALID conservés, capturevolatile perdue ; aucunPC/CC36/WRITE rejoué | NON_TESTE matériel |
 | BASE | WRITE physique sur le programme 1, CUE4 long puis court | Long enregistre les FX locaux. Court envoie PC0 et restaure les FX. Les miroirs PATCH 1–3 sont conservés. | NON_TESTE matériel |
 | BASE SH entrant | Rappeler le programme 1 depuis le Roland, puis tester un rappel CUE4 avec retour PC0 | Le rappel physique applique les FX BASE et les CC reçus actualisent le LIVE. Le retour d’un CUE4 ne réapplique pas les FX et ne réémet aucun PC. Les trois miroirs restent inchangés. | NON_TESTE matériel |
 | T10 | Même programme puis aller-retour manuel | Établir si la resélection émet36 ; sinon quitter/rappeler manuellement, jamais automatiquement | NON_TESTE matériel |
+| T11 · SOC-06 | Faire TOP/CUE/LOAD court sur PATCH SH renseigné, puis LONG ≥200ms sur le même slot, avec PRE/POST MIDI ; CUE4 long/court | COURT : PC1..3 selon sélection ; LONG : **aucun PC, aucun WRITE et aucun SAVE sonore**. CUE4 LONG capture seulement référence BASE + FX XONE ; CUE4 court rappelle PC0 selon le contrat. Le vrai WRITE s'exécute uniquement sur le SH. | NON_TESTE matériel |
 
 Table provisoire36 :3,5,12–31,71–75,78–83,85–87. Hypothèse autorisée par l'utilisateur, non certificationRoland du contenu exact d'une rafale. Capturer les numéros réellement reçus avant toute correction de table ; ne pas accepter36événements arbitraires. Les valeurs0/127 sont des octets bruts, pas une calibration des sélecteurs.
+
+**Attention SOC-06 :** les accords historiques BOT2+TOP (SAMPLE) et BOT3+TOP (MACHINE) sont supprimés. **TOP seul court** rappelle un PATCH renseigné (premier SAVE s'il est vide et non-SH) ; **TOP seul long** remplace un PATCH non-SH. Le SH ne doit **jamais** recevoir un WRITE depuis XONE et les nouveaux gestes ne doivent pas déclencher de PC de rappel lors d'un LONG.
 
 ## V0 / temps réel et fin de vie
 
